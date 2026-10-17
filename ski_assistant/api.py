@@ -1,0 +1,217 @@
+"""API + single-page UI. Served through Home Assistant ingress on port 8099."""
+import os
+from typing import List, Optional
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+import advisor
+import db
+import ha
+import livestatus
+import ranking
+import resorts
+import scheduler
+import season
+import settings
+import snotel
+import transit
+import util
+
+app = FastAPI(title="Ski Assistant")
+STATIC = os.path.join(os.path.dirname(__file__), "static")
+ALERT_IN = float(os.getenv("POWDER_ALERT_INCHES", "6"))
+
+
+@app.on_event("startup")
+def _startup():
+    db.init()
+    scheduler.start()
+
+
+# Conditions and planning
+@app.get("/api/resorts")
+def get_resorts():
+    return resorts.load()
+
+
+@app.put("/api/resorts")
+def put_resorts(items: List[dict]):
+    try:
+        resorts.save(items)
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
+    return resorts.load()
+
+
+@app.get("/api/best-days")
+def best_days(date: Optional[str] = None, skis: bool = False, departure: Optional[str] = None):
+    return ranking.best_days(resorts.load(), date, skis=skis, departure=departure)
+
+
+@app.get("/api/alerts")
+def alerts():
+    return ranking.powder_alerts(resorts.load(), threshold_in=ALERT_IN)
+
+
+@app.get("/api/snowpack")
+def snowpack_all():
+    return {r["id"]: snotel.resort_snowpack(r) for r in resorts.load()}
+
+
+@app.get("/api/live")
+def live():
+    return {r["id"]: livestatus.live_status(r) for r in resorts.load()}
+
+
+@app.get("/api/transit")
+def transit_all():
+    return {r["id"]: transit.for_resort(r) for r in resorts.load()}
+
+
+class Ask(BaseModel):
+    question: str
+    date: Optional[str] = None
+    skis: bool = False
+    departure: Optional[str] = None
+
+
+@app.post("/api/ask")
+def ask(a: Ask):
+    if not advisor.available():
+        raise HTTPException(400, "Add your Anthropic API key in the add-on Configuration tab.")
+    try:
+        return advisor.ask(a.question.strip()[:500], a.date, a.skis, a.departure)
+    except Exception as e:
+        raise HTTPException(502, f"Claude request failed: {e}")
+
+
+@app.get("/api/briefing", response_class=PlainTextResponse)
+def briefing():
+    """Short plain-text summary for the Daily Briefing add-on."""
+    rows = [r for r in ranking.best_days(resorts.load()) if "error" not in r]
+    lines = []
+    if rows:
+        t = rows[0]
+        lines.append(f"Best ski pick today: {t['resort']} ({t['fresh_in']} in fresh, high {round(t['tmax_f'])}F, "
+                     f"gusts {round(t['gust_mph'])} mph). Leave by {t['leave']['leave_at']}.")
+    for a in alerts():
+        lines.append(f"Powder alert: {a['resort']} {a['snow_in']} in from {a['first_day']}.")
+    return "\n".join(lines) or "No ski data right now."
+
+
+# Season log
+class Day(BaseModel):
+    date: str
+    resort_id: str
+    equipment: str  # board | ski
+    vertical_ft: Optional[int] = None
+    notes: str = ""
+
+
+@app.get("/api/days")
+def days():
+    return season.list_days()
+
+
+@app.post("/api/days")
+def add_day(d: Day):
+    if d.equipment not in ("board", "ski"):
+        raise HTTPException(400, "equipment must be board or ski")
+    new_id = season.add_day(d.date, d.resort_id, d.equipment, d.vertical_ft, d.notes)
+    name = next((r["name"] for r in resorts.load() if r["id"] == d.resort_id), d.resort_id)
+    if d.date == util.today().isoformat():
+        scheduler.drying_reminder(name)
+    return {"id": new_id}
+
+
+@app.delete("/api/days/{day_id}")
+def delete_day(day_id: int):
+    season.delete_day(day_id)
+    return {"ok": True}
+
+
+@app.get("/api/pass")
+def pass_summary():
+    return season.pass_summary()
+
+
+# Learning to ski
+class Lesson(BaseModel):
+    date: str
+    resort_id: str = ""
+    skills: str = ""
+    notes: str = ""
+
+
+@app.get("/api/lessons")
+def lessons():
+    return {"lessons": season.list_lessons(), "summary": season.learning_summary(), "skill_list": season.SKILLS}
+
+
+@app.post("/api/lessons")
+def add_lesson(l: Lesson):
+    return {"id": season.add_lesson(l.date, l.resort_id, l.skills, l.notes)}
+
+
+@app.delete("/api/lessons/{lesson_id}")
+def delete_lesson(lesson_id: int):
+    season.delete_lesson(lesson_id)
+    return {"ok": True}
+
+
+# Gear upkeep
+class Service(BaseModel):
+    date: str
+    equipment: str
+    kind: str  # wax | tune
+
+
+@app.get("/api/gear")
+def gear_upkeep():
+    return season.upkeep()
+
+
+@app.post("/api/gear")
+def add_service(s: Service):
+    if s.equipment not in ("board", "ski") or s.kind not in ("wax", "tune"):
+        raise HTTPException(400, "equipment must be board or ski, kind wax or tune")
+    return {"id": season.add_service(s.date, s.equipment, s.kind)}
+
+
+class Shopping(BaseModel):
+    item: str
+
+
+@app.post("/api/shopping")
+def shopping(s: Shopping):
+    try:
+        ha.shopping_add(s.item.strip()[:100])
+    except Exception as e:
+        raise HTTPException(502, f"Home Assistant shopping list failed: {e}")
+    return {"ok": True}
+
+
+# Settings
+@app.get("/api/settings")
+def get_settings():
+    return {"settings": settings.load(), "phones": ha.notify_services() if ha.available() else [],
+            "claude_ready": advisor.available(), "in_home_assistant": ha.available()}
+
+
+@app.put("/api/settings")
+def put_settings(patch: dict):
+    try:
+        return settings.save(patch)
+    except OSError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/")
+def index():
+    return FileResponse(os.path.join(STATIC, "index.html"))
+
+
+app.mount("/static", StaticFiles(directory=STATIC), name="static")

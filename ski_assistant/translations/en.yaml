@@ -1,0 +1,11 @@
+configuration:
+  powder_alert_inches:
+    name: Powder alert (inches)
+    description: >-
+      A resort counts as a powder alert when this much snow is forecast over the next two days. The
+      powder-morning wake-up uses the same amount of fresh snow.
+  anthropic_api_key:
+    name: Anthropic API key
+    description: >-
+      Turns on "Ask Claude" (where should I go Saturday?). Create a key at console.anthropic.com and paste
+      it here. Stays on your Home Assistant.

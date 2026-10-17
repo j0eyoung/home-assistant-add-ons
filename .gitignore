@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*.db
+ski_resorts.json
+ski_settings.json
