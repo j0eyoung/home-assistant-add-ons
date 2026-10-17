@@ -3,6 +3,7 @@
 Weights are plain constants so they are easy to tune. On a "skis" day the score is 85% the normal score plus
 15% for how much of the mountain is green and blue (the learning-to-ski bias)."""
 import datetime as dt
+import os
 
 import drive
 import gear
@@ -16,6 +17,7 @@ import weather
 # Max points per factor (sum 100)
 W_SNOW, W_WIND, W_TEMP, W_CROWD, W_DRIVE = 40, 20, 15, 15, 10
 SKI_BIAS = 15  # share of the score given to beginner terrain on a skis day
+POWDER_IN = float(os.getenv("POWDER_ALERT_INCHES", "6"))
 
 
 def _snow_pts(inches):  # 12in+ is a full powder day
@@ -34,7 +36,9 @@ def _temp_pts(tmax, tmin):  # happiest around 15-30F; penalise bitter cold and s
     return W_TEMP * max(0.0, 1 - gap / 20)
 
 
-def _crowd_pts(date):  # Mon-Thu quiet, Fri medium, Sat/Sun busiest
+def _crowd_pts(date):  # Mon-Thu quiet, Fri medium, Sat/Sun and ski holidays busiest
+    if drive.holiday(date):
+        return 0.0
     return {4: 0.6, 5: 0.0, 6: 0.15}.get(date.weekday(), 1.0) * W_CROWD
 
 
@@ -72,7 +76,7 @@ def best_days(resorts, date=None, skis=False, include_paid=True, departure=None)
         day = days[idx]
         prev = days[idx - 1]["snow_in"] if idx > 0 else 0.0
         fresh = round(prev + day["snow_in"], 1)
-        leave = drive.plan(r, dep, date, st["arrive_by"], st["buffer_min"])
+        leave = drive.plan(r, dep, date, st["arrive_by"], st["buffer_min"], powder=fresh >= POWDER_IN)
         score, parts = score_day(r, day, fresh, leave["drive_min"])
         pct = livestatus.beginner_pct(r)
         if skis:

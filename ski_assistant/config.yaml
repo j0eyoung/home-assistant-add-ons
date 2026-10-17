@@ -1,6 +1,6 @@
 name: "Ski Assistant"
 description: "Where and when to ski or ride: powder alerts, best-day picks, leave times and a season log."
-version: "0.2.0"
+version: "0.3.0"
 slug: "ski_assistant"
 image: "ghcr.io/j0eyoung/{arch}-ski-assistant"
 arch:

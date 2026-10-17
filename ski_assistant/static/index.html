@@ -105,14 +105,24 @@ async function rank(){
    <td>${r.leave.leave_at} <span class="mute">(${r.leave.drive_min} min)</span></td></tr>`).join('');
  const top=rows.find(r=>!r.error);
  $('pick').innerHTML=top?`<h3>${esc(top.resort)}</h3>
-  <p>Leave at <b>${top.leave.leave_at}</b> to be on the lifts by ${esc(SET.arrive_by)}. Drive about ${top.leave.drive_min} min${top.leave.traffic_factor>1?' with I-70 traffic':''}.</p>
-  ${top.leave.home_advice?`<p class="mute">${esc(top.leave.home_advice)}</p>`:''}
+  ${leaveText(top.leave)}
   <p><b>Wear</b> (feels like ${top.gear.feels_like_f}F): ${top.gear.wear.map(esc).join(', ')}</p>
   ${top.gear.notes.length?`<p><b>Also</b>: ${top.gear.notes.map(esc).join('; ')}</p>`:''}
   ${top.beginner_pct!=null?`<p class="mute">${top.beginner_pct}% of trails are green or blue.</p>`:''}
   ${top.transit.length?'<p><b>Shuttle / transit</b></p><ul>'+top.transit.map(x=>`<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('')+'</ul>':''}`:'';
  const a=await api('alerts');
  $('alerts').innerHTML=a.map(x=>`<div class="alert">Powder: ${esc(x.resort)} ${x.snow_in}" from ${x.first_day}</div>`).join('');
+}
+
+const t12=s=>{const [h,m]=s.split(':').map(Number);return `${h%12||12}:${String(m).padStart(2,'0')}${h<12?'am':'pm'}`};
+const hm=n=>n>=60?`${Math.floor(n/60)}h${String(n%60).padStart(2,'0')}`:`${n} min`;
+function leaveText(l){
+ let s=l.reason==='traffic'
+  ?`<p>Leave at <b>${t12(l.leave_at)}</b> to be on I-70 by ${t12(l.on_i70_by)}, ahead of the ${l.powder?'powder-day ':''}rush. You'll get there about ${t12(l.arrive_at)} (${hm(l.drive_min)}).</p>
+    <p class="mute">Leave at 7:00am instead and it's about ${hm(l.if_later.drive_min)}.</p>`
+  :`<p>Leave at <b>${t12(l.leave_at)}</b> to be on the lifts by ${t12(SET.arrive_by)}. Drive about ${hm(l.drive_min)}.</p>`;
+ if(l.home)s+=`<p class="mute">Heading home: leave before ${t12(l.home.leave_before)} or after ${t12(l.home.or_after)}. At 3pm it's about ${hm(l.home.drive_min_at_3pm)} (vs ${hm(l.home.base_min)} with no traffic).</p>`;
+ return s;
 }
 
 async function askClaude(){
