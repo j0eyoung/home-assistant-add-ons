@@ -18,7 +18,9 @@ homeassistant_api: true
 hassio_api: true
 options:
   powder_alert_inches: 6
-  anthropic_api_key: ""
+  claude_code_oauth_token: ""
+  cotrip_api_key: ""
 schema:
   powder_alert_inches: int(1,48)
-  anthropic_api_key: password?
+  claude_code_oauth_token: password?
+  cotrip_api_key: password?

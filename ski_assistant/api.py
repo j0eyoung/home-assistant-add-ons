@@ -9,10 +9,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import advisor
+import claudecode
 import dailysnow
 import db
 import drive
 import forecast
+import garmin
 import ha
 import livestatus
 import ranking
@@ -22,6 +24,7 @@ import scheduler
 import season
 import settings
 import snotel
+import traffic
 import transit
 import util
 
@@ -34,6 +37,13 @@ ALERT_IN = float(os.getenv("POWDER_ALERT_INCHES", "6"))
 def _startup():
     db.init()
     scheduler.start()
+    garmin.start_background(on_new_today=_garmin_new_today)
+
+
+def _garmin_new_today(activities):
+    """A ride recorded on Garmin today: the boot and glove drying reminder."""
+    r = garmin.nearest_resort(activities[0].get("startLatitude"), activities[0].get("startLongitude"))
+    scheduler.drying_reminder(r["name"] if r else "the mountain")
 
 
 # Conditions and planning
@@ -86,7 +96,7 @@ class Ask(BaseModel):
 @app.post("/api/ask")
 def ask(a: Ask):
     if not advisor.available():
-        raise HTTPException(400, "Add your Anthropic API key in the add-on Configuration tab.")
+        raise HTTPException(400, "Connect Claude in Settings first.")
     try:
         return advisor.ask(a.question.strip()[:500], a.date, a.skis, a.departure)
     except Exception as e:
@@ -148,8 +158,22 @@ def resort_detail(resort_id: str, band: str = "mid", departure: Optional[str] = 
             "band": band, "elevations": forecast.band_ft(r), "models": list(forecast.MODELS.values()),
             "daily": days, "next48": hours, **_report(r),
             "info": resortinfo.info(r) | {"openskimap_url": resortinfo.openskimap_url(r)},
-            "transit": transit.for_resort(r),
+            "transit": transit.for_resort(r), "traffic": traffic.for_resort(r),
             "leave_today": drive.plan(r, settings.departure(departure), today, st["arrive_by"], st["buffer_min"])}
+
+
+@app.get("/api/traffic")
+def traffic_now():
+    """Waze sensors found in Home Assistant, which resort each matches, I-70 corridor alerts and COtrip travel times."""
+    sensors = traffic.waze_sensors()
+    roads = sorted({x for r in resorts.load() for x in traffic.roads_for(r)})
+    return {"waze_sensors": sensors, "waze": {r["id"]: traffic.waze_for(r, sensors) for r in resorts.load()},
+            "cotrip": traffic.alerts(roads), "travel_times": traffic.travel_times()}
+
+
+@app.get("/api/traffic/debug")
+def traffic_debug():
+    return traffic.debug()
 
 
 @app.get("/api/daily-snow")
@@ -185,15 +209,65 @@ def add_day(d: Day):
     return {"id": new_id}
 
 
+class DayEquipment(BaseModel):
+    equipment: str
+
+
+@app.patch("/api/days/{day_id}")
+def set_day_equipment(day_id: int, e: DayEquipment):
+    if e.equipment not in ("board", "ski"):
+        raise HTTPException(400, "equipment must be board or ski")
+    season.set_equipment(day_id, e.equipment)
+    return {"ok": True}
+
+
 @app.delete("/api/days/{day_id}")
 def delete_day(day_id: int):
     season.delete_day(day_id)
     return {"ok": True}
 
 
-@app.get("/api/pass")
-def pass_summary():
-    return season.pass_summary()
+# Garmin import
+class GarminLogin(BaseModel):
+    email: str
+    password: str
+
+
+class GarminCode(BaseModel):
+    code: str
+
+
+@app.get("/api/garmin")
+def garmin_state():
+    return garmin.status()
+
+
+@app.post("/api/garmin/connect")
+def garmin_connect(g: GarminLogin):
+    result = garmin.connect(g.email, g.password)
+    if result["ok"] and not result["needs_mfa"]:
+        garmin.sync()
+    return {**result, **garmin.status()}
+
+
+@app.post("/api/garmin/mfa")
+def garmin_mfa(c: GarminCode):
+    result = garmin.submit_mfa(c.code)
+    if result["ok"]:
+        garmin.sync()
+    return {**result, **garmin.status()}
+
+
+@app.post("/api/garmin/sync")
+def garmin_sync():
+    added, error, _ = garmin.sync()
+    return {"added": added, "error": error, **garmin.status()}
+
+
+@app.post("/api/garmin/disconnect")
+def garmin_disconnect():
+    garmin.disconnect()
+    return garmin.status()
 
 
 # Learning to ski
@@ -256,7 +330,7 @@ def shopping(s: Shopping):
 @app.get("/api/settings")
 def get_settings():
     return {"settings": settings.load(), "phones": ha.notify_services() if ha.available() else [],
-            "claude_ready": advisor.available(), "in_home_assistant": ha.available()}
+            "in_home_assistant": ha.available()}
 
 
 @app.put("/api/settings")
@@ -265,6 +339,37 @@ def put_settings(patch: dict):
         return settings.save(patch)
     except OSError as e:
         raise HTTPException(400, str(e))
+
+
+# Claude Code sign-in (same flow as the Workout Tracker)
+@app.get("/api/claude")
+def claude_state():
+    return claudecode.login_state()
+
+
+@app.post("/api/claude/login")
+def claude_login():
+    return claudecode.start_login()
+
+
+class LoginCode(BaseModel):
+    code: str
+
+
+@app.post("/api/claude/code")
+def claude_code(c: LoginCode):
+    return claudecode.send_code(c.code)
+
+
+@app.post("/api/claude/cancel")
+def claude_cancel():
+    return claudecode.cancel_login()
+
+
+@app.post("/api/claude/logout")
+def claude_logout():
+    claudecode.logout()
+    return claudecode.login_state()
 
 
 @app.get("/")

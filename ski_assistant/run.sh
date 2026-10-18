@@ -12,12 +12,18 @@ opt() {
 export POWDER_ALERT_INCHES="$(opt powder_alert_inches)"
 [ -z "$POWDER_ALERT_INCHES" ] && export POWDER_ALERT_INCHES=6
 
-# Anthropic API key from the Configuration tab (whitespace stripped); "Ask Claude" is off without it
-key="$(opt anthropic_api_key)"
-if [ -n "$key" ]; then
-    export ANTHROPIC_API_KEY="$key"
-else
-    echo "No Anthropic API key set: Ask Claude will not work until you add one in the Configuration tab."
+# Claude runs through Claude Code on your subscription. Sign in from Settings in the app; the login is kept
+# here so it survives updates.
+export CLAUDE_CONFIG_DIR="/data/claude"
+mkdir -p "$CLAUDE_CONFIG_DIR"
+
+# Optional fallback: a token from `claude setup-token` in the Configuration tab (whitespace stripped)
+token="$(opt claude_code_oauth_token)"
+if [ -n "$token" ]; then
+    export CLAUDE_CODE_OAUTH_TOKEN="$token"
 fi
+
+# Optional: CDOT COtrip key for live I-70 incidents, conditions and travel times
+export COTRIP_API_KEY="$(opt cotrip_api_key)"
 
 exec uvicorn api:app --host 0.0.0.0 --port 8099

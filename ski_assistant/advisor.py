@@ -1,10 +1,8 @@
 """Ask Claude "where should I go Saturday?" from the add-on's own data (ranking, leave times, gear, pass and log).
-Uses the Anthropic API key from the add-on options (ANTHROPIC_API_KEY)."""
+Runs through Claude Code on your Claude subscription (see claudecode.py)."""
 import json
-import os
 
-import anthropic
-
+import claudecode
 import ranking
 import resorts
 import season
@@ -18,7 +16,7 @@ snowboards, and is learning to ski. Give one clear pick, the leave time, and one
 
 
 def available():
-    return bool(os.getenv("ANTHROPIC_API_KEY"))
+    return claudecode.available()
 
 
 def _compact(rows):
@@ -33,22 +31,11 @@ def ask(question, date=None, skis=False, departure=None):
                "departure": settings.departure(departure)["name"], "ranking": _compact(rows),
                "gear_for_top_pick": rows[0].get("gear") if rows and "error" not in rows[0] else None,
                "season": season.pass_summary()}
-    text = complete(SYSTEM, f"Data:\n{json.dumps(context)}\n\nQuestion: {question}")
-    return {"answer": text or "Claude declined to answer that one.", "date": date}
+    text, error = complete(SYSTEM, f"Data:\n{json.dumps(context)}\n\nQuestion: {question}")
+    return {"answer": text or error, "date": date}
 
 
-def complete(system, user):
-    """One Claude call; returns the text, or None if a safety classifier declined on every model."""
-    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
-    response = client.beta.messages.create(
-        model=settings.load()["claude_model"],
-        max_tokens=16000,
-        output_config={"effort": "medium"},
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",  # retry on another model if a safety classifier declines
-        system=system,
-        messages=[{"role": "user", "content": user}],
-    )
-    if response.stop_reason == "refusal":
-        return None
-    return "".join(b.text for b in response.content if b.type == "text").strip()
+def complete(instructions, data, timeout=300):
+    """One Claude Code call with instructions and data in a single prompt. Returns (text, error)."""
+    return claudecode.run(f"{instructions}\n\nReply with the answer only: no preamble, no tool use.\n\n{data}",
+                          timeout=timeout)

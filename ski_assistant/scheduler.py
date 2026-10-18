@@ -46,6 +46,9 @@ def powder_morning():
     top = rows[0]
     msg = (f"Powder morning. {top['resort']} has {top['fresh_in']} inches of fresh snow. "
            f"Leave by {top['leave']['leave_at']} to be on the lifts by {s['arrive_by']}.")
+    waze = (top.get("traffic") or {}).get("waze")
+    if waze:
+        msg += f" Waze says {waze['minutes']} minutes right now."
     actions = [lambda: _push("Powder morning", msg)]
     if s["powder_lights"]:
         actions.append(lambda: ha.turn_on(s["powder_lights"]))

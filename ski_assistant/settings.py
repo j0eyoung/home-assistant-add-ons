@@ -10,11 +10,8 @@ DEFAULTS = {
     "default_departure": "Home",
     "arrive_by": "08:30",          # when you want to be at the lifts
     "buffer_min": 20,              # parking, boots, lift line
-    "ikon_price": 0,               # what you paid for the Ikon pass
-    "keystone_price": 0,           # what you paid for the Keystone pass
     "wax_every_days": {"board": 5, "ski": 5},
     "tune_every_days": {"board": 15, "ski": 15},
-    "claude_model": "claude-opus-5-5",
     # Home Assistant tie-ins; leave blank to skip
     "phone_service": "",           # e.g. mobile_app_pixel
     "tts_entity": "",              # e.g. tts.home_assistant_cloud
@@ -25,6 +22,7 @@ DEFAULTS = {
     "climate_entity": "",
     "normal_temp_f": 68,
     "drying_reminder": True,
+    "waze_sensors": {},            # {resort_id: sensor.entity_id}; empty = match Waze sensors by name
 }
 
 

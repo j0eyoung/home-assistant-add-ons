@@ -4,8 +4,14 @@ configuration:
     description: >-
       A resort counts as a powder alert when this much snow is forecast over the next two days. The
       powder-morning wake-up uses the same amount of fresh snow.
-  anthropic_api_key:
-    name: Anthropic API key
+  claude_code_oauth_token:
+    name: Claude token (optional)
     description: >-
-      Turns on "Ask Claude" (where should I go Saturday?). Create a key at console.anthropic.com and paste
-      it here. Stays on your Home Assistant.
+      Daily Snow and Ask Claude run on your Claude subscription through Claude Code (no API fees). The easy way
+      is Settings > Connect Claude inside the app. Or run `claude setup-token` in the Claude Terminal add-on and
+      paste the token here. Stays on your Home Assistant.
+  cotrip_api_key:
+    name: COtrip API key (optional)
+    description: >-
+      Live I-70 incidents, road conditions, closures and travel times from CDOT. Get a free key at
+      manage-api.cotrip.org and paste it here. Stays on your Home Assistant.

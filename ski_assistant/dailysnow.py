@@ -1,6 +1,6 @@
 """Daily Snow: a short Colorado forecast discussion, written by Claude once a day from the add-on's own data
-(the 15-day blend per resort, the two models' totals, and the observed snow). Stored in SQLite so it costs
-one API call a day, not one per page view."""
+(the 15-day blend per resort, the two models' totals, and the observed snow), through Claude Code on your
+Claude subscription. Stored in SQLite so it runs once a day, not once per page view."""
 import json
 from concurrent.futures import ThreadPoolExecutor
 
@@ -53,7 +53,7 @@ def get(refresh=False):
         if row:
             return row[0]
     if not advisor.available():
-        return {"error": "Add your Anthropic API key in the add-on Configuration tab to get the Daily Snow."}
+        return {"error": "Connect Claude in Settings to get the Daily Snow."}
     with ThreadPoolExecutor(max_workers=4) as pool:
         data = [x for x in pool.map(_safe, resorts.load()) if x]
     text = advisor.complete(SYSTEM, f"Today is {today}.\nData:\n{json.dumps(data)}")

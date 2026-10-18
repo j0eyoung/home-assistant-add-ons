@@ -11,6 +11,7 @@ import livestatus
 import resortinfo
 import settings
 import snotel
+import traffic
 import transit
 import util
 import weather
@@ -56,11 +57,13 @@ def score_day(r, day, new_snow_in, drive_min):
 
 
 def best_days(resorts, date=None, skis=False, include_paid=True, departure=None):
-    """Ranked list for `date` (ISO string, default today in Denver). Fresh snow = snow forecast for `date`
-    plus the day before (what is on the ground that morning)."""
+    """Ranked list for `date` (ISO string, default today in Denver). Fresh snow = overnight snow before `date`
+    plus the snow that falls during the day."""
     date = date or util.today().isoformat()
     st = settings.load()
     dep = settings.departure(departure)
+    live_today = date == util.today().isoformat()
+    sensors = traffic.waze_sensors() if live_today else []
     rows = []
     for r in resorts:
         if not include_paid and r.get("pass") == "paid":
@@ -75,8 +78,10 @@ def best_days(resorts, date=None, skis=False, include_paid=True, departure=None)
             rows.append({"resort": r["name"], "error": f"no forecast for {date}"})
             continue
         day = days[idx]
+        # Fresh = overnight snow (the previous day's 6am-6am total) plus what falls while you ride (6am-6pm);
+        # that evening's snow belongs to tomorrow
         prev = days[idx - 1]["snow_in"] if idx > 0 else 0.0
-        fresh = round(prev + day["snow_in"], 1)
+        fresh = round(prev + day["snow_day_in"], 1)
         leave = drive.plan(r, dep, date, st["arrive_by"], st["buffer_min"], powder=fresh >= POWDER_IN)
         score, parts = score_day(r, day, fresh, leave["drive_min"])
         pct = resortinfo.beginner_pct(r)
@@ -86,7 +91,8 @@ def best_days(resorts, date=None, skis=False, include_paid=True, departure=None)
                      "fresh_in": fresh, "tmax_f": day["tmax_f"], "tmin_f": day["tmin_f"],
                      "wind_mph": day["wind_mph"], "gust_mph": day["gust_mph"], "leave": leave,
                      "beginner_pct": pct, "gear": gear.call(day, fresh, skis), "transit": transit.for_resort(r),
-                     "snowpack": snotel.resort_snowpack(r), "live": livestatus.live_status(r)})
+                     "snowpack": snotel.resort_snowpack(r), "live": livestatus.live_status(r),
+                     "traffic": traffic.for_resort(r, sensors) if live_today else None})
     rows.sort(key=lambda x: -x.get("score", -1))
     return rows
 

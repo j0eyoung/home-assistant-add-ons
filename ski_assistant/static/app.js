@@ -15,8 +15,8 @@ const t12 = s => { const [h, m] = s.split(':').map(Number); return `${h % 12 || 
 const hm = n => n >= 60 ? `${Math.floor(n / 60)}h${String(n % 60).padStart(2, '0')}` : `${n} min`;
 
 let RESORTS = [], SET = {}, FC = null;
-const TABS = { forecast: 'Forecast', plan: 'Plan', radar: 'Radar', log: 'Season log', pass: 'Pass', learn: 'Learning to ski', gear: 'Gear', settings: 'Settings' };
-const LOADERS = { forecast: () => {}, plan: () => {}, radar: loadRadar, log: loadDays, pass: loadPass, learn: loadLessons, gear: loadGear, settings: loadSettings };
+const TABS = { forecast: 'Forecast', plan: 'Plan', radar: 'Radar', log: 'Season log', learn: 'Learning to ski', gear: 'Gear', settings: 'Settings' };
+const LOADERS = { forecast: () => {}, plan: loadRoads, radar: loadRadar, log: () => { loadGarmin(); loadDays(); }, learn: loadLessons, gear: loadGear, settings: () => { loadClaude(); loadSettings(); } };
 
 function show(t) {
   for (const k in TABS) { $(k).classList.toggle('on', k === t); $('b_' + k).classList.toggle('on', k === t); }
@@ -24,7 +24,7 @@ function show(t) {
   try { localStorage.setItem('tab', t); } catch (e) {}
 }
 $('nav').innerHTML = Object.entries(TABS).map(([k, v]) => `<button id="b_${k}" onclick="show('${k}')">${v}</button>`).join('');
-const rname = id => (RESORTS.find(r => r.id === id) || {}).name || id;
+const rname = id => id === 'other' ? 'Other' : (RESORTS.find(r => r.id === id) || {}).name || id;
 const ropts = blank => (blank ? '<option value="">(any)</option>' : '') + RESORTS.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
 
 async function init() {
@@ -149,7 +149,7 @@ async function openResort(id, band) {
        <td>${x.quality === 'rain' || x.quality === 'mixed' ? `<span class="warnnote">${esc(x.quality)}</span>` : esc(x.quality || '')}</td>
        <td class="num">${Math.round(x.tmax_f)}° / ${Math.round(x.tmin_f)}°</td><td class="num">${Math.round(x.wind_mph)} / ${Math.round(x.gust_mph)} mph</td>
        <td class="num">${x.freezing_ft ? x.freezing_ft.toLocaleString() + ' ft' : '-'}</td></tr>`).join('')}</table></div>
-   <div class="card"><h3>Getting there</h3>${leaveText(d.leave_today)}
+   <div class="card"><h3>Getting there</h3>${leaveText(d.leave_today)}${trafficText(d.traffic)}
      ${d.transit.length ? '<ul>' + d.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}
      <p>${d.info.webcams_url ? `<a href="${esc(d.info.webcams_url)}" target="_blank" rel="noopener">Webcams</a>` : ''}
        ${d.info.openskimap_url ? ` · <a href="${esc(d.info.openskimap_url)}" target="_blank" rel="noopener">Trail map (OpenSkiMap)</a>` : ''}
@@ -224,12 +224,38 @@ async function rank() {
        <td class="num">${r.snowpack ? inch(r.snowpack.depth_in) : '-'}</td><td class="num">${r.live && r.live.lifts_total != null ? r.live.lifts_open + '/' + r.live.lifts_total : '-'}</td>
        <td>${t12(r.leave.leave_at)} <span class="mute">(${hm(r.leave.drive_min)})</span></td></tr>`).join('');
   const top = rows.find(r => !r.error);
-  $('pick').innerHTML = top ? `<h3>${esc(top.resort)}</h3>${leaveText(top.leave)}
+  $('pick').innerHTML = top ? `<h3>${esc(top.resort)}</h3>${leaveText(top.leave)}${trafficText(top.traffic)}
     <p><b>Wear</b> (feels like ${top.gear.feels_like_f}°F): ${top.gear.wear.map(esc).join(', ')}</p>
     ${top.gear.notes.length ? `<p><b>Also</b>: ${top.gear.notes.map(esc).join('; ')}</p>` : ''}
     ${top.beginner_pct != null ? `<p class="mute">${top.beginner_pct}% of runs are green or blue.</p>` : ''}
     ${top.transit.length ? '<p><b>Shuttle / transit</b></p><ul>' + top.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}` : '';
 }
+function trafficText(tr) {
+  if (!tr) return '';
+  let s = '';
+  if (tr.waze) s += `<p><b>Waze right now:</b> ${hm(tr.waze.minutes)}${tr.waze.route ? ' via ' + esc(tr.waze.route) : ''}.</p>`;
+  const al = (tr.cotrip && tr.cotrip.alerts) || [];
+  if (al.length) s += '<ul>' + al.slice(0, 4).map(a => `<li class="warnnote">${esc(a.kind)}${a.road ? ' on ' + esc(a.road) : ''}${a.direction ? ' ' + esc(a.direction) : ''}: ${esc(a.text)}</li>`).join('') + '</ul>';
+  else if (tr.cotrip && tr.cotrip.configured) s += `<p class="mute">No CDOT alerts on ${esc(tr.roads.join(', '))} right now.</p>`;
+  return s;
+}
+async function loadRoads() {
+  const box = $('roads');
+  let t;
+  try { t = await api('traffic'); } catch (e) { box.innerHTML = `<h3>Roads right now</h3><p class="mute">${esc(e.message)}</p>`; return; }
+  const al = t.cotrip.alerts || [];
+  let h = '<h3>Roads right now</h3>';
+  if (!t.cotrip.configured) h += '<p class="mute">Add a free COtrip key (manage-api.cotrip.org) in the add-on Configuration tab for live CDOT incidents, chain laws and closures.</p>';
+  else if (t.cotrip.error && !al.length) h += `<p class="due">COtrip: ${esc(t.cotrip.error)}</p>`;
+  else h += al.length ? '<ul>' + al.slice(0, 10).map(a => `<li class="warnnote">${esc(a.kind)}${a.road ? ' on ' + esc(a.road) : ''}${a.direction ? ' ' + esc(a.direction) : ''}: ${esc(a.text)}</li>`).join('') + '</ul>'
+                      : '<p>No CDOT incidents or closures on your routes.</p>';
+  if (t.travel_times.length) h += '<p class="small">' + t.travel_times.slice(0, 8).map(x => `${esc(x.name)}: ${hm(Math.round(x.minutes))}${x.usual_minutes ? ` (usually ${hm(Math.round(x.usual_minutes))})` : ''}`).join(' · ') + '</p>';
+  const w = Object.entries(t.waze).filter(([, v]) => v);
+  h += w.length ? '<p class="small">Waze now: ' + w.map(([id, v]) => `${esc(rname(id))} ${hm(v.minutes)}`).join(' · ') + '</p>'
+               : `<p class="small">${t.waze_sensors.length ? 'Waze sensors found, but none matched a resort: pick them in Settings.' : 'No Waze Travel Time sensors found in Home Assistant.'}</p>`;
+  box.innerHTML = h;
+}
+
 function leaveText(l) {
   let s = l.reason === 'traffic'
     ? `<p>Leave at <b>${t12(l.leave_at)}</b> to be on I-70 by ${t12(l.on_i70_by)}, ahead of the ${l.powder ? 'powder-day ' : ''}rush. You'll get there about ${t12(l.arrive_at)} (${hm(l.drive_min)}).</p>
@@ -250,25 +276,49 @@ async function askClaude() {
 async function loadDays() {
   const d = await api('days');
   $('days').innerHTML = '<tr><th>Date</th><th>Resort</th><th>On</th><th class="num">Vertical</th><th>Notes</th><th></th></tr>' +
-    d.map(x => `<tr><td>${x.date}</td><td>${esc(rname(x.resort_id))}</td><td>${x.equipment}</td><td class="num">${x.vertical_ft ?? ''}</td><td>${esc(x.notes)}</td>
+    d.map(x => `<tr><td>${x.date}</td><td>${esc(rname(x.resort_id))}</td><td><button title="Switch board / skis" onclick="flipDay(${x.id}, '${x.equipment === 'board' ? 'ski' : 'board'}')">${x.equipment === 'board' ? 'Board' : 'Skis'}</button></td><td class="num">${x.vertical_ft ?? ''}</td><td>${esc(x.notes)}${x.garmin_ids ? '<span class="badge">Garmin</span>' : ''}</td>
       <td><button onclick="delDay(${x.id})">Delete</button></td></tr>`).join('');
 }
+/* Garmin import: ski and snowboard activities become days automatically */
+async function loadGarmin(msg) {
+  const g = await api('garmin').catch(() => ({ connected: false }));
+  const last = g.last_sync || {};
+  let h = '<h3>Garmin</h3>';
+  const form = `<p class="mute">Sign in once and every Ski or Snowboard activity you record becomes a day here, with resort, board or skis, and vertical. Your password is only used to sign in and isn't saved.</p>
+    <div class="row"><input id="gemail" type="email" placeholder="Garmin email" autocomplete="username">
+    <input id="gpass" type="password" placeholder="Garmin password" autocomplete="current-password"><button onclick="garminConnect()">Connect Garmin</button></div>`;
+  if (g.needs_mfa) h += `<p>Garmin sent you a verification code.</p><div class="row"><input id="gcode" inputmode="numeric" placeholder="Code"><button onclick="garminMfa()">Verify</button></div>`;
+  else if (g.connected) {
+    h += `<p>Connected${g.source === 'workout tracker' ? ' (using the Workout Tracker’s Garmin login)' : ''}.
+      ${last.at ? `Last checked ${esc(last.at)}${last.added ? `, ${last.added} new` : ''}.` : ''}
+      <button onclick="garminSync()">Sync now</button>${g.source === 'own' ? ' <button onclick="garminDisconnect()">Disconnect</button>' : ''}</p>`;
+    if (last.error) h += `<p class="due">${esc(last.error)}</p>` + form;
+  } else h += form;
+  if (msg) h += `<p class="mute">${esc(msg)}</p>`;
+  $('garminbox').innerHTML = h;
+}
+async function garminConnect() {
+  const r = await api('garmin/connect', { method: 'POST', body: JSON.stringify({ email: $('gemail').value, password: $('gpass').value }) }).catch(e => ({ error: e.message }));
+  loadGarmin(r.error || (r.needs_mfa ? '' : 'Connected. Your Garmin days are being imported.')); loadDays();
+}
+async function garminMfa() {
+  const r = await api('garmin/mfa', { method: 'POST', body: JSON.stringify({ code: $('gcode').value }) }).catch(e => ({ error: e.message }));
+  loadGarmin(r.error || 'Connected.'); loadDays();
+}
+async function garminSync() {
+  $('garminbox').insertAdjacentHTML('beforeend', '<p class="mute">Checking Garmin...</p>');
+  const r = await api('garmin/sync', { method: 'POST' }).catch(e => ({ error: e.message }));
+  loadGarmin(r.error || `${r.added} new day${r.added === 1 ? '' : 's'} imported.`); loadDays();
+}
+async function garminDisconnect() { if (confirm('Disconnect Garmin from this add-on?')) { await api('garmin/disconnect', { method: 'POST' }); loadGarmin(); } }
+
 async function addDay() {
   await api('days', { method: 'POST', body: JSON.stringify({ date: $('ld').value, resort_id: $('lr').value, equipment: $('le').value,
     vertical_ft: $('lv').value ? +$('lv').value : null, notes: $('ln').value }) });
   $('ln').value = ''; $('lv').value = ''; loadDays();
 }
+async function flipDay(id, eq) { await api('days/' + id, { method: 'PATCH', body: JSON.stringify({ equipment: eq }) }); loadDays(); }
 async function delDay(id) { if (confirm('Delete this day?')) { await api('days/' + id, { method: 'DELETE' }); loadDays(); } }
-
-/* ---------- Pass ---------- */
-async function loadPass() {
-  const p = await api('pass');
-  const pr = (n, x) => `<p><b>${n}</b>: ${x.days} days${x.price ? ` · $${x.price} paid · ${x.cost_per_day != null ? '$' + x.cost_per_day + ' per day' : 'no days yet'}` : ' · add the price in Settings'}</p>`;
-  $('passbox').innerHTML = `<h3>This season: ${p.total_days} days${p.vertical_ft ? ` · ${p.vertical_ft.toLocaleString()} ft` : ''}</h3>
-    ${pr('Ikon', p.passes.ikon)}${pr('Keystone', p.passes.keystone)}
-    ${p.limited_days.map(l => `<p class="mute">${esc(l.resort)}: ${l.used} of ${l.limit} Ikon days used</p>`).join('')}
-    <table>${p.per_resort.map(r => `<tr><td>${esc(r.resort)}</td><td class="num">${r.days}</td></tr>`).join('')}</table>`;
-}
 
 /* ---------- Learning to ski ---------- */
 async function loadLessons() {
@@ -303,13 +353,12 @@ async function addShop() {
 
 /* ---------- Settings ---------- */
 const FIELDS = [['arrive_by', 'On the lifts by (HH:MM)'], ['buffer_min', 'Buffer for parking and boots (min)', 'n'],
-  ['ikon_price', 'Ikon pass price ($)', 'n'], ['keystone_price', 'Keystone pass price ($)', 'n'],
   ['phone_service', 'Phone notify service'], ['tts_entity', 'TTS entity (tts.*)'], ['speaker_entity', 'Speaker (media_player.*)'],
   ['wake_time', 'Powder wake-up time (HH:MM)'], ['tracker_entity', 'Phone tracker (device_tracker.*)'],
-  ['climate_entity', 'Thermostat (climate.*)'], ['normal_temp_f', 'Normal temperature (F)', 'n'], ['claude_model', 'Claude model']];
+  ['climate_entity', 'Thermostat (climate.*)'], ['normal_temp_f', 'Normal temperature (F)', 'n']];
 async function loadSettings() {
   const r = await api('settings'); const s = r.settings; SET = s;
-  $('setbox').innerHTML = `<h3>Settings</h3>${r.claude_ready ? '' : '<p class="due">No Anthropic API key yet: add it in the add-on Configuration tab.</p>'}
+  $('setbox').innerHTML = `<h3>Settings</h3>
     ${r.phones.length ? `<p class="mute">Phone services found: ${r.phones.map(esc).join(', ')}</p>` : ''}
     <div class="row">${FIELDS.map(([k, l, t]) => `<label>${l}<input id="s_${k}" value="${esc(s[k])}" ${t ? 'type="number"' : ''}></label>`).join('')}</div>
     <label>Powder lights (comma separated entity ids)<input id="s_powder_lights" value="${esc(s.powder_lights.join(', '))}"></label>
@@ -318,9 +367,39 @@ async function loadSettings() {
     <h3>Departure points</h3><p class="mute">One per line: name, latitude, longitude. The first is your home.</p>
     <textarea id="s_deps">${s.departures.map(d => `${esc(d.name)}, ${d.lat}, ${d.lon}`).join('\n')}</textarea>
     <label>Default departure<input id="s_default_departure" value="${esc(s.default_departure)}"></label>
+    <h3>Waze travel times</h3><div id="wazemap" class="row"><span class="mute">Looking for Waze sensors...</span></div>
     <label class="inline"><input type="checkbox" id="s_drying" ${s.drying_reminder ? 'checked' : ''}> Boot and glove drying reminder after a logged day</label>
     <p><button onclick="saveSettings()">Save</button> <span id="setmsg" class="mute"></span></p>`;
+  const t = await api('traffic').catch(() => null);
+  const ws = t ? t.waze_sensors : [];
+  $('wazemap').innerHTML = !ws.length ? '<span class="mute">No Waze Travel Time sensors in Home Assistant. Add one per resort (Settings &gt; Devices &amp; services &gt; Waze Travel Time) and they show up here.</span>'
+    : RESORTS.map(r => `<label>${esc(r.name)}<select data-resort="${r.id}"><option value="">Match by name</option>${ws.map(w =>
+        `<option value="${esc(w.entity_id)}" ${(s.waze_sensors || {})[r.id] === w.entity_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>`).join('');
 }
+/* Claude Code sign-in: Daily Snow and Ask Claude run on your Claude subscription */
+async function loadClaude() {
+  const s = await api('claude').catch(() => ({ cli: false }));
+  const l = s.login;
+  let h = '<h3>Claude</h3><p class="mute">Daily Snow and Ask Claude run through Claude Code on your Claude subscription (no API fees).</p>';
+  if (!s.cli) h += '<p class="due">Claude Code is not installed here (it is inside the add-on).</p>';
+  else if (l && !l.done) {
+    h += l.url ? `<p><a href="${esc(l.url)}" target="_blank" rel="noopener">Open this link and approve</a>, then paste the code it shows.</p>
+      <div class="row"><input id="ccode" placeholder="Paste the code" style="flex:1;min-width:200px"><button onclick="claudeCode()">Connect</button>
+      <button onclick="claudeCancel()">Cancel</button></div>` : '<p class="mute">Starting sign-in...</p>';
+    if (!l.url) setTimeout(loadClaude, 2000);
+  } else if (s.signed_in) h += '<p>Connected to your Claude account. <button onclick="claudeLogout()">Sign out</button></p>';
+  else {
+    if (l && l.done && l.result) h += `<p class="mute">${esc(l.result)}</p>`;
+    h += s.token ? '<p>Using the token from the add-on Configuration tab. <button onclick="claudeLogin()">Connect your account instead</button></p>'
+                 : '<p><button onclick="claudeLogin()">Connect Claude</button></p>';
+  }
+  $('claudebox').innerHTML = h;
+}
+async function claudeLogin() { await api('claude/login', { method: 'POST' }); loadClaude(); }
+async function claudeCode() { await api('claude/code', { method: 'POST', body: JSON.stringify({ code: $('ccode').value }) }); loadClaude(); }
+async function claudeCancel() { await api('claude/cancel', { method: 'POST' }); loadClaude(); }
+async function claudeLogout() { if (confirm('Sign Claude out of this add-on?')) { await api('claude/logout', { method: 'POST' }); loadClaude(); } }
+
 async function saveSettings() {
   const p = {}; for (const [k, , t] of FIELDS) { const v = $('s_' + k).value; p[k] = t ? +v : v.trim(); }
   p.powder_lights = $('s_powder_lights').value.split(',').map(x => x.trim()).filter(Boolean);
@@ -329,6 +408,8 @@ async function saveSettings() {
     .map(([name, lat, lon]) => ({ name, lat: +lat, lon: +lon }));
   if (!p.departures.length) { $('setmsg').textContent = 'Add at least one departure point.'; return; }
   p.default_departure = $('s_default_departure').value.trim(); p.drying_reminder = $('s_drying').checked;
+  const wm = {}; document.querySelectorAll('#wazemap select').forEach(el => { if (el.value) wm[el.dataset.resort] = el.value; });
+  if (document.querySelector('#wazemap select')) p.waze_sensors = wm;
   await api('settings', { method: 'PUT', body: JSON.stringify(p) }); $('setmsg').textContent = 'Saved.';
   SET = (await api('settings')).settings; fillDepartures();
 }

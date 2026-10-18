@@ -9,7 +9,8 @@ _lock = threading.Lock()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS days (id INTEGER PRIMARY KEY, date TEXT NOT NULL, resort_id TEXT NOT NULL,
-  equipment TEXT NOT NULL CHECK (equipment IN ('board','ski')), vertical_ft INTEGER, notes TEXT DEFAULT '');
+  equipment TEXT NOT NULL CHECK (equipment IN ('board','ski')), vertical_ft INTEGER, notes TEXT DEFAULT '',
+  garmin_ids TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS lessons (id INTEGER PRIMARY KEY, date TEXT NOT NULL, resort_id TEXT DEFAULT '',
   skills TEXT DEFAULT '', notes TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS service (id INTEGER PRIMARY KEY, date TEXT NOT NULL,
@@ -28,6 +29,9 @@ def _conn():
 def init():
     with _lock, closing(_conn()) as c:
         c.executescript(SCHEMA)
+        # Columns added after the first release
+        if "garmin_ids" not in {r[1] for r in c.execute("PRAGMA table_info(days)")}:
+            c.execute("ALTER TABLE days ADD COLUMN garmin_ids TEXT DEFAULT ''")
         c.commit()
 
 

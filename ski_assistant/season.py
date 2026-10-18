@@ -1,4 +1,4 @@
-"""Season log, pass tracking, learning-to-ski log and gear upkeep, all from the SQLite tables in db.py."""
+"""Season log, season summary, learning-to-ski log and gear upkeep, all from the SQLite tables in db.py."""
 import datetime as dt
 
 import db
@@ -27,21 +27,26 @@ def list_days(since=None):
 
 
 def delete_day(day_id):
+    # A deleted Garmin day stays deleted: remember its activity ids so the next sync skips them
+    for row in db.q("SELECT garmin_ids FROM days WHERE id = ?", (day_id,)):
+        for gid in filter(None, (row["garmin_ids"] or "").split(",")):
+            db.once(f"garmin_skip:{gid}")
     db.x("DELETE FROM days WHERE id = ?", (day_id,))
 
 
-# Pass tracking
+def set_equipment(day_id, equipment):
+    db.x("UPDATE days SET equipment = ? WHERE id = ?", (equipment, day_id))
+
+
+# Season summary (context for Ask Claude, and the days sensor in Home Assistant)
 def pass_summary(since=None):
-    s = settings.load()
     by_id = {r["id"]: r for r in resorts.load()}
     days = list_days(since)
     per_resort = {}
     for d in days:
         per_resort[d["resort_id"]] = per_resort.get(d["resort_id"], 0) + 1
-    passes = {}
-    for pass_name, price in (("ikon", s["ikon_price"]), ("keystone", s["keystone_price"])):
-        used = sum(n for rid, n in per_resort.items() if by_id.get(rid, {}).get("pass") == pass_name)
-        passes[pass_name] = {"price": price, "days": used, "cost_per_day": round(price / used, 2) if used and price else None}
+    passes = {name: sum(n for rid, n in per_resort.items() if by_id.get(rid, {}).get("pass") == name)
+              for name in ("ikon", "keystone")}
     limits = [{"resort": by_id[rid]["name"], "used": per_resort.get(rid, 0), "limit": r["pass_days"]}
               for rid, r in by_id.items() if r.get("pass_days")]
     return {"total_days": len(days), "per_resort": [{"resort": by_id.get(k, {}).get("name", k), "days": v}
