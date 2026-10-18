@@ -1,5 +1,6 @@
 """API + single-page UI. Served through Home Assistant ingress on port 8099."""
 import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
@@ -8,10 +9,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import advisor
+import dailysnow
 import db
+import drive
+import forecast
 import ha
 import livestatus
 import ranking
+import resortinfo
 import resorts
 import scheduler
 import season
@@ -100,6 +105,59 @@ def briefing():
     for a in alerts():
         lines.append(f"Powder alert: {a['resort']} {a['snow_in']} in from {a['first_day']}.")
     return "\n".join(lines) or "No ski data right now."
+
+
+# OpenSnow-style forecast
+def _report(r):
+    return {"snotel": snotel.resort_snowpack(r), "reported": livestatus.live_status(r)}
+
+
+def _row(r):
+    try:
+        return {"id": r["id"], "name": r["name"], "pass": r.get("pass"), "summary": forecast.summary(r), **_report(r)}
+    except Exception as e:
+        return {"id": r["id"], "name": r["name"], "pass": r.get("pass"), "error": str(e)}
+
+
+@app.get("/api/forecast")
+def forecast_all():
+    """Every resort's snow summary (last 5 days, next 15) and observed snow, fetched in parallel."""
+    rs = resorts.load()
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        rows = list(pool.map(_row, rs))
+    for row, r in zip(rows, rs):
+        row["lat"], row["lon"] = r["lat"], r["lon"]
+    return rows
+
+
+@app.get("/api/resort/{resort_id}")
+def resort_detail(resort_id: str, band: str = "mid", departure: Optional[str] = None):
+    r = next((x for x in resorts.load() if x["id"] == resort_id), None)
+    if not r:
+        raise HTTPException(404, "unknown resort")
+    if band not in forecast.BANDS:
+        raise HTTPException(400, "band must be base, mid or summit")
+    try:
+        days = forecast.daily(r, band)
+        hours = forecast.next48(r, band)
+    except Exception as e:
+        raise HTTPException(502, f"forecast failed: {e}")
+    st = settings.load()
+    today = util.today().isoformat()
+    return {"resort": {k: r[k] for k in ("id", "name", "base_ft", "summit_ft", "lat", "lon")} | {"pass": r.get("pass")},
+            "band": band, "elevations": forecast.band_ft(r), "models": list(forecast.MODELS.values()),
+            "daily": days, "next48": hours, **_report(r),
+            "info": resortinfo.info(r) | {"openskimap_url": resortinfo.openskimap_url(r)},
+            "transit": transit.for_resort(r),
+            "leave_today": drive.plan(r, settings.departure(departure), today, st["arrive_by"], st["buffer_min"])}
+
+
+@app.get("/api/daily-snow")
+def daily_snow(refresh: bool = False):
+    try:
+        return dailysnow.get(refresh=refresh)
+    except Exception as e:
+        raise HTTPException(502, f"Daily Snow failed: {e}")
 
 
 # Season log

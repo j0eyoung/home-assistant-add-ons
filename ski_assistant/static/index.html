@@ -1,41 +1,48 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ski Assistant</title>
-<style>
-:root{--bg:#101820;--card:#18242f;--line:#2a3a4a;--fg:#e8eef3;--mute:#9fb0bf;--acc:#4fa3e0;--good:#1d4d2b}
-*{box-sizing:border-box}
-body{font-family:system-ui,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);max-width:1000px}
-nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-nav button.on{background:var(--acc);color:#04121e;border-color:var(--acc)}
-input,select,button,textarea{font:inherit;padding:6px 10px;border-radius:6px;border:1px solid #456;background:#1c2a38;color:var(--fg)}
-button{cursor:pointer}
-textarea{width:100%;min-height:60px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-.wrap{overflow-x:auto}
-.alert{background:var(--good);padding:8px;border-radius:6px;margin-top:8px}
-.mute{color:var(--mute);font-size:.9em}
-.due{color:#ffb347;font-weight:600}
-a{color:var(--acc)}
-h3{margin:4px 0 8px}
-section{display:none}section.on{display:block}
-label{display:flex;flex-direction:column;gap:3px;font-size:.9em;color:var(--mute)}
-</style></head><body>
+<link rel="stylesheet" href="static/app.css">
+</head><body>
 <nav id="nav"></nav>
+<div id="tip" role="tooltip"></div>
+
+<section id="forecast">
+ <div id="flist">
+  <div class="card" id="dailysnow"></div>
+  <div id="alerts"></div>
+  <div class="card">
+   <div class="row spread"><h3>Snow forecast <span class="small">(mid-mountain, ECMWF + GFS blend)</span></h3>
+    <label class="inline">Sort <select id="fsort" onchange="renderForecast()">
+     <option value="next5_in">Next 5 days</option><option value="days6_10_in">Days 6-10</option>
+     <option value="days11_15_in">Days 11-15</option><option value="last5_in">Last 5 days</option><option value="name">Name</option></select></label></div>
+   <div class="legend"><span><i class="box" style="background:var(--snow-past)"></i>Last 5 days (modelled)</span>
+    <span><i class="box" style="background:var(--snow)"></i>Days 1-10</span><span><i class="box" style="background:var(--snow-low)"></i>Days 11-15 (low confidence)</span></div>
+   <div id="frows"><p class="mute">Loading forecasts...</p></div>
+   <p class="small">Snow is worked out from each elevation's temperature and humidity, not the model's own snowfall.
+    Trail data &copy; OpenSkiMap.org and OpenStreetMap contributors (ODbL).</p>
+  </div>
+ </div>
+ <div id="fdetail" hidden></div>
+</section>
 
 <section id="plan">
  <div class="row">
   <input type="date" id="d"> <select id="dep"></select>
-  <label style="flex-direction:row;align-items:center;gap:6px;color:var(--fg)"><input type="checkbox" id="skis"> Skis day</label>
+  <label class="inline"><input type="checkbox" id="skis"> Skis day</label>
   <button onclick="rank()">Rank</button>
  </div>
- <div id="alerts"></div>
  <div class="card wrap"><table id="t"></table></div>
  <div class="card" id="pick"></div>
  <div class="card"><h3>Ask Claude</h3>
   <div class="row"><input id="q" style="flex:1;min-width:200px" placeholder="Where should I go Saturday?"><button onclick="askClaude()">Ask</button></div>
   <p id="ans"></p></div>
+</section>
+
+<section id="radar">
+ <div class="row spread"><h3>Radar</h3>
+  <div class="row"><button id="rplay" onclick="toggleRadar()">Pause</button><span id="rtime" class="mute"></span></div></div>
+ <div id="map"></div>
+ <p class="small">Radar: NEXRAD composite via Iowa Environmental Mesonet. Pins show the next 5 days of snow. Map &copy; OpenStreetMap contributors.</p>
 </section>
 
 <section id="log">
@@ -69,146 +76,6 @@ label{display:flex;flex-direction:column;gap:3px;font-size:.9em;color:var(--mute
 
 <section id="settings"><div class="card" id="setbox"></div></section>
 
-<script>
-// Relative URLs so this works behind Home Assistant ingress
-const $=id=>document.getElementById(id);
-const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const api=async(p,o={})=>{const r=await fetch('api/'+p,{headers:{'Content-Type':'application/json'},...o});
- const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.detail||r.status);return j};
-const today=new Date().toLocaleDateString('en-CA');
-let RESORTS=[],SET={};
-const TABS={plan:'Plan',log:'Season log',pass:'Pass',learn:'Learning to ski',gear:'Gear',settings:'Settings'};
-function show(t){for(const k in TABS){$(k).classList.toggle('on',k===t);$('b_'+k).classList.toggle('on',k===t)}
- ({plan:()=>{},log:loadDays,pass:loadPass,learn:loadLessons,gear:loadGear,settings:loadSettings})[t]();
- try{localStorage.setItem('tab',t)}catch(e){}}
-$('nav').innerHTML=Object.entries(TABS).map(([k,v])=>`<button id="b_${k}" onclick="show('${k}')">${v}</button>`).join('');
-const rname=id=>(RESORTS.find(r=>r.id===id)||{}).name||id;
-const ropts=(blank)=>(blank?'<option value="">(any)</option>':'')+RESORTS.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('');
-
-async function init(){
- RESORTS=await api('resorts');SET=(await api('settings')).settings;
- $('dep').innerHTML=SET.departures.map(d=>`<option ${d.name===SET.default_departure?'selected':''}>${esc(d.name)}</option>`).join('');
- for(const id of ['d','ld','sd','gd'])$(id).value=today;
- $('lr').innerHTML=ropts();$('sr').innerHTML=ropts(true);
- let t='plan';try{t=localStorage.getItem('tab')||'plan'}catch(e){}
- show(TABS[t]?t:'plan');rank();
-}
-
-async function rank(){
- const t=$('t');t.innerHTML='<tr><td>Loading...</td></tr>';
- const q=`best-days?date=${$('d').value}&skis=${$('skis').checked}&departure=${encodeURIComponent($('dep').value)}`;
- const rows=await api(q);
- t.innerHTML='<tr><th>Resort</th><th>Score</th><th>Fresh in</th><th>Gust</th><th>High</th><th>Base in</th><th>Lifts</th><th>Leave</th></tr>'+
-  rows.map(r=>r.error?`<tr><td>${esc(r.resort)}</td><td colspan=7>${esc(r.error)}</td></tr>`:
-  `<tr><td>${esc(r.resort)}</td><td>${r.score}</td><td>${r.fresh_in}</td><td>${Math.round(r.gust_mph)}</td><td>${Math.round(r.tmax_f)}F</td>
-   <td>${r.snowpack?r.snowpack.depth_in:'-'}</td><td>${r.live&&r.live.lifts_total!=null?r.live.lifts_open+'/'+r.live.lifts_total:'-'}</td>
-   <td>${r.leave.leave_at} <span class="mute">(${r.leave.drive_min} min)</span></td></tr>`).join('');
- const top=rows.find(r=>!r.error);
- $('pick').innerHTML=top?`<h3>${esc(top.resort)}</h3>
-  ${leaveText(top.leave)}
-  <p><b>Wear</b> (feels like ${top.gear.feels_like_f}F): ${top.gear.wear.map(esc).join(', ')}</p>
-  ${top.gear.notes.length?`<p><b>Also</b>: ${top.gear.notes.map(esc).join('; ')}</p>`:''}
-  ${top.beginner_pct!=null?`<p class="mute">${top.beginner_pct}% of trails are green or blue.</p>`:''}
-  ${top.transit.length?'<p><b>Shuttle / transit</b></p><ul>'+top.transit.map(x=>`<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('')+'</ul>':''}`:'';
- const a=await api('alerts');
- $('alerts').innerHTML=a.map(x=>`<div class="alert">Powder: ${esc(x.resort)} ${x.snow_in}" from ${x.first_day}</div>`).join('');
-}
-
-const t12=s=>{const [h,m]=s.split(':').map(Number);return `${h%12||12}:${String(m).padStart(2,'0')}${h<12?'am':'pm'}`};
-const hm=n=>n>=60?`${Math.floor(n/60)}h${String(n%60).padStart(2,'0')}`:`${n} min`;
-function leaveText(l){
- let s=l.reason==='traffic'
-  ?`<p>Leave at <b>${t12(l.leave_at)}</b> to be on I-70 by ${t12(l.on_i70_by)}, ahead of the ${l.powder?'powder-day ':''}rush. You'll get there about ${t12(l.arrive_at)} (${hm(l.drive_min)}).</p>
-    <p class="mute">Leave at 7:00am instead and it's about ${hm(l.if_later.drive_min)}.</p>`
-  :`<p>Leave at <b>${t12(l.leave_at)}</b> to be on the lifts by ${t12(SET.arrive_by)}. Drive about ${hm(l.drive_min)}.</p>`;
- if(l.home)s+=`<p class="mute">Heading home: leave before ${t12(l.home.leave_before)} or after ${t12(l.home.or_after)}. At 3pm it's about ${hm(l.home.drive_min_at_3pm)} (vs ${hm(l.home.base_min)} with no traffic).</p>`;
- return s;
-}
-
-async function askClaude(){
- $('ans').textContent='Thinking...';
- try{const r=await api('ask',{method:'POST',body:JSON.stringify({question:$('q').value||'Where should I go?',date:$('d').value,skis:$('skis').checked,departure:$('dep').value})});
-  $('ans').textContent=r.answer}catch(e){$('ans').textContent=e.message}
-}
-
-async function loadDays(){
- const d=await api('days');
- $('days').innerHTML='<tr><th>Date</th><th>Resort</th><th>On</th><th>Vertical</th><th>Notes</th><th></th></tr>'+
-  d.map(x=>`<tr><td>${x.date}</td><td>${esc(rname(x.resort_id))}</td><td>${x.equipment}</td><td>${x.vertical_ft??''}</td><td>${esc(x.notes)}</td>
-  <td><button onclick="delDay(${x.id})">Delete</button></td></tr>`).join('');
-}
-async function addDay(){
- await api('days',{method:'POST',body:JSON.stringify({date:$('ld').value,resort_id:$('lr').value,equipment:$('le').value,
-  vertical_ft:$('lv').value?+$('lv').value:null,notes:$('ln').value})});
- $('ln').value='';$('lv').value='';loadDays();
-}
-async function delDay(id){if(confirm('Delete this day?')){await api('days/'+id,{method:'DELETE'});loadDays()}}
-
-async function loadPass(){
- const p=await api('pass');
- const pr=(n,x)=>`<p><b>${n}</b>: ${x.days} days${x.price?` · $${x.price} paid · ${x.cost_per_day!=null?'$'+x.cost_per_day+' per day':'no days yet'}`:' · add the price in Settings'}</p>`;
- $('passbox').innerHTML=`<h3>This season: ${p.total_days} days${p.vertical_ft?` · ${p.vertical_ft.toLocaleString()} ft`:''}</h3>
-  ${pr('Ikon',p.passes.ikon)}${pr('Keystone',p.passes.keystone)}
-  ${p.limited_days.map(l=>`<p class="mute">${esc(l.resort)}: ${l.used} of ${l.limit} Ikon days used</p>`).join('')}
-  <table>${p.per_resort.map(r=>`<tr><td>${esc(r.resort)}</td><td>${r.days}</td></tr>`).join('')}</table>`;
-}
-
-async function loadLessons(){
- const l=await api('lessons');
- $('skillpick').innerHTML=l.skill_list.map(s=>`<label style="flex-direction:row;gap:4px;color:var(--fg)"><input type="checkbox" value="${esc(s)}">${esc(s)}</label>`).join('');
- const s=l.summary;
- $('learnsum').innerHTML=`<h3>${s.ski_days} ski days · ${s.lessons} lessons</h3>
-  <p>${Object.entries(s.skills).map(([k,v])=>`${esc(k)} (${v})`).join(', ')||'No skills logged yet.'}</p>
-  ${s.not_yet.length?`<p class="mute">Not practiced yet: ${s.not_yet.map(esc).join(', ')}</p>`:''}`;
- $('lessons').innerHTML='<tr><th>Date</th><th>Resort</th><th>Skills</th><th>Notes</th><th></th></tr>'+
-  l.lessons.map(x=>`<tr><td>${x.date}</td><td>${esc(rname(x.resort_id))}</td><td>${esc(x.skills)}</td><td>${esc(x.notes)}</td>
-  <td><button onclick="delLesson(${x.id})">Delete</button></td></tr>`).join('');
-}
-async function addLesson(){
- const skills=[...$('skillpick').querySelectorAll('input:checked')].map(i=>i.value).join(', ');
- await api('lessons',{method:'POST',body:JSON.stringify({date:$('sd').value,resort_id:$('sr').value,skills,notes:$('sn').value})});
- $('sn').value='';loadLessons();
-}
-async function delLesson(id){if(confirm('Delete this lesson?')){await api('lessons/'+id,{method:'DELETE'});loadLessons()}}
-
-async function loadGear(){
- const g=await api('gear');
- $('upkeep').innerHTML='<h3>Upkeep</h3>'+Object.entries(g).map(([eq,k])=>`<p><b>${eq==='board'?'Board':'Skis'}</b>: `+
-  Object.entries(k).map(([kind,u])=>`<span class="${u.due?'due':''}">${kind} ${u.days_since}/${u.every} days${u.due?' (due)':''}</span>`).join(' · ')+'</p>').join('');
-}
-async function addService(){await api('gear',{method:'POST',body:JSON.stringify({date:$('gd').value,equipment:$('ge').value,kind:$('gk').value})});loadGear()}
-async function addShop(){try{await api('shopping',{method:'POST',body:JSON.stringify({item:$('shop').value})});$('shopmsg').textContent='Added.';$('shop').value=''}catch(e){$('shopmsg').textContent=e.message}}
-
-const FIELDS=[['arrive_by','On the lifts by (HH:MM)'],['buffer_min','Buffer for parking and boots (min)','n'],
- ['ikon_price','Ikon pass price ($)','n'],['keystone_price','Keystone pass price ($)','n'],
- ['phone_service','Phone notify service'],['tts_entity','TTS entity (tts.*)'],['speaker_entity','Speaker (media_player.*)'],
- ['wake_time','Powder wake-up time (HH:MM)'],['tracker_entity','Phone tracker (device_tracker.*)'],
- ['climate_entity','Thermostat (climate.*)'],['normal_temp_f','Normal temperature (F)','n'],['claude_model','Claude model']];
-async function loadSettings(){
- const r=await api('settings');const s=r.settings;SET=s;
- $('setbox').innerHTML=`<h3>Settings</h3>${r.claude_ready?'':'<p class="due">No Anthropic API key yet: add it in the add-on Configuration tab.</p>'}
-  ${r.phones.length?`<p class="mute">Phone services found: ${r.phones.map(esc).join(', ')}</p>`:''}
-  <div class="row">${FIELDS.map(([k,l,t])=>`<label>${l}<input id="s_${k}" value="${esc(s[k])}" ${t?'type="number"':''}></label>`).join('')}</div>
-  <label>Powder lights (comma separated entity ids)<input id="s_powder_lights" value="${esc(s.powder_lights.join(', '))}"></label>
-  <label>Wax every (days on snow): board / skis<span class="row"><input id="w_b" type="number" value="${s.wax_every_days.board}"><input id="w_s" type="number" value="${s.wax_every_days.ski}"></span></label>
-  <label>Tune every (days on snow): board / skis<span class="row"><input id="t_b" type="number" value="${s.tune_every_days.board}"><input id="t_s" type="number" value="${s.tune_every_days.ski}"></span></label>
-  <h3>Departure points</h3><p class="mute">One per line: name, latitude, longitude. The first is your home.</p>
-  <textarea id="s_deps">${s.departures.map(d=>`${d.name}, ${d.lat}, ${d.lon}`).join('\n')}</textarea>
-  <label>Default departure<input id="s_default_departure" value="${esc(s.default_departure)}"></label>
-  <label style="flex-direction:row;gap:6px;color:var(--fg)"><input type="checkbox" id="s_drying" ${s.drying_reminder?'checked':''}> Boot and glove drying reminder after a logged day</label>
-  <p><button onclick="saveSettings()">Save</button> <span id="setmsg" class="mute"></span></p>`;
-}
-async function saveSettings(){
- const p={};for(const [k,,t] of FIELDS){const v=$('s_'+k).value;p[k]=t?+v:v.trim()}
- p.powder_lights=$('s_powder_lights').value.split(',').map(x=>x.trim()).filter(Boolean);
- p.wax_every_days={board:+$('w_b').value,ski:+$('w_s').value};p.tune_every_days={board:+$('t_b').value,ski:+$('t_s').value};
- p.departures=$('s_deps').value.split('\n').map(l=>l.split(',').map(x=>x.trim())).filter(a=>a.length===3&&!isNaN(+a[1])&&!isNaN(+a[2]))
-  .map(([name,lat,lon])=>({name,lat:+lat,lon:+lon}));
- if(!p.departures.length){$('setmsg').textContent='Add at least one departure point.';return}
- p.default_departure=$('s_default_departure').value.trim();p.drying_reminder=$('s_drying').checked;
- await api('settings',{method:'PUT',body:JSON.stringify(p)});$('setmsg').textContent='Saved.';
- SET=(await api('settings')).settings;
- $('dep').innerHTML=SET.departures.map(d=>`<option ${d.name===SET.default_departure?'selected':''}>${esc(d.name)}</option>`).join('');
-}
-init();
-</script></body></html>
+<script src="static/charts.js"></script>
+<script src="static/app.js"></script>
+</body></html>

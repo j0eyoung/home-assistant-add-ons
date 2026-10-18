@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS lessons (id INTEGER PRIMARY KEY, date TEXT NOT NULL, 
 CREATE TABLE IF NOT EXISTS service (id INTEGER PRIMARY KEY, date TEXT NOT NULL,
   equipment TEXT NOT NULL CHECK (equipment IN ('board','ski')), kind TEXT NOT NULL CHECK (kind IN ('wax','tune')));
 CREATE TABLE IF NOT EXISTS sent (key TEXT PRIMARY KEY, at TEXT);
+CREATE TABLE IF NOT EXISTS daily_snow (date TEXT PRIMARY KEY, text TEXT, created TEXT);
 """
 
 

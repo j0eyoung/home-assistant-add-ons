@@ -8,6 +8,7 @@ import os
 import drive
 import gear
 import livestatus
+import resortinfo
 import settings
 import snotel
 import transit
@@ -78,7 +79,7 @@ def best_days(resorts, date=None, skis=False, include_paid=True, departure=None)
         fresh = round(prev + day["snow_in"], 1)
         leave = drive.plan(r, dep, date, st["arrive_by"], st["buffer_min"], powder=fresh >= POWDER_IN)
         score, parts = score_day(r, day, fresh, leave["drive_min"])
-        pct = livestatus.beginner_pct(r)
+        pct = resortinfo.beginner_pct(r)
         if skis:
             score = round(score * (100 - SKI_BIAS) / 100 + SKI_BIAS * (pct if pct is not None else 50) / 100, 1)
         rows.append({"resort": r["name"], "id": r["id"], "pass": r.get("pass"), "score": score, "parts": parts,

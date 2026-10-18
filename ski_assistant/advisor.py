@@ -33,6 +33,12 @@ def ask(question, date=None, skis=False, departure=None):
                "departure": settings.departure(departure)["name"], "ranking": _compact(rows),
                "gear_for_top_pick": rows[0].get("gear") if rows and "error" not in rows[0] else None,
                "season": season.pass_summary()}
+    text = complete(SYSTEM, f"Data:\n{json.dumps(context)}\n\nQuestion: {question}")
+    return {"answer": text or "Claude declined to answer that one.", "date": date}
+
+
+def complete(system, user):
+    """One Claude call; returns the text, or None if a safety classifier declined on every model."""
     client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
     response = client.beta.messages.create(
         model=settings.load()["claude_model"],
@@ -40,10 +46,9 @@ def ask(question, date=None, skis=False, departure=None):
         output_config={"effort": "medium"},
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",  # retry on another model if a safety classifier declines
-        system=SYSTEM,
-        messages=[{"role": "user", "content": f"Data:\n{json.dumps(context)}\n\nQuestion: {question}"}],
+        system=system,
+        messages=[{"role": "user", "content": user}],
     )
     if response.stop_reason == "refusal":
-        return {"answer": "Claude declined to answer that one.", "date": date}
-    text = "".join(b.text for b in response.content if b.type == "text").strip()
-    return {"answer": text, "date": date}
+        return None
+    return "".join(b.text for b in response.content if b.type == "text").strip()

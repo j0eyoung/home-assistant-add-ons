@@ -1,21 +1,10 @@
-"""Open-Meteo forecast per resort, at mid-mountain elevation. Imperial units."""
-import httpjson
-from resorts import mid_ft
-
-URL = "https://api.open-meteo.com/v1/forecast"
-FT_TO_M = 0.3048
+"""Daily mid-mountain forecast used by the ranking, powder alerts and gear call (a thin view over forecast.py).
+A day's snow_in runs 6am that day to 6am the next, so the day before's total is what's fresh that morning."""
+import forecast as fc
 
 
-def forecast(r, days=7, past_days=3):
-    """Daily list of dicts: date, snow_in, tmax_f, tmin_f, wind_mph, gust_mph (past_days included)."""
-    q = (f"?latitude={r['lat']}&longitude={r['lon']}&elevation={round(mid_ft(r) * FT_TO_M)}"
-         "&daily=snowfall_sum,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,wind_gusts_10m_max"
-         "&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch"
-         f"&timezone=America%2FDenver&forecast_days={days}&past_days={past_days}")
-    d = httpjson.get(URL + q)["daily"]
-    out = []
-    for i, day in enumerate(d["time"]):
-        out.append({"date": day, "snow_in": d["snowfall_sum"][i] or 0.0, "tmax_f": d["temperature_2m_max"][i],
-                    "tmin_f": d["temperature_2m_min"][i], "wind_mph": d["wind_speed_10m_max"][i] or 0.0,
-                    "gust_mph": d["wind_gusts_10m_max"][i] or 0.0})
-    return out
+def forecast(r, days=None, past_days=None):
+    """Daily list of dicts: date, snow_in, tmax_f, tmin_f, wind_mph, gust_mph, quality, rain_in
+    (the past 5 days are included; callers filter by date)."""
+    return [{k: d[k] for k in ("date", "snow_in", "tmax_f", "tmin_f", "wind_mph", "gust_mph", "quality", "rain_in")}
+            for d in fc.daily(r)]

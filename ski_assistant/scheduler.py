@@ -7,6 +7,8 @@ import threading
 import time
 import traceback
 
+import advisor
+import dailysnow
 import db
 import ha
 import ranking
@@ -102,7 +104,15 @@ def drying_reminder(resort_name):
             traceback.print_exc()
 
 
-TASKS = [powder_alerts, powder_morning, upkeep_reminders, thermostat, sensors]
+def daily_snow():
+    """Write the Daily Snow once a day, from 5:30am, so it's ready for the morning (one Claude call)."""
+    now = util.now()
+    # One attempt a day: if Claude fails or declines, it waits for tomorrow (or a manual refresh)
+    if advisor.available() and now.strftime("%H:%M") >= "05:30" and db.once(f"dailysnow:{now.date()}"):
+        dailysnow.get()
+
+
+TASKS = [daily_snow, powder_alerts, powder_morning, upkeep_reminders, thermostat, sensors]
 
 
 def _loop():

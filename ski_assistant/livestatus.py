@@ -29,11 +29,23 @@ def _mtnpowder(cfg):
         if r["Name"] == cfg["name"]:
             s = r.get("SnowReport") or {}
             acres, total = _num(s.get("OpenTerrainAcres")), _num(s.get("TotalTerrainAcres"))
+            # The resort's reported snow: use whichever area (mid-mountain, summit, base) has numbers
+            areas = [s.get(k) or {} for k in ("MidMountainArea", "SummitArea", "BaseArea")]
+            area = next((a for a in areas if _num(a.get("BaseIn")) is not None or _num(a.get("Last24HoursIn")) is not None), {})
             return {"lifts_open": s.get("TotalOpenLifts"), "lifts_total": s.get("TotalLifts"),
                     "trails_open": s.get("TotalOpenTrails"), "trails_total": s.get("TotalTrails"),
                     "terrain_open_pct": round(100 * acres / total) if total else None,
-                    "season_in": _num(s.get("SeasonTotalIn")), "as_of": s.get("LastUpdate")}
+                    "status": r.get("OperatingStatus"), "conditions": _text(s.get("BaseConditions")),
+                    "base_in": _num(area.get("BaseIn")) or _num(s.get("SnowBaseRangeIn")),
+                    "new_24h_in": _num(area.get("Last24HoursIn")), "new_48h_in": _num(area.get("Last48HoursIn")),
+                    "new_72h_in": _num(area.get("Last72HoursIn")), "new_7d_in": _num(area.get("Last7DaysIn")),
+                    "storm_in": _num(s.get("StormTotalIn")), "season_in": _num(s.get("SeasonTotalIn")),
+                    "as_of": s.get("LastUpdate")}
     return None
+
+
+def _text(v):
+    return None if v in (None, "", "--") else v
 
 
 def _num(v):
@@ -41,23 +53,6 @@ def _num(v):
         return float(v)
     except (TypeError, ValueError):
         return None
-
-
-def beginner_pct(r):
-    """Percent of trails rated green or blue, when the resort's feed lists trails; else the resort's own
-    `beginner_pct` if the user set one, else None."""
-    cfg = r.get("live") or DEFAULT_LIVE.get(r["id"])
-    if cfg and cfg["type"] == "mtnpowder":
-        try:
-            for res in httpjson.get(MTNPOWDER, ttl=TTL, timeout=40)["Resorts"]:
-                if res["Name"] == cfg["name"]:
-                    trails = [t for a in res.get("MountainAreas", []) for t in a.get("Trails", [])]
-                    easy = sum(1 for t in trails if t.get("TrailIcon") in ("GreenCircle", "BlueSquare"))
-                    if trails:
-                        return round(100 * easy / len(trails))
-        except Exception:
-            pass
-    return r.get("beginner_pct")
 
 
 _TYPES = {"powdr": _powdr, "mtnpowder": _mtnpowder}

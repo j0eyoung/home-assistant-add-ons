@@ -1,0 +1,114 @@
+/* Tokens: chart chrome and series colours from the validated reference palette (light and dark) */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --raised: #f3f2ee;
+  --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10);
+  --s1: #2a78d6; --s2: #eb6834;                     /* ECMWF, GFS (and temperature) */
+  --snow: #2a78d6; --snow-past: #b9b8b0; --snow-low: #86b6ef;
+  --good: #006300; --warn-ink: #8a5a00; --warn: #fab219;
+  --accent: #2a78d6; --accent-ink: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --raised: #232322;
+    --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+    --s1: #3987e5; --s2: #d95926;
+    --snow: #3987e5; --snow-past: #6b6a65; --snow-low: #1c5cab;
+    --good: #0ca30c; --warn-ink: #fab219; --warn: #fab219;
+    --accent: #3987e5; --accent-ink: #0d0d0d;
+  }
+}
+
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 12px 16px 40px;
+       background: var(--page); color: var(--ink); max-width: 1100px; }
+a { color: var(--accent); }
+h2 { margin: 6px 0 10px; font-size: 1.3rem; }
+h3 { margin: 4px 0 8px; font-size: 1.05rem; }
+.mute { color: var(--ink2); font-size: .9em; }
+.small { font-size: .82em; color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+
+nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+nav button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+input, select, button, textarea { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);
+       background: var(--surface); color: var(--ink); }
+button { cursor: pointer; }
+button:hover { background: var(--raised); }
+nav button.on:hover { background: var(--accent); }
+textarea { width: 100%; min-height: 60px; }
+label { display: flex; flex-direction: column; gap: 3px; font-size: .9em; color: var(--ink2); }
+label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--ink); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 10px 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.spread { justify-content: space-between; }
+.wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink2); font-weight: 600; font-size: .88em; }
+td.num, th.num { text-align: right; }
+section { display: none; } section.on { display: block; }
+.due { color: var(--warn-ink); font-weight: 600; }
+.alert { border-left: 4px solid var(--good); background: var(--raised); padding: 8px 10px; border-radius: 6px; margin-top: 8px; }
+.badge { display: inline-block; font-size: .72em; padding: 1px 6px; border-radius: 10px; border: 1px solid var(--border);
+         color: var(--ink2); margin-left: 6px; vertical-align: middle; }
+.warnnote { color: var(--warn-ink); }
+.warnnote::before { content: "\26A0\FE0E "; }
+
+/* Daily Snow */
+#dailysnow .headline { font-weight: 700; font-size: 1.05rem; margin-bottom: 6px; }
+#dailysnow .body { white-space: pre-wrap; line-height: 1.45; }
+#dailysnow.collapsed .body { max-height: 4.4em; overflow: hidden; }
+
+/* Forecast list */
+.frow { display: grid; grid-template-columns: minmax(130px, 1.1fr) repeat(4, minmax(52px, .45fr)) minmax(180px, 2.4fr);
+        gap: 8px; align-items: center; padding: 10px 6px; border-bottom: 1px solid var(--grid); cursor: pointer; }
+.frow:hover { background: var(--raised); }
+.frow.head { cursor: default; color: var(--ink2); font-size: .82em; font-weight: 600; }
+.frow.head:hover { background: none; }
+.frow .name { font-weight: 600; }
+.frow .tot { text-align: right; font-variant-numeric: tabular-nums; }
+.frow .tot b { font-size: 1.1em; }
+.frow .strip { height: 44px; }
+@media (max-width: 720px) {
+  .frow { grid-template-columns: 1fr repeat(3, 52px); }
+  .frow .c-past, .frow.head .c-past { display: none; }
+  .frow .strip { grid-column: 1 / -1; }
+}
+
+/* Detail */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.tile { background: var(--raised); border-radius: 8px; padding: 8px 10px; }
+.tile .v { font-size: 1.35rem; font-weight: 700; }
+.tile .k { font-size: .8em; color: var(--ink2); }
+.seg button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.legend { display: flex; gap: 14px; font-size: .85em; color: var(--ink2); margin: 2px 0 4px; }
+.legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+.legend i.box { height: 10px; width: 10px; }
+
+/* Charts */
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; overflow: visible; }
+.chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .gridline { stroke: var(--grid); stroke-width: 1; }
+svg .baseline { stroke: var(--axis); stroke-width: 1; }
+svg .today { stroke: var(--ink2); stroke-width: 1; stroke-dasharray: 3 3; }
+svg .hit { fill: transparent; cursor: pointer; }
+svg .bar.hl { opacity: .75; }
+.chart .cross { stroke: var(--ink2); stroke-width: 1; }
+.chart .dlabel { fill: var(--ink2); font-size: 11px; }
+#tip { position: fixed; pointer-events: none; z-index: 1000; background: var(--surface); color: var(--ink);
+       border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: .82em; line-height: 1.35;
+       box-shadow: 0 4px 14px rgba(0, 0, 0, .18); display: none; max-width: 240px; }
+#tip b { font-weight: 600; }
+
+/* Radar */
+#map { height: 70vh; min-height: 380px; border-radius: 10px; border: 1px solid var(--border); }
+.snowpin { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 12px;
+           padding: 2px 7px; font-size: 12px; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+
+@media (max-width: 720px) { .frow.head .c-strip { display: none; } }
