@@ -2,7 +2,7 @@ name: "AI Workout Tracker"
 description: "Dynamic auto-regulating workout planner and tracker."
 version: "0.11.0"
 slug: "ai_workout"
-image: "ghcr.io/j0eyoung/{arch}-ai-workout"
+image: "ghcr.io/j0eyoung/{arch}-ha-workout-tracker"
 arch:
   - aarch64
   - amd64

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Fill blank options from /config/addon_secrets.json (shared across add-ons, kept only on the Green)
+python3 shared_secrets.py
+
 # Data lives in the shared config folder so it survives updates
 export RESORTS_PATH="/config/ski_resorts.json"
 export SETTINGS_PATH="/config/ski_settings.json"

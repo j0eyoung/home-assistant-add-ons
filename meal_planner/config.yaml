@@ -2,7 +2,7 @@ name: "Meal & Grocery Planner"
 description: "Weekly AI meal plans, recipes, a pantry you fill by scanning barcodes, and a store-grouped grocery list synced to Home Assistant."
 version: "0.2.0"
 slug: "meal_planner"
-image: "ghcr.io/j0eyoung/{arch}-meal-planner"
+image: "ghcr.io/j0eyoung/{arch}-ha-meal-planner"
 arch:
   - aarch64
   - amd64
