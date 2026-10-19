@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f3f5f8" media="(prefers-color-scheme: light)">
+  <meta name="color-scheme" content="dark light">
+  <title>Friends</title>
+  <link rel="stylesheet" href="static/app.css?v=__V__">
+</head>
+<body>
+  <header class="top">
+    <div class="top-row">
+      <div class="top-t">
+        <div class="title">Friends</div>
+        <div id="status" class="muted">Loading…</div>
+      </div>
+      <button type="button" class="btn primary" id="add-btn" aria-haspopup="dialog" disabled>+ Add</button>
+    </div>
+    <a id="back" class="back" target="_top" hidden>← Back to Home Assistant</a>
+  </header>
+
+  <main id="view"><p class="muted">Loading…</p></main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Edit sheet: the form is filled in by app.js each time a friend is opened -->
+  <dialog id="ed-dlg" class="sheet" aria-labelledby="ed-title">
+    <div class="sheet-head">
+      <h2 id="ed-title">Edit friend</h2>
+      <button type="button" class="btn icon" data-close aria-label="Close">✕</button>
+    </div>
+    <form id="ed-form" class="sheet-body" novalidate autocomplete="off"></form>
+    <div class="sheet-foot">
+      <button type="button" class="btn danger" id="ed-delete">Delete</button>
+      <button type="submit" class="btn primary" id="ed-save" form="ed-form">Save</button>
+    </div>
+    <div class="toast" role="status" aria-live="polite"></div>
+  </dialog>
+
+  <!-- Add sheet: contact picker, one-friend form, and the Contact Picker check -->
+  <dialog id="add-dlg" class="sheet" aria-labelledby="add-title">
+    <div class="sheet-head">
+      <h2 id="add-title">Add friends</h2>
+      <button type="button" class="btn icon" data-close aria-label="Close">✕</button>
+    </div>
+    <div class="sheet-body">
+      <section class="card" aria-labelledby="pick-h">
+        <h3 id="pick-h">Pick from your contacts</h3>
+        <p class="muted">Choose people from your phone's contacts, then set how close each one is.</p>
+        <button type="button" class="btn primary" id="pick-btn">Pick from contacts</button>
+        <div id="pick-note" class="note" aria-live="polite"></div>
+        <div id="pick-list"></div>
+      </section>
+
+      <section class="card" aria-labelledby="vcf-h">
+        <h3 id="vcf-h">Import a contacts file</h3>
+        <p class="muted">Works in any browser, including the Home Assistant app. On your phone: open the Contacts app,
+          tap Fix &amp; manage, then Export to file. Or on a computer: contacts.google.com, then Export, then vCard.</p>
+        <label class="btn" for="vcf-file" id="vcf-choose">Choose a .vcf file</label>
+        <input type="file" id="vcf-file" class="sr">
+        <div id="vcf-note" class="note" aria-live="polite"></div>
+        <div id="vcf-list"></div>
+      </section>
+
+      <section class="card" aria-labelledby="one-h">
+        <h3 id="one-h">Add one friend</h3>
+        <form id="ad-form" novalidate autocomplete="off">
+          <div id="ad-fields"></div>
+          <button type="submit" class="btn primary">Add friend</button>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="chk-h">
+        <h3 id="chk-h">Contact Picker check</h3>
+        <p class="muted">Shows whether this page can open your contacts. Tap "Pick from contacts" above to try it for real.</p>
+        <div id="pick-check"></div>
+        <button type="button" class="btn" id="diag-save">Save this check</button>
+      </section>
+    </div>
+    <div class="toast" role="status" aria-live="polite"></div>
+  </dialog>
+
+  <script src="static/app.js?v=__V__"></script>
+</body>
+</html>

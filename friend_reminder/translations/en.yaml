@@ -1,0 +1,20 @@
+configuration:
+  anthropic_api_key:
+    name: Anthropic API key
+    description: >-
+      Optional. Needed only for Claude-drafted conversation openers. Billed per use by Anthropic.
+      Stays on your Home Assistant.
+  model:
+    name: Claude model
+    description: Model used to draft openers.
+  notify_service:
+    name: Notify service
+    description: >-
+      The phone to nudge, for example mobile_app_pixel_9. Leave empty to use the only phone
+      with the Home Assistant companion app.
+  nudge_time:
+    name: Nudge time
+    description: Time (HH:MM, 24 hours) of the daily nudge. Defaults to midday.
+  nudges_per_day:
+    name: Nudges per day
+    description: How many friends to nudge each day, 1 or 2.

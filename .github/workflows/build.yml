@@ -36,6 +36,8 @@ jobs:
           - { addon: ib_gateway, image: ha-ib-gateway, arch: aarch64, runner: ubuntu-24.04-arm }
           - { addon: budget, image: ha-budget, arch: amd64, runner: ubuntu-24.04 }
           - { addon: budget, image: ha-budget, arch: aarch64, runner: ubuntu-24.04-arm }
+          - { addon: friend_reminder, image: ha-friend-reminder, arch: amd64, runner: ubuntu-24.04 }
+          - { addon: friend_reminder, image: ha-friend-reminder, arch: aarch64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
