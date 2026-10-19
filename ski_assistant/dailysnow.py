@@ -56,9 +56,9 @@ def get(refresh=False):
         return {"error": "Connect Claude in Settings to get the Daily Snow."}
     with ThreadPoolExecutor(max_workers=4) as pool:
         data = [x for x in pool.map(_safe, resorts.load()) if x]
-    text = advisor.complete(SYSTEM, f"Today is {today}.\nData:\n{json.dumps(data)}")
+    text, error = advisor.complete(SYSTEM, f"Today is {today}.\nData:\n{json.dumps(data)}", timeout=600)
     if not text:
-        return {"error": "Claude declined to write today's post."}
+        return {"error": error or "Claude returned nothing."}
     created = util.now().strftime("%Y-%m-%d %H:%M")
     db.x("INSERT OR REPLACE INTO daily_snow(date, text, created) VALUES (?,?,?)", (today, text, created))
     return {"date": today, "text": text, "created": created}
