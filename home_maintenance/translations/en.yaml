@@ -1,0 +1,41 @@
+configuration:
+  notify_service:
+    name: Notify service
+    description: >-
+      The phone to notify, for example mobile_app_pixel_9. Leave empty to use the only phone
+      with the Home Assistant companion app.
+  reminder_time:
+    name: Reminder time
+    description: Time (HH:MM, 24 hours) of the daily reminder for tasks that are due.
+  todo_entity:
+    name: Shopping list
+    description: To-do entity that low-toner cartridges are added to.
+  toner_entities:
+    name: Toner sensors
+    description: >-
+      Comma-separated toner level sensors (percent), for example sensor.hp_black_toner,sensor.hp_cyan_toner.
+      Sensors that are unavailable are skipped and shown as such.
+  toner_threshold:
+    name: Toner alert level
+    description: Alert when a toner sensor drops below this percent. Default 15.
+  printer_model:
+    name: Printer model
+    description: Used to name the cartridge on the shopping list, for example "HP Color LaserJet Pro M255".
+  s3_endpoint:
+    name: S3 endpoint
+    description: S3-compatible endpoint (Cloudflare R2) for receipt files. Used by receipts in a later version.
+  s3_bucket:
+    name: S3 bucket
+    description: Bucket for receipt files.
+  s3_access_key:
+    name: S3 access key
+    description: Access key for the bucket.
+  s3_secret_key:
+    name: S3 secret key
+    description: Secret key for the bucket.
+  s3_region:
+    name: S3 region
+    description: Region, "auto" for Cloudflare R2.
+  s3_prefix:
+    name: S3 folder
+    description: Folder in the bucket for receipt files.

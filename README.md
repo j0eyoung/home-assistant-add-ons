@@ -9,7 +9,7 @@ Add this repository in Home Assistant: **Settings > Add-ons > Add-on Store > ⋮
 | [Trading Terminal](trading_terminal) | Market data, research and paper/live trading through Alpaca and Interactive Brokers. |
 | [IB Gateway](ib_gateway) | Headless Interactive Brokers Gateway for the Trading Terminal. |
 | [Friend Reminder](friend_reminder) | A daily phone nudge to reach out to friends you haven't talked to in a while, with Claude-drafted openers. |
-| [Work Tracker](work_tracker) | A 24/7 work log: hours by client and case with a start/stop timer, tasks and follow-ups with Done / Snooze phone reminders, a stop-time nudge, a weekly summary and a 0.25 h timesheet CSV. |
+| [Home Maintenance Log](home_maintenance) | Recurring home upkeep with Done / Snooze phone reminders, printer toner alerts that add cartridges to the shopping list, an appliance and warranty register, and receipts stored in your own bucket. |
 | [Ski Assistant](ski_assistant) | 16-day snow forecasts for Colorado resorts (ECMWF + GFS), Daily Snow, radar, powder alerts, best-day picks, leave times that beat I-70 traffic, season log. |
 
 Images are built by GitHub Actions for `aarch64` and `amd64` and published to GHCR, so Home Assistant only downloads them.
