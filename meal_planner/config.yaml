@@ -1,0 +1,61 @@
+name: "Meal & Grocery Planner"
+description: "Weekly AI meal plans, recipes, a pantry you fill by scanning barcodes, and a store-grouped grocery list synced to Home Assistant."
+version: "0.2.0"
+slug: "meal_planner"
+image: "ghcr.io/j0eyoung/{arch}-meal-planner"
+arch:
+  - aarch64
+  - amd64
+init: false
+# Served only through Home Assistant (Open Web UI + sidebar panel). No port is published to the LAN:
+# Claude Terminal reaches /meals/* on the add-on's hostname (shown on the add-on Info page), port 8502.
+ingress: true
+ingress_port: 8502
+panel_icon: mdi:food-fork-drink
+panel_title: "Meals"
+homeassistant_api: true
+# The add-on's own config folder (mounted at /config inside the container) holds meal_planner.db.
+# It is not the whole Home Assistant config folder.
+map:
+  - type: addon_config
+    read_only: false
+  - type: homeassistant_config
+    read_only: true
+options:
+  claude_code_oauth_token: ""
+  anthropic_api_key: ""
+  model: "claude-sonnet-5-5"
+  usda_api_key: ""
+  upcdatabase_api_key: ""
+  recipeapi_key: ""
+  recipeapi_monthly_budget: 450
+  pexels_api_key: ""
+  pixabay_api_key: ""
+  s3_endpoint: ""
+  s3_bucket: "lpchag"
+  s3_access_key: ""
+  s3_secret_key: ""
+  s3_region: "auto"
+  s3_prefix: "meals/images"
+  todo_entity: "todo.shopping_list"
+  notify_service: ""
+  prep_reminder_time: "20:00"
+schema:
+  claude_code_oauth_token: password?
+  anthropic_api_key: password?
+  model: str?
+  usda_api_key: password?
+  upcdatabase_api_key: password?
+  recipeapi_key: password?
+  recipeapi_monthly_budget: int(10,500)?
+  pexels_api_key: password?
+  pixabay_api_key: password?
+  s3_endpoint: url?
+  s3_bucket: str?
+  s3_access_key: password?
+  s3_secret_key: password?
+  s3_region: str?
+  s3_prefix: str?
+  todo_entity: str?
+  notify_service: str?
+  prep_reminder_time: str?

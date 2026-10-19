@@ -26,6 +26,10 @@ jobs:
         include:
           - { addon: ski_assistant, image: ski-assistant, arch: amd64, runner: ubuntu-24.04 }
           - { addon: ski_assistant, image: ski-assistant, arch: aarch64, runner: ubuntu-24.04-arm }
+          - { addon: workout_tracker, image: ai-workout, arch: amd64, runner: ubuntu-24.04 }
+          - { addon: workout_tracker, image: ai-workout, arch: aarch64, runner: ubuntu-24.04-arm }
+          - { addon: meal_planner, image: meal-planner, arch: amd64, runner: ubuntu-24.04 }
+          - { addon: meal_planner, image: meal-planner, arch: aarch64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4

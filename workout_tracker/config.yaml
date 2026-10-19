@@ -1,0 +1,60 @@
+name: "AI Workout Tracker"
+description: "Dynamic auto-regulating workout planner and tracker."
+version: "0.11.0"
+slug: "ai_workout"
+image: "ghcr.io/j0eyoung/{arch}-ai-workout"
+arch:
+  - aarch64
+  - amd64
+init: false
+# Serve the Streamlit UI through Home Assistant (Open Web UI + sidebar panel)
+ingress: true
+ingress_port: 8501
+panel_icon: mdi:dumbbell
+panel_title: "Workouts"
+map:
+  - config:rw
+# Home Assistant API: today's-workout and streak sensors, and the morning check-in reminder to your phone
+homeassistant_api: true
+hassio_api: true
+options:
+  claude_code_oauth_token: ""
+  # Equipment you have; daily library picks only use these
+  equipment:
+    - bodyweight
+    - bands
+    - dumbbell
+    - kettlebell
+    - foam roller
+    - bench
+    - pull-up bar
+    - cable
+    - ez bar
+    - barbell
+    - plates
+    - cardio machine
+  api_ninjas_key: ""
+  api_ninjas_monthly_budget: 2500
+  # Private bucket holding the yoga pictures (same S3-style settings as the Trading Terminal)
+  s3_endpoint: ""
+  s3_bucket: "lpchag"
+  s3_access_key: ""
+  s3_secret_key: ""
+  s3_region: "auto"
+  s3_prefix: "workout/yoga"
+schema:
+  s3_endpoint: url?
+  s3_bucket: str?
+  s3_access_key: password?
+  s3_secret_key: password?
+  s3_region: str?
+  s3_prefix: str?
+  claude_code_oauth_token: password?
+  api_ninjas_key: password?
+  api_ninjas_monthly_budget: int(100,3000)?
+  equipment:
+    - "list(bodyweight|bands|dumbbell|kettlebell|stability ball|foam roller|medicine ball|bench|pull-up bar|cable|machine|barbell|ez bar|suspension trainer|sliders|rings|clubbell|macebell|sandbag|landmine|plates|cardio machine|other)"
+ports:
+  8501/tcp: 8501
+ports_description:
+  8501/tcp: "Web UI and API (also used by Claude Terminal: /workout/today, /workout/log)"

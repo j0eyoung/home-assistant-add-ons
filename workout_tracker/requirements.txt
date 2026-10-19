@@ -1,0 +1,7 @@
+fastapi==0.110.1
+uvicorn==0.29.0
+pydantic==2.6.4
+garminconnect==0.3.17
+tzdata
+boto3
+piper-tts==1.8.0

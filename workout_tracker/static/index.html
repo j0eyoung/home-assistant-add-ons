@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111418">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Workouts">
+  <title>Workouts</title>
+  <link rel="manifest" href="static/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="static/icon-192.png">
+  <link rel="apple-touch-icon" href="static/apple-touch-icon.png">
+  <link rel="stylesheet" href="static/app.css?v=0.10.2">
+</head>
+<body>
+  <header class="top">
+    <div class="title">Workouts <span id="date" class="muted"></span></div>
+    <span id="save-state" class="save-state" aria-live="polite"></span>
+  </header>
+  <main id="view"></main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="timer" class="timerbar" hidden aria-live="polite"></div>
+  <div id="qg" class="qgplayer" hidden role="dialog" aria-label="Guided qigong"></div>
+  <div id="trophy" class="trophy" hidden role="dialog" aria-label="New personal records"></div>
+  <nav class="tabs" aria-label="Sections">
+    <button type="button" data-tab="today" class="active"><span aria-hidden="true">🏋️</span>Today</button>
+    <button type="button" data-tab="week"><span aria-hidden="true">📅</span>Week</button>
+    <button type="button" data-tab="coach"><span aria-hidden="true">🧠</span>Coach</button>
+    <button type="button" data-tab="mind"><span aria-hidden="true">🧘</span>Mind &amp; Body</button>
+    <button type="button" data-tab="more"><span aria-hidden="true">☰</span>More</button>
+  </nav>
+  <script src="static/app.js?v=0.10.2"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Ignore sensitive tokens and database files
+garmin_tokens.json
+workout_tracker.db
+temp_upload.*
+__pycache__/
+*.pyc
+
+# Ignore testing/sandbox folders
+gymbro_skills_repo/
+pf_pt_directory_repo/
+movement_systems_repo/
+pt_skill_repo/
+endurance_skills_repo/
+
+data/

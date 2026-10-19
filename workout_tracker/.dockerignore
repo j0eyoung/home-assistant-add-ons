@@ -1,0 +1,9 @@
+# Never bake credentials or local data into the image
+garmin_tokens.json
+garmin_tokens/
+*.db
+temp_upload.*
+__pycache__/
+*.pyc
+.git/
+.github/
