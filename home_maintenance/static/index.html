@@ -3,12 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16314f">
   <meta name="color-scheme" content="dark light">
   <title>Home Maintenance</title>
   <link rel="icon" href="static/icon.png">
+  <link rel="stylesheet" href="static/app.css?v=__V__">
 </head>
 <body>
-  <h1>Home Maintenance Log</h1>
-  <p>Version __V__. The web page comes in the next step; the backend and API are running.</p>
+  <header>
+    <h1>Home Maintenance</h1>
+    <nav id="tabs" role="tablist"></nav>
+  </header>
+  <div id="banner" hidden></div>
+  <main id="view" aria-live="polite"></main>
+  <div id="toast" role="status" hidden></div>
+  <script src="static/app.js?v=__V__"></script>
 </body>
 </html>

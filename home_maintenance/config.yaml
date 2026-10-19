@@ -1,6 +1,6 @@
 name: "Home Maintenance Log"
 description: "Recurring home upkeep with phone reminders (Done / Snooze), printer toner alerts that add the cartridge to the shopping list, and an appliance and warranty register."
-version: "0.2.0"
+version: "0.3.0"
 slug: "home_maintenance"
 image: "ghcr.io/j0eyoung/{arch}-ha-home-maintenance"
 arch:

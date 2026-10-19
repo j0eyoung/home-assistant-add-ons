@@ -127,6 +127,8 @@ def update(task_id, **fields):
     _check(allowed.get("interval_value", 1), allowed.get("interval_unit", "days"))
     if "active_months" in allowed:
         allowed["active_months"] = parse_months(allowed["active_months"])
+    if "appliance_id" in allowed and not allowed["appliance_id"]:
+        allowed["appliance_id"] = None                  # 0 / "" = unlink from the appliance
     if allowed:
         db.changed(f"UPDATE tasks SET {','.join(k + '=?' for k in allowed)} WHERE id=?", (*allowed.values(), task_id))
     return get(task_id)

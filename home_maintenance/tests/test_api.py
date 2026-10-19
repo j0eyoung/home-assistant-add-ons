@@ -58,3 +58,15 @@ def test_new_endpoints(client, monkeypatch):
     assert client.post("/api/appliances/999/files", content=b"x", headers={"content-type": "image/jpeg"}).status_code == 404
     assert client.get("/api/files/999").status_code == 404
     assert client.delete(f"/api/appliances/{a['id']}").status_code == 200
+
+
+def test_unlink_task_from_appliance(client):
+    a = client.post("/api/appliances", json={"name": "Dryer"}).json()
+    t = client.post("/api/tasks", json={"name": "Lint", "interval_value": 3, "appliance_id": a["id"]}).json()
+    assert client.patch(f"/api/tasks/{t['id']}", json={"appliance_id": 0, "active_months": ""}).json()["appliance_id"] is None
+
+
+def test_index_serves_ui_with_version(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "static/app.js?v=0." in r.text and "__V__" not in r.text
+    assert client.get("/static/app.js").status_code == 200 and client.get("/static/icon.png").status_code == 200

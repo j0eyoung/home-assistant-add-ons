@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+The phone web page.
+
+- Tabs for Tasks, Appliances, Shutoffs and Toner, built for a phone. Tasks show OK / Due soon / Overdue, with Done (date, note, parts, cost), Snooze, History, Edit and Delete.
+- Appliances show warranty and lifespan badges, with receipts and photos added from the camera or the gallery. Photos are shrunk on the phone before they are uploaded to your bucket.
+- Shutoffs with where-to-find-it notes and photos.
+- Toner: pick the sensors from a list of your Home Assistant sensors, set the alert level and printer model, and see each sensor's level, including unavailable ones.
+- Download the calendar (.ics) and send a test reminder from the Toner tab.
+
 ## 0.2.0
 
 Backend only; the phone web page is still a placeholder.
