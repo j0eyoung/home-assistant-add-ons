@@ -1,0 +1,26 @@
+configuration:
+  notify_service:
+    name: Notify service
+    description: >-
+      The phone to nudge, for example mobile_app_pixel_9. Leave empty to use the only phone
+      with the Home Assistant companion app.
+  stop_time:
+    name: Stop time
+    description: >-
+      Time (HH:MM, 24 hours, Monday to Friday) to ask "log off?" if a timer is still running
+      or today's hours are below the daily target.
+  daily_target:
+    name: Daily hour target
+    description: Hours per day. 0 turns the target off.
+  weekly_target:
+    name: Weekly hour target
+    description: Hours per week, checked on Friday at the stop time. 0 turns the target off.
+  task_time:
+    name: Task reminder time
+    description: Time (HH:MM) when tasks that are due or overdue are sent to your phone.
+  summary_day:
+    name: Weekly summary day
+    description: Day of the weekly hours-per-client notification.
+  summary_time:
+    name: Weekly summary time
+    description: Time (HH:MM) of the weekly summary.

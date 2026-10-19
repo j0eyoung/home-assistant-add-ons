@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1216" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f3f5f8" media="(prefers-color-scheme: light)">
+  <meta name="color-scheme" content="dark light">
+  <title>Work Tracker</title>
+  <link rel="icon" type="image/png" href="static/icon.png?v=__V__">
+  <link rel="stylesheet" href="static/app.css?v=__V__">
+</head>
+<body>
+  <header class="top">
+    <div class="title">Work Tracker</div>
+    <div id="status" class="muted">Loading…</div>
+    <nav class="tabs" role="tablist">
+      <button class="tab on" data-tab="today" role="tab">Today</button>
+      <button class="tab" data-tab="tasks" role="tab">Tasks</button>
+      <button class="tab" data-tab="week" role="tab">Week</button>
+    </nav>
+  </header>
+  <main>
+    <section id="today">
+      <div class="card" id="timer"></div>
+      <form class="card" id="start-form" autocomplete="off">
+        <h3 id="start-h">Start timer</h3>
+        <div class="chips" id="recent"></div>
+        <label class="fld"><span>Client</span><input name="client" maxlength="20" autocapitalize="characters" required></label>
+        <label class="fld"><span>Case number (optional)</span><input name="case_no" maxlength="20" inputmode="text"></label>
+        <label class="fld"><span>Note</span><input name="note"></label>
+        <label class="chk"><input type="checkbox" name="billable" checked> Billable</label>
+        <div class="row">
+          <button class="btn primary" type="submit" data-mode="start">Start</button>
+          <button class="btn" type="button" id="manual-btn">Add as manual time</button>
+        </div>
+        <label class="fld manual" hidden><span>Minutes</span><input name="minutes" type="number" min="1" max="1440" inputmode="numeric"></label>
+        <label class="fld manual" hidden><span>Date</span><input name="date" type="date"></label>
+      </form>
+      <h2 class="sec">Today's entries</h2>
+      <div id="entries"></div>
+    </section>
+
+    <section id="tasks" hidden>
+      <form class="card" id="task-form" autocomplete="off">
+        <h3>New task or follow-up</h3>
+        <label class="fld"><span>Title</span><input name="title" required></label>
+        <label class="fld"><span>Due date (optional)</span><input name="due" type="date"></label>
+        <label class="fld"><span>Client (optional)</span><input name="client" maxlength="20" autocapitalize="characters"></label>
+        <label class="fld"><span>Case number (optional)</span><input name="case_no" maxlength="20"></label>
+        <button class="btn primary" type="submit">Add task</button>
+      </form>
+      <div id="task-list"></div>
+    </section>
+
+    <section id="week" hidden>
+      <div id="week-totals"></div>
+      <div class="card">
+        <h3>Timesheet export (CSV)</h3>
+        <p class="muted">Hours are rounded to the nearest 0.25 per day, client and case.</p>
+        <div class="row">
+          <label class="fld"><span>From</span><input type="date" id="x-from"></label>
+          <label class="fld"><span>To</span><input type="date" id="x-to"></label>
+        </div>
+        <a class="btn primary" id="x-link" href="#" download="work_tracker.csv">Download CSV</a>
+      </div>
+      <div class="card">
+        <h3>Phone nudge</h3>
+        <p class="muted" id="phone"></p>
+        <button class="btn" id="test-nudge" type="button">Send a test nudge</button>
+      </div>
+    </section>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="static/app.js?v=__V__"></script>
+</body>
+</html>

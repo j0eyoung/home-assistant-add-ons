@@ -38,6 +38,8 @@ jobs:
           - { addon: budget, image: ha-budget, arch: aarch64, runner: ubuntu-24.04-arm }
           - { addon: friend_reminder, image: ha-friend-reminder, arch: amd64, runner: ubuntu-24.04 }
           - { addon: friend_reminder, image: ha-friend-reminder, arch: aarch64, runner: ubuntu-24.04-arm }
+          - { addon: work_tracker, image: ha-work-tracker, arch: amd64, runner: ubuntu-24.04 }
+          - { addon: work_tracker, image: ha-work-tracker, arch: aarch64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
