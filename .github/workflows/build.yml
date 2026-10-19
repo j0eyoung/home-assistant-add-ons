@@ -30,6 +30,12 @@ jobs:
           - { addon: workout_tracker, image: ha-workout-tracker, arch: aarch64, runner: ubuntu-24.04-arm }
           - { addon: meal_planner, image: ha-meal-planner, arch: amd64, runner: ubuntu-24.04 }
           - { addon: meal_planner, image: ha-meal-planner, arch: aarch64, runner: ubuntu-24.04-arm }
+          - { addon: trading_terminal, image: ha-trading-terminal, arch: amd64, runner: ubuntu-24.04 }
+          - { addon: trading_terminal, image: ha-trading-terminal, arch: aarch64, runner: ubuntu-24.04-arm }
+          - { addon: ib_gateway, image: ha-ib-gateway, arch: amd64, runner: ubuntu-24.04 }
+          - { addon: ib_gateway, image: ha-ib-gateway, arch: aarch64, runner: ubuntu-24.04-arm }
+          - { addon: budget, image: ha-budget, arch: amd64, runner: ubuntu-24.04 }
+          - { addon: budget, image: ha-budget, arch: aarch64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4

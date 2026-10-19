@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="static/app.css?v={{V}}">
+</head>
+<body>
+<header id="top">
+  <a class="brand" href="#/PORT" title="Home (PORT)"><span>▮</span><b>TERMINAL</b></a>
+  <div class="cmd">
+    <span class="prompt">&gt;</span>
+    <input id="cmd" autocomplete="off" autocapitalize="characters" spellcheck="false"
+           placeholder="Ticker or function, e.g. NVDA GP" aria-label="Command">
+    <div id="suggest" hidden></div>
+  </div>
+  <span id="mode" class="mode"></span>
+  <span id="clock" class="clock"></span>
+</header>
+<nav id="rail" aria-label="Functions"></nav>
+<main id="main"></main>
+<aside id="side" aria-label="Watchlist"></aside>
+<nav id="tabs" aria-label="Sections"></nav>
+<div id="toasts" aria-live="polite"></div>
+<script src="static/chart.js?v={{V}}"></script>
+<script src="static/app.js?v={{V}}"></script>
+</body>
+</html>

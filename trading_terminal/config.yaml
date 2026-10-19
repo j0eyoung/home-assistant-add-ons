@@ -1,0 +1,72 @@
+name: Trading Terminal
+version: "0.3.1"
+slug: trading_terminal
+description: Market data, research and paper/live trading through Alpaca and Interactive Brokers
+image: "ghcr.io/j0eyoung/{arch}-ha-trading-terminal"
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+# /share can be pointed at a NAS or PC (Settings > System > Storage > Add network storage, usage Share)
+# and used as store_type: folder, store_path: /share/trading_terminal
+map:
+  - share:rw
+  - homeassistant_config:ro
+# Shown in the Home Assistant sidebar, behind Home Assistant's own login
+ingress: true
+ingress_port: 8501
+panel_icon: mdi:chart-line
+panel_title: Trading
+# Direct access on your network without the Home Assistant login. Off by default; only turn it on
+# (set a port in the add-on's Network section) if the sidebar page doesn't load.
+ports:
+  8501/tcp: null
+ports_description:
+  8501/tcp: Direct web access (no login; local network only, never forward this port to the internet)
+options:
+  trading_mode: paper
+  # auto = your Claude subscription if signed in (Assistant > Connect Claude), then an Anthropic API key, then Gemini
+  ai_choice: auto
+  # new = the fast Bloomberg-style terminal; classic = the previous Streamlit screens (fallback)
+  ui: new
+  watchlist: SPY,QQQ,AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,JPM
+  ibkr_enabled: false
+  # The IB Gateway add-on from this repository (hostname shown on its Info tab). Leave ibkr_port
+  # empty to follow trading_mode: 4004 for paper, 4003 for live.
+  ibkr_host: c0a16a5a-ib-gateway
+  ibkr_client_id: 17
+  # Data collection (Assistant > Data collection). off until you choose s3 (Cloudflare R2, Backblaze B2,
+  # a NAS with S3) or folder (network share). Nothing is collected while it's off.
+  store_type: "off"
+  s3_prefix: trading-terminal/
+  minute_backfill_days: 365
+schema:
+  trading_mode: list(paper|live)
+  ai_choice: list(auto|claude_code|claude|gemini)
+  ui: list(new|classic)
+  alpaca_paper_api_key: password?
+  alpaca_paper_secret_key: password?
+  alpaca_live_api_key: password?
+  alpaca_live_secret_key: password?
+  gemini_api_key: password?
+  anthropic_api_key: password?
+  finnhub_api_key: password?
+  fmp_api_key: password?
+  fred_api_key: password?
+  sec_contact_email: email?
+  watchlist: str
+  ibkr_enabled: bool
+  ibkr_host: str
+  ibkr_port: port?
+  ibkr_client_id: int
+  store_type: list(off|s3|folder)
+  store_path: str?
+  s3_endpoint: url?
+  s3_bucket: str?
+  s3_access_key: password?
+  s3_secret_key: password?
+  s3_prefix: str?
+  s3_region: str?
+  minute_backfill_days: int(0,3650)

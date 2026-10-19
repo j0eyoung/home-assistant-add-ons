@@ -1,0 +1,39 @@
+# Home Assistant add-on definition; installed from the GitHub repo (see ../README.md).
+name: Budget
+version: "0.5.4"
+slug: budget
+description: Personal budgeting with SimpleFIN sync and Claude Code AI
+# The add-on's own config folder, mounted at /config: nightly database
+# backups go to /config/backups and are restored if /data is ever empty.
+map:
+  - addon_config:rw
+  - homeassistant_config:ro
+image: "ghcr.io/j0eyoung/{arch}-ha-budget"
+arch:
+  - amd64
+  - aarch64
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:cash-multiple
+panel_title: Budget
+# Disabled by default. Set a host port here if the Daily Briefing add-on or
+# Claude Code on another machine should query the app; requests then need
+# the api_token.
+ports:
+  8099/tcp: null
+options:
+  simplefin_setup_token: ""
+  claude_code_oauth_token: ""
+  claude_model: sonnet
+  api_token: ""
+schema:
+  # One-time token from bridge.simplefin.org. Claimed on first start, after
+  # which the access URL lives in /data/secrets.db. You can also paste the
+  # token into the Accounts tab instead.
+  simplefin_setup_token: password?
+  # Optional fallback made with `claude setup-token`; normally you sign in
+  # from the Accounts tab instead (Connect Claude).
+  claude_code_oauth_token: password?
+  claude_model: list(haiku|sonnet|opus)?
+  api_token: password?
