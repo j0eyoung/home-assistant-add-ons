@@ -12,12 +12,50 @@ function backupFiles(): string[] {
   return fs.readdirSync(config.backupDir).filter((f) => /^budget-\d{4}-\d{2}-\d{2}\.db$/.test(f)).sort()
 }
 
-if (!fs.existsSync(dbPath)) {
-  const latest = backupFiles().at(-1)
-  if (latest) {
-    fs.copyFileSync(path.join(config.backupDir, latest), dbPath)
-    console.log(`Restored budget.db from backup ${latest}`)
+// What's in a database file, for picking and listing backups.
+export function inspectDb(file: string): { accounts: number; transactions: number; lastDate: string | null; lastSync: string | null } {
+  const d = new DatabaseSync(file, { readOnly: true })
+  try {
+    const has = (table: string) => Boolean(d.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table))
+    const count = (table: string) => (has(table) ? (d.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n : 0)
+    return {
+      accounts: count('accounts'),
+      transactions: count('transactions'),
+      lastDate: has('transactions') ? (d.prepare('SELECT MAX(date) AS d FROM transactions').get() as { d: string | null }).d : null,
+      lastSync: has('meta') ? (d.prepare(`SELECT value FROM meta WHERE key = 'last_sync'`).get() as { value: string } | undefined)?.value ?? null : null,
+    }
+  } finally {
+    d.close()
   }
+}
+
+const newestUsableBackup = () =>
+  backupFiles().reverse().find((f) => {
+    try {
+      return inspectDb(path.join(config.backupDir, f)).accounts > 0
+    } catch {
+      return false
+    }
+  })
+
+// A new install picks up the newest backup that has accounts in it: when
+// there's no database yet, or when the database has no accounts and has never
+// synced (the add-on was reinstalled under a new name and started before its
+// backup was copied in).
+let restoreFrom: string | undefined
+if (!fs.existsSync(dbPath)) restoreFrom = newestUsableBackup()
+else {
+  try {
+    const current = inspectDb(dbPath)
+    if (current.accounts === 0 && !current.lastSync) restoreFrom = newestUsableBackup()
+  } catch (err: any) {
+    console.error('Could not inspect budget.db:', err.message)
+  }
+}
+if (restoreFrom) {
+  for (const f of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) fs.rmSync(f, { force: true })
+  fs.copyFileSync(path.join(config.backupDir, restoreFrom), dbPath)
+  console.log(`Restored budget.db from backup ${restoreFrom}`)
 }
 
 export const db = new DatabaseSync(dbPath)
@@ -175,8 +213,11 @@ const SEED_CATEGORIES: [string, string][] = [
   ['Legal', 'expense'],
   ['Other', 'expense'],
 ]
-const seed = db.prepare('INSERT OR IGNORE INTO categories (name, kind) VALUES (?, ?)')
-for (const [name, kind] of SEED_CATEGORIES) seed.run(name, kind)
+const seedCategories = () => {
+  const seed = db.prepare('INSERT OR IGNORE INTO categories (name, kind) VALUES (?, ?)')
+  for (const [name, kind] of SEED_CATEGORIES) seed.run(name, kind)
+}
+seedCategories()
 if (trackAdded) db.prepare(`UPDATE categories SET track = 1 WHERE name = 'Legal'`).run()
 
 export function categoryIdByName(name: string): number | null {
@@ -184,15 +225,68 @@ export function categoryIdByName(name: string): number | null {
   return row?.id ?? null
 }
 
-// One consistent copy per day (VACUUM INTO), keeping the last week.
-export function backupDb(): string {
+const quote = (file: string) => `'${file.replace(/'/g, "''")}'`
+
+// One consistent copy per day (VACUUM INTO), keeping the last week. A database
+// with no accounts isn't worth a copy, and would push real backups out.
+export function backupDb(): string | null {
+  if (!(db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number }).n) return null
   fs.mkdirSync(config.backupDir, { recursive: true })
   const file = path.join(config.backupDir, `budget-${new Date().toISOString().slice(0, 10)}.db`)
   fs.rmSync(file, { force: true })
-  db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`)
+  db.exec(`VACUUM INTO ${quote(file)}`)
   for (const old of backupFiles().slice(0, -7)) fs.rmSync(path.join(config.backupDir, old), { force: true })
   meta.set('last_backup', new Date().toISOString())
   return file
+}
+
+export function listBackups() {
+  return backupFiles().reverse().map((name) => {
+    const file = path.join(config.backupDir, name)
+    let contents: ReturnType<typeof inspectDb> | null = null
+    try {
+      contents = inspectDb(file)
+    } catch {
+      // unreadable file: listed without contents
+    }
+    return { name, date: name.slice(7, 17), size: fs.statSync(file).size, ...contents }
+  })
+}
+
+// Replaces everything in budget.db with a backup's contents, table by table
+// through ATTACH so the open connections stay valid. Columns the backup is too
+// old to have keep their defaults. The SimpleFIN link (secrets.db) and the
+// Claude sign-in are untouched. The data being replaced is saved first as
+// before-restore.db, which the nightly rotation leaves alone.
+const DATA_TABLES = ['accounts', 'categories', 'transactions', 'splits', 'recurring_overrides', 'budgets', 'rules', 'balance_snapshots', 'insights', 'meta']
+export function restoreBackup(name: string): void {
+  if (!backupFiles().includes(name)) throw new Error('No such backup')
+  const file = path.join(config.backupDir, name)
+  if (!inspectDb(file).accounts) throw new Error('That backup has no accounts in it.')
+  const safety = path.join(config.backupDir, 'before-restore.db')
+  fs.rmSync(safety, { force: true })
+  db.exec(`VACUUM INTO ${quote(safety)}`)
+  db.exec(`ATTACH DATABASE ${quote(file)} AS b`)
+  try {
+    db.exec('BEGIN')
+    try {
+      for (const table of DATA_TABLES) {
+        const columns = (t: string) => (db.prepare(`PRAGMA ${t}.table_info(${table})`).all() as { name: string }[]).map((c) => c.name)
+        const theirs = new Set(columns('b'))
+        db.exec(`DELETE FROM main.${table}`)
+        if (!theirs.size) continue
+        const shared = columns('main').filter((c) => theirs.has(c)).map((c) => `"${c}"`).join(', ')
+        db.exec(`INSERT INTO main.${table} (${shared}) SELECT ${shared} FROM b.${table}`)
+      }
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
+  } finally {
+    db.exec('DETACH DATABASE b')
+  }
+  seedCategories()
 }
 
 // Separate read-only connection for model-written and user-written SQL.

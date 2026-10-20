@@ -1,12 +1,14 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { addMonths, api, dollars, money, monthLabel, thisMonth } from './api.ts'
 import type { BudgetRow, Category, Status, Transaction } from './api.ts'
+import { Backups } from './Backups.tsx'
 import { Card } from './Card.tsx'
 import { CashFlow } from './CashFlow.tsx'
 import { CsvImport } from './CsvImport.tsx'
 import { DebtPage } from './Debt.tsx'
 import { PlanPage, PlanStrip } from './Plan.tsx'
 import { RecurringPage } from './Recurring.tsx'
+import { SafeToSpend } from './SafeToSpend.tsx'
 import { photoToJpeg } from './photo.ts'
 import { SplitEditor } from './SplitEditor.tsx'
 import type { Proposal } from './SplitEditor.tsx'
@@ -101,6 +103,7 @@ function Dashboard({ month, status, onError, onOpenPlan }: PageProps & { month: 
   return (
     <>
       {month === thisMonth() && <Today status={status} onError={onError} />}
+      {month === thisMonth() && <SafeToSpend onError={onError} onOpenPlan={onOpenPlan} />}
       {month === thisMonth() && <PlanStrip onError={onError} onOpen={onOpenPlan} />}
       <div className="cards">
         <Card label="Spent" value={money(spent)} sub={`${budgeted ? `of ${money(budgeted)} budgeted · ` : ''}${dollars(prevSpent)} last month`} />
@@ -622,6 +625,8 @@ function Accounts({ status, onError, onStatus }: PageProps & { status: Status | 
       ))}
 
       <ClaudeConnect onError={onError} onStatus={onStatus} />
+
+      <Backups onError={onError} onDone={() => { load(); onStatus() }} />
 
       <section>
         <h2>Add a manual account</h2>

@@ -2,10 +2,11 @@ import crypto from 'node:crypto'
 import path from 'node:path'
 import express from 'express'
 import { aiAvailable, ask, categorizeWithAi, generateInsights } from './ai.ts'
+import { safeToSpend, safeToSpendBrief } from './allowance.ts'
 import { briefingData, cachedBriefing, generateBriefing } from './briefing.ts'
 import { authStatus, loginState, logout, sendLoginCode, startLogin } from './claude.ts'
 import { config } from './config.ts'
-import { backupDb, categoryIdByName, db, meta, runReadOnly } from './db.ts'
+import { backupDb, categoryIdByName, db, listBackups, meta, restoreBackup, runReadOnly } from './db.ts'
 import { debtSummary } from './debts.ts'
 import { syncHealth } from './health.ts'
 import { importPlan, planBrief, planDebtOrder, planReport, resetPlan, savePlan } from './plan.ts'
@@ -408,6 +409,28 @@ app.get('/api/debts', (_req, res) => {
   res.json(debtSummary().map((d) => ({ ...d, plan_rank: order.includes(d.id) ? order.indexOf(d.id) : null })))
 })
 
+// Nightly backups in the add-on's config folder. `folder` is where that is on
+// the Home Assistant host (the add-on's hostname is <repo hash>-<slug>), for
+// copying a backup in from another install.
+app.get('/api/backups', (_req, res) => {
+  const host = process.env.HOSTNAME ?? ''
+  const folder = config.isAddon && /^[a-z0-9]+-/.test(host) ? `/addon_configs/${host.replace('-', '_')}/backups` : config.backupDir
+  res.json({ folder, backups: listBackups() })
+})
+
+app.post('/api/backups', (_req, res) => {
+  res.json({ file: backupDb() })
+})
+
+app.post('/api/backups/restore', (req, res) => {
+  restoreBackup(String(req.body?.name ?? ''))
+  res.json({ ok: true })
+})
+
+app.get('/api/safe-to-spend', (_req, res) => {
+  res.json(safeToSpend())
+})
+
 app.get('/api/plan', (_req, res) => {
   res.json(planReport())
 })
@@ -416,10 +439,11 @@ app.get('/api/plan', (_req, res) => {
 app.put('/api/plan', (req, res) => {
   savePlan(req.body?.plan)
   const terms = Array.isArray(req.body?.debts) ? req.body.debts : []
+  // Only the fields sent are changed; a missing field leaves the account's value alone.
   for (const t of terms) {
     if (typeof t?.id !== 'string') continue
-    const { apr, promo_apr, promo_end, min_payment } = t
-    updateAccount(t.id, { apr, promo_apr, promo_end, min_payment })
+    const fields = Object.fromEntries(['apr', 'promo_apr', 'promo_end', 'min_payment'].filter((k) => k in t).map((k) => [k, t[k]]))
+    updateAccount(t.id, fields)
   }
   res.json(planReport())
 })
@@ -478,6 +502,7 @@ app.get('/api/summary', (_req, res) => {
     issues: syncHealth().issues,
     briefing: cachedBriefing()?.text ?? null,
     plan: planBrief(),
+    safeToSpend: safeToSpendBrief(),
   })
 })
 
@@ -514,7 +539,8 @@ app.listen(config.port, host, () => {
 
 function backup() {
   try {
-    console.log(`Backed up database to ${backupDb()}`)
+    const file = backupDb()
+    console.log(file ? `Backed up database to ${file}` : 'Skipped backup: no accounts yet')
   } catch (err: any) {
     console.error('Backup failed:', err.message)
   }
