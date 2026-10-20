@@ -31,14 +31,13 @@ If the cast is bright white, the cast session is using the light theme. Try Deve
 
 ## Sections
 
-Today (date, weather, sunrise and sunset, calendar events), Workout, Meals, Friends, Due today, Ski, Money, Shopping. Each one is a sensor, `sensor.daily_briefing_<section>`, whose state is a short headline and whose `lines` attribute holds the rows. A section that cannot be read shows **Unavailable**. **Off season** (Ski) and **Not set up** (Money, Due today) are normal until configured.
+Today (date, weather, sunrise and sunset, calendar events), Workout, Meals, Due today, Ski, Money, Shopping. Each one is a sensor, `sensor.daily_briefing_<section>`, whose state is a short headline and whose `lines` attribute holds the rows. A section that cannot be read shows **Unavailable**. **Off season** (Ski) and **Not set up** (Money, Due today) are normal until configured.
 
 | Section | Comes from |
 |---|---|
 | Today | Home Assistant weather, sun and calendar entities. Holiday and birthday calendars are skipped unless you list them under Calendars. |
 | Workout | Workout Tracker sensors (`sensor.workout_today`, `sensor.workout_streak`). |
 | Meals | Meal Planner: today's meals, tomorrow's meals as the prep, and pantry items to use up. |
-| Friends | Friend Reminder: who is due today. |
 | Due today | Home Maintenance sensor (`sensor.home_maintenance_due`) and Work Tracker tasks due today (needs `api_key`). |
 | Ski | Ski Assistant: best resort today. Shown November to April, or whenever a lift is running. |
 | Money | Budget: safe to spend this week and the month so far (needs `api_token`). |

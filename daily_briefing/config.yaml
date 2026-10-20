@@ -1,6 +1,6 @@
 name: "Daily Briefing"
-description: "Your day at a glance on the TV: date, weather, calendar, workout, meals, who to call, what's due, ski, money and shopping. Published as Home Assistant sensors with a ready-made dashboard to cast, plus an optional morning summary on your phone."
-version: "0.1.0"
+description: "Your day at a glance on the TV: date, weather, calendar, workout, meals, what's due, ski, money and shopping. Published as Home Assistant sensors with a ready-made dashboard to cast, plus an optional morning summary on your phone."
+version: "0.1.1"
 slug: "daily_briefing"
 image: "ghcr.io/j0eyoung/{arch}-ha-daily-briefing"
 arch:

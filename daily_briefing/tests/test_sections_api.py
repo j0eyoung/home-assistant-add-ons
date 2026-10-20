@@ -30,7 +30,7 @@ def test_a_failing_section_is_unavailable_and_the_rest_still_show(monkeypatch):
     data = sections.build()
     by = {s["key"]: s for s in data["sections"]}
     assert by["workout"]["status"] == "unavailable" and by["workout"]["lines"] == ["Unavailable"]
-    assert by["meals"]["status"] == "ok" and len(data["sections"]) == 8
+    assert by["meals"]["status"] == "ok" and len(data["sections"]) == 7
     assert data["date"] == "Monday, October 19"
 
 
@@ -63,7 +63,7 @@ def test_notification_text_skips_unavailable_and_off(monkeypatch):
 def test_publish_writes_one_sensor_per_section_plus_summary(fake_ha, monkeypatch):
     stub_sections(monkeypatch, shopping={"headline": "2 items", "lines": ["milk", "eggs"], "count": 2})
     data = sections.build()
-    assert sections.publish(data) == 9
+    assert sections.publish(data) == 8
     names = [w[0] for w in fake_ha.writes]
     assert names[-1] == "sensor.daily_briefing_summary" and "sensor.daily_briefing_shopping" in names
     shop = next(w for w in fake_ha.writes if w[0] == "sensor.daily_briefing_shopping")
@@ -175,7 +175,7 @@ def test_dashboard_yaml_is_served_and_parses(client):
     r = client.get("/api/dashboard.yaml")
     doc = yaml.safe_load(r.text)
     grid = doc["views"][0]["cards"][0]
-    assert grid["type"] == "grid" and len(grid["cards"]) == 8
+    assert grid["type"] == "grid" and len(grid["cards"]) == 7
 
 
 def test_only_ingress_may_call_inside_home_assistant(monkeypatch):

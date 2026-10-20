@@ -12,7 +12,7 @@ Add this repository in Home Assistant: **Settings > Add-ons > Add-on Store > ⋮
 | [Home Maintenance Log](home_maintenance) | Recurring home upkeep with Done / Snooze phone reminders, printer toner alerts that add cartridges to the shopping list, an appliance and warranty register, and receipts stored in your own bucket. |
 | [Work Tracker](work_tracker) | A 24/7 work log: hours by client and case with a start/stop timer, tasks and follow-ups with Done / Snooze phone reminders, a stop-time nudge, a weekly summary and a 0.25 h timesheet CSV. |
 | [Ski Assistant](ski_assistant) | 16-day snow forecasts for Colorado resorts (ECMWF + GFS), Daily Snow, radar, powder alerts, best-day picks, leave times that beat I-70 traffic, season log. |
-| [Daily Briefing](daily_briefing) | Your day at a glance on the TV: date, weather, calendar, workout, meals, who to call, what's due, ski, money and shopping. Home Assistant sensors plus a ready-made dashboard to cast, and an optional morning summary on your phone. |
+| [Daily Briefing](daily_briefing) | Your day at a glance on the TV: date, weather, calendar, workout, meals, what's due, ski, money and shopping. Home Assistant sensors plus a ready-made dashboard to cast, and an optional morning summary on your phone. |
 
 Images are built by GitHub Actions for `aarch64` and `amd64` and published to GHCR, so Home Assistant only downloads them.
 

@@ -77,37 +77,6 @@ def test_meals_unreachable_raises(fake_addons):
         addons.meals()
 
 
-# ---------------------------------------------------------------- friends
-def friend(name, **kw):
-    return {"name": name, "due": False, "snoozed": False, "birthday_today": False, "never_logged": False, "days_since": 3, **kw}
-
-
-def test_friends_picks_the_due_ones(fake_addons):
-    fake_addons.data[("friends", "/api/state")] = {"settings": {"nudges_per_day": 2}, "friends": [
-        friend("Sam", birthday_today=True), friend("Alex", due=True, days_since=40), friend("Pat", due=True, days_since=20),
-        friend("Lee", due=True, snoozed=True), friend("Kim")]}
-    s = addons.friends()
-    assert s["headline"] == "Sam, Alex"
-    assert s["lines"] == ["Sam: birthday today", "Alex: 40 days since you talked"]
-
-
-def test_friends_default_one_pick_and_never_logged(fake_addons):
-    fake_addons.data[("friends", "/api/state")] = {"friends": [friend("Alex", due=True, never_logged=True), friend("Pat", due=True)]}
-    s = addons.friends()
-    assert s["lines"] == ["Alex: not logged yet"]
-
-
-def test_friends_no_one_due(fake_addons):
-    fake_addons.data[("friends", "/api/state")] = {"friends": [friend("Kim"), friend("Lee", due=True, snoozed=True)]}
-    assert addons.friends()["headline"] == "No one due"
-
-
-def test_friends_blocked_by_ingress_check_is_unavailable(fake_addons):
-    fake_addons.data[("friends", "/api/state")] = urllib.error.HTTPError("u", 403, "forbidden", {}, None)
-    with pytest.raises(urllib.error.HTTPError):
-        addons.friends()
-
-
 # ---------------------------------------------------------------- due today
 def test_due_combines_maintenance_and_work(fake_ha, fake_addons, set_options):
     set_options(api_key="wt-key")

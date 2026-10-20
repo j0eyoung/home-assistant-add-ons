@@ -15,7 +15,6 @@ import sections_ha
 PREFIX = "c0a16a5a-"
 HOSTS = {   # name: (hostname, port)
     "meals": (PREFIX + "meal-planner", 8502),
-    "friends": (PREFIX + "friend-reminder", 8503),
     "work": (PREFIX + "work-tracker", 8505),
     "ski": (PREFIX + "ski-assistant", 8099),
     "money": (PREFIX + "budget", 8099),
@@ -109,26 +108,6 @@ def meals():
         return {"headline": "Nothing planned", "lines": ["No meals planned today"] + lines}
     return {"headline": f"Dinner: {dinner['name']}" if dinner else f"{len(todays)} meal{'s' if len(todays) != 1 else ''}",
             "lines": lines}
-
-
-# ---------------------------------------------------------------- friends (Friend Reminder /api/state)
-def friends():
-    state = _get("friends", "/api/state")
-    per_day = int((state.get("settings") or {}).get("nudges_per_day") or 1)
-    picks = [f for f in state.get("friends") or [] if f.get("birthday_today") or (f.get("due") and not f.get("snoozed"))]
-    picks = picks[:max(1, per_day)]
-    if not picks:
-        return {"headline": "No one due", "lines": ["No one to reach out to today"]}
-    lines = []
-    for f in picks:
-        if f.get("birthday_today"):
-            lines.append(f"{f['name']}: birthday today")
-        elif f.get("never_logged"):
-            lines.append(f"{f['name']}: not logged yet")
-        else:
-            d = f.get("days_since")
-            lines.append(f"{f['name']}: {d} day{'s' if d != 1 else ''} since you talked")
-    return {"headline": ", ".join(f["name"] for f in picks), "lines": lines}
 
 
 # ---------------------------------------------------------------- due today (Home Maintenance sensors, Work Tracker /api/state)

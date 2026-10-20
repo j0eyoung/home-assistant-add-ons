@@ -25,10 +25,6 @@ views:
             content: >-
               {% for l in state_attr('sensor.daily_briefing_meals', 'lines') or ['Unavailable'] %}<font size="5">{{ l | e }}</font><br>{% endfor %}
           - type: markdown
-            title: Friends
-            content: >-
-              {% for l in state_attr('sensor.daily_briefing_friends', 'lines') or ['Unavailable'] %}<font size="5">{{ l | e }}</font><br>{% endfor %}
-          - type: markdown
             title: Due today
             content: >-
               {% for l in state_attr('sensor.daily_briefing_due', 'lines') or ['Unavailable'] %}<font size="5">{{ l | e }}</font><br>{% endfor %}

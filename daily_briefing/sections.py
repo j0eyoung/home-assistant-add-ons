@@ -15,7 +15,6 @@ SECTIONS = [
     ("today", "Today", "mdi:calendar-today", sections_ha.today_section),
     ("workout", "Workout", "mdi:dumbbell", addons.workout),
     ("meals", "Meals", "mdi:silverware-fork-knife", addons.meals),
-    ("friends", "Friends", "mdi:account-heart", addons.friends),
     ("due", "Due today", "mdi:wrench-clock", addons.due),
     ("ski", "Ski", "mdi:ski", addons.ski),
     ("money", "Money", "mdi:cash", addons.money),

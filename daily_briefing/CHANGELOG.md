@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Removed the Friends section: the dashboard has 7 cards and `sensor.daily_briefing_friends` is no longer published (a copy made by 0.1.0 disappears when Home Assistant restarts). The add-on no longer talks to Friend Reminder.
+
 ## 0.1.0
 
 First version.
