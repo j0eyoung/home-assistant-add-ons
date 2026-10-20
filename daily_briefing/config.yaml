@@ -1,6 +1,6 @@
 name: "Daily Briefing"
 description: "Your day at a glance on the TV: date, weather, calendar, workout, meals, what's due, ski, money and shopping. Published as Home Assistant sensors with a ready-made dashboard to cast, plus an optional morning summary on your phone."
-version: "0.1.1"
+version: "0.1.2"
 slug: "daily_briefing"
 image: "ghcr.io/j0eyoung/{arch}-ha-daily-briefing"
 arch:
@@ -34,7 +34,8 @@ schema:
   morning_notification: bool?
   morning_time: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)?"
   refresh_seconds: "int(30,600)?"
-  calendars: "[str]?"
+  calendars:
+    - "str?"
   weather_entity: str?
   shopping_list: str?
   api_token: password?
