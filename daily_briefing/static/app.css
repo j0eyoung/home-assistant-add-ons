@@ -1,0 +1,29 @@
+:root {
+  --bg: #121c2e;
+  --card: #1b2840;
+  --text: #f0f4fa;
+  --muted: #96a2b8;
+  --accent: #ffcd70;
+  --warn: #ff9a8a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { padding: 16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left)); }
+.top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.title { font-size: 30px; font-weight: 700; }
+.muted { color: var(--muted); font-size: 14px; }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.card { background: var(--card); border-radius: 16px; padding: 16px 18px; min-width: 0; }
+.card h2 { margin: 0 0 8px; font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.card .head { font-size: 24px; font-weight: 700; color: var(--accent); margin: 0 0 6px; overflow-wrap: anywhere; }
+.card ul { list-style: none; margin: 0; padding: 0; }
+.card li { padding: 2px 0; overflow-wrap: anywhere; }
+.card li.gap { height: 8px; padding: 0; }
+.card.unavailable .head, .card.unavailable li { color: var(--warn); }
+.card.off { opacity: .6; }
+.card.off .head { color: var(--muted); }
+.tv { margin-top: 22px; }
+.tv summary { cursor: pointer; color: var(--muted); }
+button { font: inherit; padding: 8px 14px; border-radius: 10px; border: 0; background: var(--accent); color: #1b2840; font-weight: 600; }
+code { background: var(--card); padding: 1px 6px; border-radius: 6px; }
+@media (min-width: 1200px) { html, body { font-size: 22px; } .grid { grid-template-columns: repeat(4, 1fr); } }

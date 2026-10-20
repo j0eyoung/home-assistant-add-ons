@@ -1,0 +1,46 @@
+# Daily Briefing: TV dashboard. Paste into a new dashboard's Raw configuration editor.
+# Each card shows one sensor.daily_briefing_* sensor published by the Daily Briefing add-on.
+# The text comes from the sensor's "lines" attribute, one line per row, so a section that is
+# unavailable shows "Unavailable" instead of a blank card.
+title: Daily Briefing
+views:
+  - title: Briefing
+    path: briefing
+    type: panel
+    cards:
+      - type: grid
+        columns: 4
+        square: false
+        cards:
+          - type: markdown
+            title: Today
+            content: >-
+              {% for l in state_attr('sensor.daily_briefing_today', 'lines') or ['Unavailable'] %}{% if loop.first %}<font size="7"><b>{{ l | e }}</b></font>{% else %}<font size="5">{{ l | e }}</font>{% endif %}<br>{% endfor %}
+          - type: markdown
+            title: Workout
+            content: >-
+              {% for l in state_attr('sensor.daily_briefing_workout', 'lines') or ['Unavailable'] %}{% if loop.first %}<font size="6"><b>{{ l | e }}</b></font>{% else %}<font size="5">{{ l | e }}</font>{% endif %}<br>{% endfor %}
+          - type: markdown
+            title: Meals
+            content: >-
+              {% for l in state_attr('sensor.daily_briefing_meals', 'lines') or ['Unavailable'] %}<font size="5">{{ l | e }}</font><br>{% endfor %}
+          - type: markdown
+            title: Friends
+            content: >-
+              {% for l in state_attr('sensor.daily_briefing_friends', 'lines') or ['Unavailable'] %}<font size="5">{{ l | e }}</font><br>{% endfor %}
+          - type: markdown
+            title: Due today
+            content: >-
+              {% for l in state_attr('sensor.daily_briefing_due', 'lines') or ['Unavailable'] %}<font size="5">{{ l | e }}</font><br>{% endfor %}
+          - type: markdown
+            title: Ski
+            content: >-
+              {% for l in state_attr('sensor.daily_briefing_ski', 'lines') or ['Unavailable'] %}<font size="5">{{ l | e }}</font><br>{% endfor %}
+          - type: markdown
+            title: Money
+            content: >-
+              {% for l in state_attr('sensor.daily_briefing_money', 'lines') or ['Unavailable'] %}<font size="5">{{ l | e }}</font><br>{% endfor %}
+          - type: markdown
+            title: Shopping
+            content: >-
+              {% for l in state_attr('sensor.daily_briefing_shopping', 'lines') or ['Unavailable'] %}<font size="5">{{ l | e }}</font><br>{% endfor %}

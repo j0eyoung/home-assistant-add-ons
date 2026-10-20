@@ -1,0 +1,36 @@
+configuration:
+  notify_service:
+    name: Notify service
+    description: >-
+      The phone for the morning summary, for example mobile_app_pixel_9. Leave empty to use the only
+      phone with the Home Assistant companion app.
+  morning_notification:
+    name: Morning phone summary
+    description: Send a short text summary of the day to your phone at the morning time.
+  morning_time:
+    name: Morning time
+    description: Time (HH:MM, 24 hours) of the morning phone summary.
+  refresh_seconds:
+    name: Refresh every (seconds)
+    description: How often the briefing is rebuilt and the sensors updated. 30 to 600, default 60.
+  calendars:
+    name: Calendars
+    description: >-
+      Calendar entities to include, for example calendar.family. Leave empty to include every calendar
+      except holidays and birthdays.
+  weather_entity:
+    name: Weather entity
+    description: For example weather.home. Leave empty to use the first weather entity found.
+  shopping_list:
+    name: Shopping list
+    description: The to-do list shown as the shopping list. Defaults to todo.shopping_list.
+  api_token:
+    name: Budget API token
+    description: >-
+      The api_token of the Budget add-on, for the one-line money status. Leave empty to skip Money.
+      Filled from the shared addon_secrets.json when blank.
+  api_key:
+    name: Work Tracker API key
+    description: >-
+      The api_key of the Work Tracker add-on, to list its tasks due today. Leave empty to skip them.
+      Filled from the shared addon_secrets.json when blank.

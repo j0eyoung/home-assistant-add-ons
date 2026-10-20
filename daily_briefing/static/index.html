@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#121c2e">
+  <meta name="color-scheme" content="dark">
+  <title>Daily Briefing</title>
+  <link rel="icon" type="image/png" href="static/icon.png?v=__V__">
+  <link rel="apple-touch-icon" href="static/icon.png?v=__V__">
+  <link rel="stylesheet" href="static/app.css?v=__V__">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="title" id="date">Daily Briefing</div>
+      <div class="muted" id="status">Loading…</div>
+    </div>
+  </header>
+
+  <main id="grid" class="grid" aria-live="polite"></main>
+
+  <details class="tv">
+    <summary>Show it on the TV</summary>
+    <p class="muted">Create a dashboard in Home Assistant, open its Raw configuration editor and paste this, then cast it with
+      <code>cast.show_lovelace_view</code>. The add-on's Documentation tab has the full steps.</p>
+    <button type="button" id="copy">Copy dashboard</button>
+    <span class="muted" id="copied" hidden>Copied</span>
+  </details>
+
+  <script src="static/app.js?v=__V__"></script>
+</body>
+</html>

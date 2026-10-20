@@ -42,6 +42,8 @@ jobs:
           - { addon: home_maintenance, image: ha-home-maintenance, arch: aarch64, runner: ubuntu-24.04-arm }
           - { addon: work_tracker, image: ha-work-tracker, arch: amd64, runner: ubuntu-24.04 }
           - { addon: work_tracker, image: ha-work-tracker, arch: aarch64, runner: ubuntu-24.04-arm }
+          - { addon: daily_briefing, image: ha-daily-briefing, arch: amd64, runner: ubuntu-24.04 }
+          - { addon: daily_briefing, image: ha-daily-briefing, arch: aarch64, runner: ubuntu-24.04-arm }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
