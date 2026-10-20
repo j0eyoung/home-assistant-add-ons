@@ -195,7 +195,11 @@ async function loadRadar() {
   if (MAP) { setTimeout(() => MAP.invalidateSize(), 50); return; }
   try { if (!window.L) await loadLeaflet(); } catch (e) { $('map').textContent = e.message; return; }
   MAP = L.map('map').setView([39.65, -106.2], 8);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 13, attribution: '&copy; OpenStreetMap contributors' }).addTo(MAP);
+  // OpenStreetMap's own tile server blocks apps like this one (Home Assistant ingress), so use CARTO's free
+  // basemap (OSM data), light or dark to match the page
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png`,
+    { maxZoom: 13, subdomains: 'abcd', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }).addTo(MAP);
   RLAYERS = RFRAMES.map(f => L.tileLayer(`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913${f ? '-' + f : ''}/{z}/{x}/{y}.png`,
     { opacity: 0, zIndex: 10, attribution: 'Radar: IEM NEXRAD' }).addTo(MAP));
   if (!FC) FC = await api('forecast').catch(() => []);
