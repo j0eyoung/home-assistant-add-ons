@@ -195,11 +195,18 @@ async function loadRadar() {
   if (MAP) { setTimeout(() => MAP.invalidateSize(), 50); return; }
   try { if (!window.L) await loadLeaflet(); } catch (e) { $('map').textContent = e.message; return; }
   MAP = L.map('map').setView([39.65, -106.2], 8);
-  // OpenStreetMap's own tile server blocks apps like this one (Home Assistant ingress), so use CARTO's free
-  // basemap (OSM data), light or dark to match the page
-  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-  L.tileLayer(`https://{s}.basemaps.cartocdn.com/${dark ? 'dark_all' : 'light_all'}/{z}/{x}/{y}{r}.png`,
-    { maxZoom: 13, subdomains: 'abcd', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }).addTo(MAP);
+  // With a CARTO key (add-on option) use CARTO's basemap, light or dark to match the page. Without one fall back
+  // to OpenStreetMap, which returns an "Access blocked" picture when a request has no Referer (Home Assistant
+  // ingress sends none), so referrerPolicy 'origin' makes the tile requests carry the page's origin.
+  const cfg = await api('map').catch(() => ({ carto_key: '' }));
+  if (cfg.carto_key) {
+    const style = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark_all' : 'voyager';
+    L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/${style}/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cfg.carto_key)}`,
+      { maxZoom: 13, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }).addTo(MAP);
+  } else {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { maxZoom: 13, referrerPolicy: 'origin', attribution: '&copy; OpenStreetMap contributors' }).addTo(MAP);
+  }
   RLAYERS = RFRAMES.map(f => L.tileLayer(`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913${f ? '-' + f : ''}/{z}/{x}/{y}.png`,
     { opacity: 0, zIndex: 10, attribution: 'Radar: IEM NEXRAD' }).addTo(MAP));
   if (!FC) FC = await api('forecast').catch(() => []);

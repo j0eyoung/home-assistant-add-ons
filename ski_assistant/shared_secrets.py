@@ -12,7 +12,7 @@ OPTIONS = "/data/options.json"
 CANDIDATES = ["/homeassistant/addon_secrets.json", "/config/addon_secrets.json"]
 # Options this add-on accepts. Home Assistant leaves optional options without a default out of
 # options.json, so they have to be listed here to be filled.
-KEYS = ['powder_alert_inches', 'claude_code_oauth_token', 'cotrip_api_key']
+KEYS = ['powder_alert_inches', 'claude_code_oauth_token', 'cotrip_api_key', 'carto_api_key']
 
 
 def main():

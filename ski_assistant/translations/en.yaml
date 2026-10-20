@@ -15,3 +15,9 @@ configuration:
     description: >-
       Live I-70 incidents, road conditions, closures and travel times from CDOT. Get a free key at
       manage-api.cotrip.org and paste it here. Stays on your Home Assistant.
+  carto_api_key:
+    name: CARTO map key (optional)
+    description: >-
+      Makes the Radar tab's map use CARTO's free basemap (light and dark). Without it the map uses
+      OpenStreetMap, which sometimes blocks Home Assistant. Get a free key at carto.com/basemaps/apikey.
+      The key is sent to your own browser to load map tiles.

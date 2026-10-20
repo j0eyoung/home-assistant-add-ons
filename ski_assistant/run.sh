@@ -29,4 +29,7 @@ fi
 # Optional: CDOT COtrip key for live I-70 incidents, conditions and travel times
 export COTRIP_API_KEY="$(opt cotrip_api_key)"
 
+# Optional: CARTO Basemaps key for the Radar tab's map (without it the map falls back to OpenStreetMap)
+export CARTO_API_KEY="$(opt carto_api_key)"
+
 exec uvicorn api:app --host 0.0.0.0 --port 8099

@@ -1,6 +1,6 @@
 name: "Ski Assistant"
 description: "16-day snow forecasts for your resorts, Daily Snow, radar, powder alerts, best-day picks, leave times and a season log."
-version: "0.5.1"
+version: "0.5.2"
 slug: "ski_assistant"
 image: "ghcr.io/j0eyoung/{arch}-ski-assistant"
 arch:
@@ -20,7 +20,9 @@ options:
   powder_alert_inches: 6
   claude_code_oauth_token: ""
   cotrip_api_key: ""
+  carto_api_key: ""
 schema:
   powder_alert_inches: int(1,48)
   claude_code_oauth_token: password?
   cotrip_api_key: password?
+  carto_api_key: password?

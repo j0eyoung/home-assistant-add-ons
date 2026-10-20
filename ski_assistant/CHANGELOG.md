@@ -1,9 +1,17 @@
 # Changelog
 
-## 0.5.1 - Radar Map Fix
+## 0.5.2 - Radar Map: CARTO Key
+
+### 🌟 Features
+* **A "CARTO map key" option in the Configuration tab.** CARTO's free basemap needs a key (free at carto.com/basemaps/apikey). With one, the Radar tab uses CARTO's map, light or dark to match your theme.
 
 ### 🐞 Fixes
-* **The radar map shows its map again.** OpenStreetMap's own tile server blocks apps opened through Home Assistant, so the Radar tab was a grid of "Access blocked" squares. It now uses CARTO's free map (same OpenStreetMap data), light or dark to match your theme.
+* **The radar map no longer depends on OpenStreetMap blocking you.** Without a CARTO key the map goes back to OpenStreetMap and now sends the page's origin with each tile request, which is what OpenStreetMap asks for. The CARTO map tried in 0.5.1 had no key, so it showed an "API KEY REQUIRED" watermark.
+
+## 0.5.1 - Radar Map Fix (replaced in 0.5.2)
+
+### 🐞 Fixes
+* Tried CARTO's free map for the Radar tab to get around "Access blocked" squares from OpenStreetMap. It shows an "API KEY REQUIRED" watermark, so 0.5.2 goes back to OpenStreetMap.
 
 ## 0.5.0 - Weekend Outlook, Storm Trends, Model Accuracy, Packing List
 

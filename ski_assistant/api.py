@@ -350,6 +350,12 @@ def shopping(s: Shopping):
 
 
 # Settings
+@app.get("/api/map")
+def map_config():
+    """Basemap for the Radar tab. A CARTO key (add-on option) is used by the browser to load its tiles."""
+    return {"carto_key": os.getenv("CARTO_API_KEY", "")}
+
+
 @app.get("/api/settings")
 def get_settings():
     return {"settings": settings.load(), "phones": ha.notify_services() if ha.available() else [],
