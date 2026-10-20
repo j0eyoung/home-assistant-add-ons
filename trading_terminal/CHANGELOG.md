@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 - 2026-10-19
+- **Trade PIN.** Live orders ask for a 4 to 8 digit PIN before they're sent, even when you're already signed in to Home Assistant. You create it with your first live order, or under My trading plan, where you can change it, turn it off, or ask for it on paper orders too. Five wrong tries lock orders for 15 minutes. Forgot it? Turn on `reset_trade_pin`, restart the add-on, then turn it off again.
+- **Settings shared across devices.** Chart ranges, indicators, recent tickers, the last screen and the other saved choices are now kept by the add-on, so your phone and PC match (they were stored separately in each browser).
+- **Bracket and trailing stops.** Take profit and stop loss go in with the order on Alpaca and now Interactive Brokers (the other cancels when one fills). New "trailing stop" order type, and a "trailing stop once filled" option on a buy: the add-on watches the entry and places a trailing stop for the shares that filled, even with no page open. They're listed under Orders.
+- **Journal stats.** Win rate, average win and loss, profit factor, average result per trade and in multiples of your planned risk (R), broken down by setup tag, with an equity curve for each setup.
+- Tab icon: the browser tab and phone home-screen icon now use the add-on's icon.
+- Fixed: switching between Income, Balance sheet and Cash flow on Financials gave an error, and the app didn't reopen on the last screen you used.
+
 ## 0.3.0 - 2026-10-14
 - **Opens straight away.** The page no longer waits for the broker connection and the AI check (which could take a minute after a restart). Screens that need the broker say "Connecting to your broker…" and fill in by themselves.
 - **Live prices.** Prices on screen are pushed from the server once a second from the Alpaca stream (every 5 seconds for indexes, futures and anything the stream doesn't cover), instead of the page asking every 5 seconds.

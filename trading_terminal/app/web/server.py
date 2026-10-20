@@ -33,12 +33,12 @@ from starlette.staticfiles import StaticFiles
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from terminal import (alerts, backtest, cache, collector, config, data, gains, ideas, journal,  # noqa: E402
-                      predictions, profile, sources, store, stream, tools, watchlists)
+from terminal import (alerts, backtest, cache, collector, config, data, exits, gains, ideas, journal,  # noqa: E402
+                      pin, predictions, prefs, profile, sources, store, stream, tools, watchlists)
 from terminal import indicators as ind  # noqa: E402
 from terminal.brokers import OrderRequest, connect_all  # noqa: E402
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 STATIC = Path(__file__).resolve().parent / "static"
 NY, LOCAL_TZ = "America/New_York", "America/Denver"
 SLOW = 1.0
@@ -670,22 +670,51 @@ def orders_api(p, b, pp):
     return out
 
 
-def _order_req(b: dict) -> OrderRequest:
+def _trail(b: dict, key: str) -> tuple[float | None, float | None]:
+    """(percent, dollars) from a trail amount and its unit ('%' or '$')."""
+    v = b.get(key)
+    if v in (None, "", 0, "0"):
+        return None, None
+    v = float(v)
+    if v <= 0:
+        raise ValueError("The trailing amount must be more than 0")
+    return (v, None) if b.get(key + "_unit", "%") == "%" else (None, v)
+
+
+def _order_req(b: dict) -> tuple[OrderRequest, tuple[float | None, float | None]]:
+    """The entry order, plus the trailing stop to place once it fills ((None, None) when there isn't one)."""
     f = lambda k: float(b[k]) if b.get(k) not in (None, "", 0, "0") else None
     otype = b.get("type", "market")
     px = f("price")
+    tp, tv = _trail(b, "price") if otype == "trailing" else (None, None)
     req = OrderRequest(str(b["symbol"]).strip().upper(), b.get("side", "buy"), float(b.get("qty") or 0), otype,
                        px if otype == "limit" else None, px if otype == "stop" else None, b.get("tif", "day"),
-                       f("take_profit"), f("stop_loss"))
+                       f("take_profit"), f("stop_loss"), tp, tv)
     if req.qty <= 0:
         raise ValueError("Quantity must be more than 0")
-    if otype != "market" and not px:
+    if otype == "trailing" and not (tp or tv):
+        raise ValueError("Enter how far the trailing stop should follow the price")
+    elif otype not in ("market", "trailing") and not px:
         raise ValueError(f"Enter a {otype} price")
-    return req
+    if otype == "trailing" and (req.take_profit or req.stop_loss):
+        raise ValueError("A trailing stop order can't carry a take profit or stop loss")
+    after = _trail(b, "exit_trail")
+    if after != (None, None):
+        if req.take_profit or req.stop_loss:
+            raise ValueError("The trailing stop replaces the stop loss and take profit; clear those, or the trailing stop")
+        if req.is_option or otype == "trailing":
+            raise ValueError("A trailing stop after the fill is for stock entries only")
+    return req, after
+
+
+def _after_text(after) -> str:
+    pct, amt = after
+    return "" if not (pct or amt) else f", then a trailing stop {pct:g}% once filled" if pct else \
+        f", then a trailing stop ${amt:,.2f} once filled"
 
 
 def order_preview_api(p, b, pp):
-    req = _order_req(b)
+    req, after = _order_req(b)
     name = b.get("broker")
     ref = b.get("ref") or (quotes([req.symbol]).get(req.symbol) or {}).get("last") if not req.is_option else b.get("ref")
     unit = req.limit_price or req.stop_price or ref
@@ -700,24 +729,70 @@ def order_preview_api(p, b, pp):
         pass
     if config.LIVE:
         warnings.append("LIVE account: this uses real money.")
-    return {"describe": req.describe(), "value": value, "warnings": warnings, "mode": config.MODE_LABEL,
-            "broker": broker(name).name}
+    return {"describe": req.describe() + _after_text(after), "value": value, "warnings": warnings,
+            "mode": config.MODE_LABEL, "broker": broker(name).name, "pin": pin.status()}
+
+
+def _risk_per_share(req: OrderRequest, unit, after) -> float | None:
+    """What one share stands to lose if the exit is hit, for results in multiples of risk (R) on the Journal."""
+    try:
+        unit = float(unit) if unit else None
+    except (TypeError, ValueError):
+        unit = None
+    if req.stop_loss and unit:
+        return abs(unit - req.stop_loss) or None
+    pct, amt = after
+    return amt or (unit * pct / 100 if unit and pct else None)
 
 
 def order_submit_api(p, b, pp):
     if not b.get("confirm"):
         return fail("Order not confirmed")
-    req = _order_req(b)
+    req, after = _order_req(b)
+    if pin.required():
+        pin.check(b.get("pin"))
     br = broker(b.get("broker"))
     oid = br.submit_order(req)
     forget("acct:"); forget("pos:")
     note = ""
+    if after != (None, None):
+        exits.add(br.name, oid, req.symbol, req.side, *after)
     try:
         unit = req.limit_price or req.stop_price or b.get("ref")
-        journal.add(br.name, oid, req, unit, b.get("note", ""), b.get("tags") or [])
+        journal.add(br.name, oid, req, unit, b.get("note", ""), b.get("tags") or [],
+                    risk_per_share=_risk_per_share(req, unit, after))
     except Exception as e:
         note = f"Order sent, but the journal entry wasn't saved: {e}"
-    return {"id": oid, "describe": req.describe(), "note": note}
+    return {"id": oid, "describe": req.describe() + _after_text(after), "note": note}
+
+
+def submit_exit(br, x: dict, qty: float) -> str:
+    return br.submit_order(OrderRequest(x["symbol"], x["side"], qty, "trailing", tif="gtc",
+                                        trail_percent=x.get("trail_percent"), trail_price=x.get("trail_price")))
+
+
+def exits_api(p, b, pp):
+    """Trailing stops the app is waiting to place (or has placed) after an entry fills."""
+    if b.get("action") == "cancel":
+        exits.mark(b["id"], state="canceled")
+    return {"exits": list(reversed(exits.load()))[:30]}
+
+
+def pin_api(p, b, pp):
+    act = b.get("action")
+    if act == "set":
+        pin.set_pin(b.get("pin"), b.get("current"))
+    elif act == "paper":
+        pin.set_paper(bool(b.get("on")), b.get("current"))
+    elif act == "remove":
+        pin.remove(b.get("current"))
+    return pin.status()
+
+
+def prefs_api(p, b, pp):
+    if isinstance(b.get("set"), dict):
+        return {"prefs": prefs.update(b["set"])}
+    return {"prefs": prefs.load()}
 
 
 def order_cancel_api(p, b, pp):
@@ -751,27 +826,55 @@ def closed_trades(fills: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True) if parts else gains.realized(fills)
 
 
+def _tag_stats(g: pd.DataFrame) -> dict:
+    wins, losses = g[g["pl"] > 0], g[g["pl"] < 0]
+    r = g["r"].dropna()
+    return {"trades": len(g), "win_rate": len(wins) / len(g) * 100 if len(g) else 0.0,
+            "avg_win": wins["pl"].mean() if len(wins) else 0.0, "avg_loss": losses["pl"].mean() if len(losses) else 0.0,
+            "profit_factor": wins["pl"].sum() / -losses["pl"].sum() if len(losses) and losses["pl"].sum() else None,
+            "expectancy": g["pl"].mean(), "avg_r": r.mean() if len(r) else None, "r_trades": len(r),
+            "total": g["pl"].sum()}
+
+
+CURVE_TAGS = 6
+
+
 def journal_api(p, b, pp):
+    """Journal entries plus the track record: each closed trade is matched to the journal entry that opened
+    it, for its tags and planned risk (results in multiples of risk, R), with an equity curve per tag."""
     entries = journal.load()
     fills, _, errors = activity()
     closed = closed_trades(fills)
-    by_tag = []
-    if not closed.empty and entries:
+    summary, by_tag, curves = gains.summary(closed), [], None
+    if not closed.empty:
         utc = lambda ts: (lambda t: t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC"))(pd.Timestamp(ts))
-        tagged = []
+        trades, tagged = [], []
         for t in closed.itertuples():
             opener = "buy" if t.direction == "Long" else "sell"
             cutoff = utc(t.opened) + pd.Timedelta(minutes=1)
             match = [e for e in entries if e["symbol"] == t.symbol and e["side"] == opener
                      and pd.Timestamp(e["time"], unit="s", tz="UTC") <= cutoff]
-            for tag in (match[-1]["tags"] if match else []) or ["(no tag)"]:
-                tagged.append({"tag": tag, "pl": t.pl, "win": t.pl > 0})
-        if tagged:
-            g = pd.DataFrame(tagged).groupby("tag").agg(trades=("pl", "size"), win_rate=("win", "mean"), total=("pl", "sum"))
-            g["win_rate"] *= 100
-            by_tag = g.sort_values("total", ascending=False).reset_index()
-    return {"entries": list(reversed(entries)), "summary": gains.summary(closed), "by_tag": by_tag, "errors": errors,
-            "tags": journal.TAGS}
+            e = match[-1] if match else {}
+            open_px = (t.cost if t.direction == "Long" else t.proceeds) / t.qty if t.qty else None
+            rps = e.get("risk_per_share") or (abs(open_px - e["stop_loss"]) if e.get("stop_loss") and open_px else None)
+            r = t.pl / (rps * t.qty) if rps and t.qty else None
+            when = int(utc(t.closed).value // 1_000_000)
+            trades.append({"pl": t.pl, "r": r, "closed": when})
+            for tag in e.get("tags") or ["(no tag)"]:
+                tagged.append({"tag": tag, "pl": t.pl, "r": r, "closed": when})
+        alltr = pd.DataFrame(trades)
+        rr = alltr["r"].dropna()
+        summary.update(expectancy=alltr["pl"].mean(), avg_r=rr.mean() if len(rr) else None)
+        tg = pd.DataFrame(tagged)
+        by_tag = sorted(({"tag": k, **_tag_stats(g)} for k, g in tg.groupby("tag")), key=lambda x: -x["total"])
+        # Cumulative P/L over time, overall and for the most-used tags, on one shared time axis.
+        times = sorted(set(alltr["closed"]))
+        cum = lambda df: df.groupby("closed")["pl"].sum().cumsum().reindex(times).ffill()
+        top = [x["tag"] for x in sorted(by_tag, key=lambda x: -x["trades"])[:CURVE_TAGS]]
+        curves = {"t": times, "all": cum(alltr).tolist(),
+                  "tags": {k: cum(tg[tg["tag"] == k]).tolist() for k in top}}
+    return {"entries": list(reversed(entries)), "summary": summary, "by_tag": by_tag, "curves": curves,
+            "errors": errors, "tags": journal.TAGS}
 
 
 def journal_update_api(p, b, pp):
@@ -1307,6 +1410,14 @@ def background_loop():
                 threading.Thread(target=explain_alert, args=(a,), daemon=True, name="alert-why").start()
         except Exception as e:
             log(f"[web] alert check failed: {e}")
+        if exits.waiting():
+            try:
+                for m in exits.check(brokers()[0], submit_exit):
+                    log(f"[exits] {m}")
+                    push_event("exit", m)
+                forget("pos:")
+            except Exception as e:
+                log(f"[exits] check failed: {e}")
         if config.FINNHUB_API_KEY and time.time() > next_earn:
             next_earn = time.time() + 3600
             try:
@@ -1372,6 +1483,8 @@ async def index(request: Request):
 
 
 def startup():
+    if pin.reset_if_asked():
+        log("[web] trade PIN cleared (reset_trade_pin is on: turn it off again on the Configuration tab)")
     stream.start()
     collector.start()
     threading.Thread(target=warm, daemon=True, name="warm").start()
@@ -1388,7 +1501,8 @@ ROUTES = {
     "economy": economy_api, "events": events_api, "watchlists": watchlists_api, "alerts": alerts_api,
     "plan": plan_api, "brief": brief_api, "claude": claude_api, "data": data_api,
     "orders/preview": order_preview_api, "orders/submit": order_submit_api, "orders/cancel": order_cancel_api,
-    "brokers/reconnect": reconnect_api, "journal/update": journal_update_api,
+    "brokers/reconnect": reconnect_api, "journal/update": journal_update_api, "pin": pin_api, "prefs": prefs_api,
+    "exits": exits_api,
 }
 
 @contextlib.asynccontextmanager

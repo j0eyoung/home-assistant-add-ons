@@ -13,10 +13,27 @@
   const px = v => num(v) ? f2(v, Math.abs(v) < 1 ? 4 : 2) : "–";
   const title = s => String(s).replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, c => c.toUpperCase());
 
-  const S = { boot: null, fn: "PORT", sym: localStorage.getItem("sym") || "", token: 0, charts: [], timers: [], quotes: {}, broker: null, chat: [] };
-  // Per-screen settings (ranges, tabs, filters) kept in this browser between visits.
-  function pref(k, def) { try { const v = localStorage.getItem("pref:" + k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } }
-  function setPref(k, v) { try { localStorage.setItem("pref:" + k, JSON.stringify(v)); } catch (e) { } }
+  // Per-screen settings (ranges, tabs, recent tickers, last screen). They're saved on the server so every
+  // device shares them; this browser keeps a copy so the page can start before the server answers.
+  const P = {};
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k.startsWith("pref:")) P[k.slice(5)] = JSON.parse(localStorage.getItem(k)); } } catch (e) { }
+  const pref = (k, def) => P[k] === undefined ? def : P[k];
+  let prefQueue = {}, prefTimer = null;
+  function setPref(k, v) {
+    if (JSON.stringify(P[k]) === JSON.stringify(v)) return;
+    P[k] = v; try { localStorage.setItem("pref:" + k, JSON.stringify(v)); } catch (e) { }
+    prefQueue[k] = v; clearTimeout(prefTimer);
+    prefTimer = setTimeout(() => { const q = prefQueue; prefQueue = {}; api("prefs", null, { set: q }).catch(() => Object.assign(prefQueue, q)); }, 800);
+  }
+  // Server copy wins; the first time (nothing on the server yet) this browser's settings are sent up.
+  async function syncPrefs() {
+    try {
+      const r = await api("prefs");
+      if (!Object.keys(r.prefs).length && Object.keys(P).length) { await api("prefs", null, { set: { ...P } }); return; }
+      Object.entries(r.prefs).forEach(([k, v]) => { if (k in prefQueue) return; P[k] = v; try { localStorage.setItem("pref:" + k, JSON.stringify(v)); } catch (e) { } });
+    } catch (e) { }
+  }
+  const S = { boot: null, fn: "PORT", sym: pref("sym", ""), token: 0, charts: [], timers: [], quotes: {}, broker: null, chat: [] };
   // Recently viewed tickers, newest first.
   const recent = () => pref("recent", []);
   function remember(sym) { if (sym) setPref("recent", [sym, ...recent().filter(s => s !== sym)].slice(0, 12)); }
@@ -107,13 +124,14 @@
     const [fn, sym] = routeFn();
     const screen = SCREENS[fn];
     cleanup();
-    S.fn = fn; if (sym) { S.sym = sym; try { localStorage.setItem("sym", sym); } catch (e) { } }
+    S.fn = fn; if (sym) { S.sym = sym; setPref("sym", sym); }
     if (STOCK.has(fn) && S.sym && !S.noRemember) remember(S.sym);
     S.noRemember = false;
     buildNav(); paintRecent();
     const main = $("#main"); main.scrollTop = 0;
     const token = ++S.token;
     if (!screen) { main.innerHTML = note(`Unknown function <b>${esc(fn)}</b>. Try the list on the left.`); return; }
+    setPref("last", location.hash);
     if (STOCK.has(fn) && !S.sym) { main.innerHTML = subnav() + note("Type a ticker in the command bar, e.g. <b>NVDA</b>.", "note box"); return; }
     main.innerHTML = subnav() + (STOCK.has(fn) ? `<div id="sec"></div>` : "") + `<div id="screen"><div class="loading">Loading</div></div>`;
     if (STOCK.has(fn)) secHeader(token);
@@ -388,20 +406,24 @@
       <label class="f">Account<select class="in" id="t-br">${brokers.map(b => `<option ${b === t.broker ? "selected" : ""}>${esc(b)}</option>`).join("")}</select></label></div>
       <div class="side"><button type="button" class="b ${t.side === "buy" ? "on" : ""}" data-side="buy">BUY</button><button type="button" class="s ${t.side === "sell" ? "on" : ""}" data-side="sell">SELL</button></div>
       <div class="two"><label class="f">Quantity<input class="in num" id="t-qty" type="number" min="0" step="any" value="${t.qty}"></label>
-      <label class="f">Order type<select class="in" id="t-type">${["market", "limit", "stop"].map(x => `<option ${x === t.type ? "selected" : ""}>${x}</option>`).join("")}</select></label></div>
-      <div class="two"><label class="f" id="px-l">Price<input class="in num" id="t-px" type="number" step="any" value="${t.price}"></label>
+      <label class="f">Order type<select class="in" id="t-type">${[["market", "market"], ["limit", "limit"], ["stop", "stop"], ["trailing", "trailing stop"]].map(([v, l]) => `<option value="${v}" ${v === t.type ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
+      <div class="two"><label class="f" id="px-l"><span id="px-n">Price</span><span class="row nw"><input class="in num" id="t-px" type="number" step="any" value="${t.price}"><select class="in unit" id="t-tu"><option>%</option><option>$</option></select></span></label>
       <label class="f">Time in force<select class="in" id="t-tif">${["day", "gtc"].map(x => `<option ${x === t.tif ? "selected" : ""}>${x}</option>`).join("")}</select></label></div>
       <details id="sz-d" ${pref("ord.size", false) ? "open" : ""}><summary>SIZE BY RISK</summary><div class="two"><label class="f" title="What you'd lose if the stop is hit">Risk ($)<input class="in num" id="sz-risk" type="number" min="0" step="any"></label>
         <label class="f">Stop price<input class="in num" id="sz-stop" type="number" step="any"></label></div>
         <div class="row" style="margin-top:6px"><button type="button" class="btn" id="sz-go">Set quantity</button><span class="muted" id="sz-out"></span></div></details>
-      <details><summary>BRACKET (optional)</summary><div class="two"><label class="f">Take profit<input class="in num" id="t-tp" type="number" step="any"></label><label class="f">Stop loss<input class="in num" id="t-sl" type="number" step="any"></label></div></details>
+      <details id="ex-d"><summary>EXITS (optional)</summary><div class="two"><label class="f">Take profit<input class="in num" id="t-tp" type="number" step="any"></label><label class="f">Stop loss<input class="in num" id="t-sl" type="number" step="any"></label></div>
+        <div class="two"><label class="f" title="Placed by the app as soon as the order fills; follows the price up (or down for a short) and sells if it turns back by this much">Or a trailing stop once filled<span class="row nw"><input class="in num" id="t-xt" type="number" min="0" step="any" placeholder="e.g. 5"><select class="in unit" id="t-xu"><option>%</option><option>$</option></select></span></label></div>
+        <div class="muted">Take profit and stop loss go in with the order, and when one fills the other is canceled. A trailing stop replaces both.</div></details>
       <label class="f">Note for journal<input class="in" id="t-note" maxlength="200"></label>
       <div class="est"><span>Last <span id="t-last" class="dim">–</span></span><span id="t-est"></span></div>
       <button class="btn pri wide" id="t-prev">Review order</button><div id="t-out"></div></form>`)}</div>
-      <div class="col">${panel("Orders", `<div id="ol"><div class="loading">Loading</div></div>`)}</div></div>`;
+      <div class="col">${panel("Orders", `<div id="ol"><div class="loading">Loading</div></div>`)}<div id="xl"></div></div></div>`;
     const g = id => $("#" + id, el);
-    const upd = () => { g("px-l").style.display = g("t-type").value === "market" ? "none" : ""; const q = S.quotes[g("t-sym").value.trim().toUpperCase()];
-      g("t-last").textContent = q ? px(q.last) : "–"; const unit = +g("t-px").value || (q && q.last); g("t-est").textContent = unit ? "Est. " + money(unit * (+g("t-qty").value || 0)) : ""; };
+    const upd = () => { const ty = g("t-type").value, trail = ty === "trailing"; g("px-l").style.display = ty === "market" ? "none" : "";
+      g("px-n").textContent = trail ? "Trail by" : "Price"; g("t-tu").style.display = trail ? "" : "none";
+      const q = S.quotes[g("t-sym").value.trim().toUpperCase()];
+      g("t-last").textContent = q ? px(q.last) : "–"; const unit = (!trail && +g("t-px").value) || (q && q.last); g("t-est").textContent = unit ? "Est. " + money(unit * (+g("t-qty").value || 0)) : ""; };
     $$("[data-side]", el).forEach(b => b.onclick = () => { t.side = b.dataset.side; $$("[data-side]", el).forEach(x => x.classList.toggle("on", x === b)); });
     ["t-type", "t-qty", "t-px"].forEach(i => g(i).oninput = upd);
     g("t-sym").onchange = async () => { const s = g("t-sym").value.trim().toUpperCase(); if (!s) return; try { Object.assign(S.quotes, (await api("quotes", { s })).quotes); } catch (e) { } upd(); };
@@ -417,7 +439,7 @@
     loadAcct();
     g("sz-go").onclick = () => {
       const s = g("t-sym").value.trim().toUpperCase(), q = S.quotes[s] || {};
-      const entry = g("t-type").value !== "market" && +g("t-px").value ? +g("t-px").value : q.last;
+      const entry = ["limit", "stop"].includes(g("t-type").value) && +g("t-px").value ? +g("t-px").value : q.last;
       const risk = +g("sz-risk").value, stop = +g("sz-stop").value, out = g("sz-out");
       if (!entry || !risk || !stop) { out.innerHTML = `<span class="warn">Need a price, a risk amount and a stop.</span>`; return; }
       const per = t.side === "buy" ? entry - stop : stop - entry;
@@ -429,17 +451,33 @@
       out.innerHTML = `<b>${qty} shares</b> (${why}). Stop loss filled in below.`;
     };
     const body = () => ({ broker: g("t-br").value, symbol: g("t-sym").value.trim().toUpperCase(), side: t.side, qty: g("t-qty").value, type: g("t-type").value, price: g("t-px").value, tif: g("t-tif").value,
-      take_profit: g("t-tp").value, stop_loss: g("t-sl").value, ref: (S.quotes[g("t-sym").value.trim().toUpperCase()] || {}).last, note: g("t-note").value });
+      take_profit: g("t-tp").value, stop_loss: g("t-sl").value, ref: (S.quotes[g("t-sym").value.trim().toUpperCase()] || {}).last, note: g("t-note").value,
+      price_unit: g("t-tu").value, exit_trail: g("t-xt").value, exit_trail_unit: g("t-xu").value });
     $("#tk").onsubmit = async e => {
       e.preventDefault(); const out = g("t-out"), b = body(); out.innerHTML = `<div class="loading">Checking</div>`;
       try {
-        const p = await post("orders/preview", b);
+        const p = await post("orders/preview", b), pin = p.pin || {};
+        const pinBox = !pin.required ? "" : pin.set ? `<label class="f">Trade PIN<input class="in num pin" id="t-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8"></label>`
+          : `<div class="note">Live orders need a trade PIN. Choose 4 to 8 digits; you'll enter it before each live order.</div><div class="two"><label class="f">New PIN<input class="in num pin" id="t-pn1" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8"></label><label class="f">Repeat<input class="in num pin" id="t-pn2" type="password" inputmode="numeric" autocomplete="new-password" maxlength="8"></label></div>`;
         out.innerHTML = `<div class="confirm"><div class="d">${esc(p.describe)}</div>${p.value ? `<div>Estimated value ${money(p.value)} on ${esc(p.broker)} (${esc(p.mode)})</div>` : ""}${(p.warnings || []).map(w => `<div class="warn">⚠ ${esc(w)}</div>`).join("")}
-          <div class="row"><button type="button" class="btn ${t.side === "buy" ? "buy" : "sell"}" id="t-go">Confirm ${t.side.toUpperCase()}</button><button type="button" class="btn" id="t-no">Cancel</button></div></div>`;
+          ${pinBox}<div class="row"><button type="button" class="btn ${t.side === "buy" ? "buy" : "sell"}" id="t-go">Confirm ${t.side.toUpperCase()}</button><button type="button" class="btn" id="t-no">Cancel</button></div><div id="t-er"></div></div>`;
         g("t-no").onclick = () => out.innerHTML = "";
-        g("t-go").onclick = async ev => { ev.target.disabled = true;
-          try { const r = await post("orders/submit", { ...b, confirm: true }); out.innerHTML = note(`Sent: ${esc(r.describe)}${r.note ? " " + esc(r.note) : ""}`, "note up"); toast("Order sent", "good"); loadOrders(); }
-          catch (er) { out.innerHTML = `<div class="err">${esc(er.message)}</div>`; } };
+        const pinIn = g("t-pin") || g("t-pn1"); if (pinIn) { pinIn.focus(); pinIn.onkeydown = ev => { if (ev.key === "Enter") { ev.preventDefault(); g("t-go").click(); } }; }
+        let saved = null;  // a PIN created in this box, so a retry doesn't try to create it again
+        g("t-go").onclick = async ev => { ev.target.disabled = true; const er = g("t-er"); er.innerHTML = "";
+          try {
+            let code = g("t-pin") ? g("t-pin").value : saved;
+            if (g("t-pn1") && !saved) {
+              code = g("t-pn1").value;
+              if (code !== g("t-pn2").value) throw new Error("The two PINs don't match.");
+              await post("pin", { action: "set", pin: code }); saved = code; toast("Trade PIN saved", "good");
+            }
+            const r = await post("orders/submit", { ...b, confirm: true, pin: code });
+            out.innerHTML = note(`Sent: ${esc(r.describe)}${r.note ? " " + esc(r.note) : ""}`, "note up"); toast("Order sent", "good"); loadOrders();
+          } catch (x) {
+            er.innerHTML = `<div class="err">${esc(x.message)}</div>`; ev.target.disabled = false;
+            if (g("t-pin")) { g("t-pin").value = ""; g("t-pin").focus(); }
+          } };
       } catch (er) { out.innerHTML = `<div class="err">${esc(er.message)}</div>`; }
     };
     async function loadOrders() {
@@ -451,21 +489,54 @@
             { k: "x", h: "", f: r => r.state === "open" ? `<button class="btn sm" data-cx="${esc(r.id)}" data-b="${esc(r.broker)}">Cancel</button>` : "" }], { nogo: true, empty: "No orders yet." });
         $$("[data-cx]", el).forEach(b => b.onclick = async () => { b.disabled = true; try { await post("orders/cancel", { id: b.dataset.cx, broker: b.dataset.b }); toast("Cancel sent", "good"); loadOrders(); } catch (e) { toast(e.message, "bad"); b.disabled = false; } });
       } catch (e) { $("#ol").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+      try {
+        const x = (await api("exits")).exits; if (!ok()) return;
+        const STATE = { waiting: "Waiting for the fill", placed: "Placed", failed: "Failed", canceled: "Not needed", lost: "Entry not found" };
+        $("#xl").innerHTML = !x.length ? "" : panel("Trailing stops after fill", table(x, [{ k: "symbol", h: "Symbol", f: r => symLink(r.symbol) }, "side",
+          { k: "trail", h: "Trail", f: r => r.trail_percent ? f2(r.trail_percent, 2).replace(/\.?0+$/, "") + "%" : money(r.trail_price) }, { k: "qty", h: "Qty", f: r => r.qty == null ? "–" : f2(r.qty, 0) },
+          { k: "state", h: "Status", cls: "l", f: r => `<span title="${esc(r.error || "")}" class="${r.state === "failed" ? "neg" : ""}">${esc(STATE[r.state] || r.state)}${r.error ? ": " + esc(r.error) : ""}</span>` },
+          { k: "x", h: "", f: r => r.state === "waiting" ? `<button class="btn sm" data-xx="${esc(r.id)}">Don't place</button>` : "" }], { nogo: true }));
+        $$("[data-xx]", el).forEach(b => b.onclick = async () => { b.disabled = true; await post("exits", { action: "cancel", id: b.dataset.xx }).catch(() => { }); loadOrders(); });
+      } catch (e) { }
     }
     await loadOrders(); every(loadOrders, 15000);
   };
 
   // Journal
-  SCREENS.JRNL = async ({ el }) => {
+  const rMult = v => v == null || !num(v) ? "–" : `<span class="${sgn(v)}">${v >= 0 ? "+" : ""}${f2(v, 2)}R</span>`;
+  const CURVE_COLORS = ["#5aa9ff", "#3ddc97", "#c58cff", "#ff7ab6", "#ffd84d", "#7ee0e0"];
+  SCREENS.JRNL = async ({ el, chart }) => {
     const j = await api("journal"), s = j.summary || {};
-    const stats = s.trades ? tiles(Object.entries(s).map(([k, v]) => [title(k), /pl|profit|loss|avg|best|worst|total/i.test(k) ? `<span class="${sgn(v)}">${money(v)}</span>` : /rate|pct/i.test(k) ? f2(v, 1) + "%" : f2(v, Number.isInteger(v) ? 0 : 2)])) : note("No closed trades yet.");
-    el.innerHTML = `<div class="grid">${panel("Track record", `<div class="pb">${stats}</div>`)}
-      ${j.by_tag.length ? panel("Results by tag", table(j.by_tag, ["tag", "trades", { k: "win_rate", h: "Win rate", f: r => f2(r.win_rate, 0) + "%" }, { k: "total", h: "Total P/L", f: r => `<span class="${sgn(r.total)}">${money(r.total)}</span>` }], { nogo: true })) : ""}
+    const mon = v => `<span class="${sgn(v)}">${money(v)}</span>`;
+    const stats = s.trades ? tiles([["Closed trades", f2(s.trades, 0)], ["Win rate", f2(s.win_rate, 1) + "%"], ["Total P/L", mon(s.total)], ["Avg win", mon(s.avg_win)], ["Avg loss", mon(s.avg_loss)],
+      ["Profit factor", s.profit_factor == null ? "–" : f2(s.profit_factor, 2)], ["Per trade", mon(s.expectancy)], ["Avg result", rMult(s.avg_r)], ["Short-term", mon(s.short_term)], ["Long-term", mon(s.long_term)]]) : note("No closed trades yet.");
+    const tagCols = ["tag", "trades", { k: "win_rate", h: "Win rate", f: r => f2(r.win_rate, 0) + "%" }, { k: "avg_win", h: "Avg win", f: r => mon(r.avg_win) }, { k: "avg_loss", h: "Avg loss", f: r => mon(r.avg_loss) },
+      { k: "profit_factor", h: "Profit factor", f: r => r.profit_factor == null ? "–" : f2(r.profit_factor, 2) }, { k: "expectancy", h: "Per trade", f: r => mon(r.expectancy) },
+      { k: "avg_r", h: "Avg R", f: r => rMult(r.avg_r) + (r.avg_r != null && r.r_trades < r.trades ? `<span class="dim"> (${r.r_trades})</span>` : "") }, { k: "total", h: "Total P/L", f: r => mon(r.total) }];
+    const cv = j.curves, curveTags = cv ? Object.keys(cv.tags) : [];
+    el.innerHTML = `<div class="grid">${panel("Track record", `<div class="pb">${stats}</div>${s.trades ? note("R is the result in multiples of what you planned to risk (entry to stop loss, or the trailing stop), for orders placed here with a stop. Per trade is the average P/L of every closed trade.", "cap") : ""}`)}
+      ${cv ? panel("Equity curve by setup", `<div class="pb"><div id="jc" class="chart"></div></div>`, seg([["all", "All"], ...curveTags.map(t => [t, t])], pref("jrnl.curve", "all"), "cv")) : ""}
+      ${j.by_tag.length ? panel("Results by tag", table(j.by_tag, tagCols, { nogo: true })) : ""}
       ${panel("Entries", table(j.entries, [{ k: "time", h: "When", f: r => esc(new Date(r.time * 1000).toLocaleString()) }, { k: "symbol", h: "Symbol", f: r => symLink(r.symbol) }, "side", "qty", { k: "price", h: "Price", f: r => px(r.price) },
         { k: "tags", h: "Tags", cls: "l", f: r => (r.tags || []).map(t => `<span class="chip">${esc(t)}</span>`).join("") }, { k: "note", h: "Note", cls: "l s" }, { k: "review", h: "Review", cls: "l s", f: r => esc(r.review || "") },
         { k: "x", h: "", f: r => `<button class="btn sm" data-rv="${esc(r.id)}">Review</button> <button class="btn sm" data-del="${esc(r.id)}">Delete</button>` }], { nogo: true, empty: "Orders you place here are logged automatically." }))}</div>`;
     $$("[data-rv]", el).forEach(b => b.onclick = async () => { const t = prompt("How did this trade go? What would you do differently?"); if (t == null) return; await post("journal/update", { id: b.dataset.rv, review: t }); render(); });
     $$("[data-del]", el).forEach(b => b.onclick = async () => { if (confirm("Delete this journal entry?")) { await post("journal/update", { id: b.dataset.del, delete: true }); render(); } });
+    if (!cv) return;
+    // Cumulative closed P/L: the chosen setup in amber, the others (or everything) as thin lines for comparison.
+    let c = null;
+    const zero = v => v.map(x => x == null ? 0 : x);
+    const draw = sel => {
+      if (sel !== "all" && !cv.tags[sel]) sel = "all";
+      $$("[data-cv]", el).forEach(b => b.classList.toggle("on", b.dataset.cv === sel));
+      const main = sel === "all" ? cv.all : cv.tags[sel];
+      const overlays = sel === "all" ? curveTags.map((t, i) => ({ name: t, v: zero(cv.tags[t]), color: CURVE_COLORS[i % CURVE_COLORS.length] }))
+        : [{ name: "All trades", v: zero(cv.all), color: "#8aa", dash: [3, 3] }];
+      const cfg = { t: cv.t, c: zero(main), kind: "line", color: "#ffa62b", intraday: false, baseline: 0, name: sel === "all" ? "All trades" : sel, yfmt: v => "$" + f2(v, 0), overlays };
+      if (c) c.set(cfg); else c = chart(new window.TChart($("#jc"), cfg));
+    };
+    $$("[data-cv]", el).forEach(b => b.onclick = () => { setPref("jrnl.curve", b.dataset.cv); draw(b.dataset.cv); });
+    draw(pref("jrnl.curve", "all"));
   };
 
   // Gains
@@ -514,7 +585,8 @@
   // Chart
   SCREENS.GP = async ({ el, sym, chart, ok }) => {
     const st = { range: "1Y", kind: "candle", ind: new Set(["sma50", "sma200"]), vs: false };
-    try { Object.assign(st, JSON.parse(localStorage.getItem("gp") || "{}"), {}); st.ind = new Set(JSON.parse(localStorage.getItem("gp-ind") || '["sma50","sma200"]')); } catch (e) { }
+    try { const old = JSON.parse(localStorage.getItem("gp") || "null"), oldInd = JSON.parse(localStorage.getItem("gp-ind") || "null");  // before 0.4.0
+      Object.assign(st, pref("gp", old || {})); st.ind = new Set(pref("gp.ind", oldInd || ["sma50", "sma200"])); } catch (e) { }
     const INDS = [["sma20", "SMA 20"], ["sma50", "SMA 50"], ["sma200", "SMA 200"], ["bb", "Bollinger"], ["rsi", "RSI"], ["macd", "MACD"]];
     el.innerHTML = panel("Chart", `<div class="pb"><div id="gp" class="chart tall"></div></div>`,
       `<span id="gp-rg"></span><span id="gp-kd"></span>`) + `<div class="row" id="gp-in" style="margin-top:8px">${INDS.map(([k, n]) => `<label class="chk"><input type="checkbox" data-ind="${k}" ${st.ind.has(k) ? "checked" : ""}>${n}</label>`).join("")}<label class="chk"><input type="checkbox" id="gp-vs" ${st.vs ? "checked" : ""}>vs SPY</label></div>`;
@@ -536,7 +608,7 @@
         if (c) c.set(cfg); else c = chart(new window.TChart($("#gp"), cfg));
       } catch (e) { $("#gp").innerHTML = `<div class="err">${esc(e.message)}</div>`; c = null; } finally { loading = false; }
     };
-    const save = () => { try { localStorage.setItem("gp", JSON.stringify({ range: st.range, kind: st.kind, vs: st.vs })); localStorage.setItem("gp-ind", JSON.stringify([...st.ind])); } catch (e) { } };
+    const save = () => { setPref("gp", { range: st.range, kind: st.kind, vs: st.vs }); setPref("gp.ind", [...st.ind]); };
     $$("[data-ind]", el).forEach(i => i.onchange = () => { i.checked ? st.ind.add(i.dataset.ind) : st.ind.delete(i.dataset.ind); save(); draw(); });
     $("#gp-vs").onchange = e => { st.vs = e.target.checked; save(); draw(); };
     await draw();
@@ -561,6 +633,7 @@
   // Financials
   SCREENS.FA = async ({ el, sym, chart, ok }) => {
     const st = { stmt: "income", q: false, row: 0, ...pref("fa", {}) };
+    const keep = () => setPref("fa", { stmt: st.stmt, q: st.q });
     const draw = async () => {
       const d = await api("financials", { s: sym, stmt: st.stmt, q: st.q ? 1 : 0 }); if (!ok()) return;
       const cols = d.columns.slice(0, 8), rows = d.rows;
@@ -831,8 +904,28 @@
     el.innerHTML = panel("My trading plan", `<form class="pb ticket" id="pf" style="max-width:640px">${Object.entries(d.fields).map(([k, [label, hint, type, def]]) => {
       const v = d.values[k] ?? def, ch = String(type).startsWith("choice:") ? type.slice(7).split("|") : null;
       return `<label class="f">${esc(label)}${ch ? `<select class="in" name="${k}">${ch.map(c => `<option ${c === v ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>` : type === "area" ? `<textarea class="in" name="${k}" rows="2">${esc(v)}</textarea>` : `<input class="in num" name="${k}" type="number" step="any" value="${esc(v)}">`}${hint ? `<span class="muted">${esc(hint)}</span>` : ""}</label>`; }).join("")}
-      <button class="btn pri">Save plan</button></form>${note("The AI reads this to tailor its answers, and the order ticket warns when a trade breaks your size limit.", "cap")}`);
-    $("#pf").onsubmit = async e => { e.preventDefault(); const v = {}; $$("[name]", el).forEach(i => v[i.name] = i.type === "number" ? parseFloat(i.value) || 0 : i.value); await post("plan", { values: v }); toast("Plan saved", "good"); };
+      <button class="btn pri">Save plan</button></form>${note("The AI reads this to tailor its answers, and the order ticket warns when a trade breaks your size limit.", "cap")}`) + `<div id="pinp" style="margin-top:12px"></div>`;
+    $("#pf").onsubmit = async e => { e.preventDefault(); const v = {}; $$("#pf [name]", el).forEach(i => v[i.name] = i.type === "number" ? parseFloat(i.value) || 0 : i.value); await post("plan", { values: v }); toast("Plan saved", "good"); };
+    // Trade PIN: asked for before every live order (and paper ones too if ticked).
+    const pinIn = (id, label, auto = "off") => `<label class="f">${label}<input class="in num pin" id="${id}" type="password" inputmode="numeric" autocomplete="${auto}" maxlength="8"></label>`;
+    const drawPin = async () => {
+      const st = await api("pin");
+      $("#pinp").innerHTML = panel("Trade PIN", `<form class="pb ticket" id="pinf" style="max-width:640px" autocomplete="off">
+        <div>${st.set ? `<span class="chip pos">On</span> Asked for before every ${st.paper ? "order (live and paper)" : "live order"}.` : `<span class="chip">Not set</span> ${st.live ? "You'll be asked to create one with your first live order." : "Live orders will ask you to create one."}`}</div>
+        ${st.locked_for ? note(`Locked for ${Math.ceil(st.locked_for / 60)} more minutes after too many wrong PINs.`, "warn") : ""}
+        <div class="two">${st.set ? pinIn("pc", "Current PIN") : ""}${pinIn("pn1", st.set ? "New PIN" : "PIN (4 to 8 digits)", "new-password")}</div>
+        <div class="two">${pinIn("pn2", "Repeat new PIN", "new-password")}</div>
+        ${st.set ? `<label class="chk"><input type="checkbox" id="ppa" ${st.paper ? "checked" : ""}>Also ask for paper orders</label>` : ""}
+        <div class="row"><button class="btn pri">${st.set ? "Change PIN" : "Set PIN"}</button>${st.set ? `<button type="button" class="btn" id="prm">Turn off</button>` : ""}</div><div id="pout"></div>
+        <div class="muted">Forgot it? On the add-on's Configuration tab turn on <code>reset_trade_pin</code>, restart the add-on, then turn it off again.</div></form>`);
+      const cur = () => $("#pc") ? $("#pc").value : null, show = (m, cls) => $("#pout").innerHTML = note(esc(m), cls);
+      $("#pinf").onsubmit = async e => { e.preventDefault();
+        if ($("#pn1").value !== $("#pn2").value) return show("The two new PINs don't match.", "err");
+        try { await post("pin", { action: "set", pin: $("#pn1").value, current: cur() }); toast("Trade PIN saved", "good"); drawPin(); } catch (x) { show(x.message, "err"); } };
+      if ($("#ppa")) $("#ppa").onchange = async e => { try { await post("pin", { action: "paper", on: e.target.checked, current: cur() }); toast("Saved", "good"); drawPin(); } catch (x) { e.target.checked = !e.target.checked; show(x.message, "err"); } };
+      if ($("#prm")) $("#prm").onclick = async () => { try { await post("pin", { action: "remove", current: cur() }); toast("Trade PIN turned off"); drawPin(); } catch (x) { show(x.message, "err"); } };
+    };
+    drawPin().catch(e => $("#pinp").innerHTML = note(esc(e.message), "err"));
   };
 
   // Connect Claude
@@ -893,8 +986,8 @@
     const tick = async () => {
       try {
         const r = await api("events", { since });
-        if (!first) r.events.forEach(e => toast(e.kind === "alert-why" ? "Why: " + e.text : e.text, e.kind === "alert" ? "good" : "", e.kind === "alert-why" ? 20000 : 7000));
-        since = r.last; first = false;  // the first call only learns where the list is, so old events don't replay on every page load
+        const kind = e => e.kind === "alert" ? "good" : e.kind === "exit" ? (/couldn't/.test(e.text) ? "bad" : "good") : "";
+        if (!first) r.events.forEach(e => toast(e.kind === "alert-why" ? "Why: " + e.text : e.text, kind(e), e.kind === "alert-why" || e.kind === "exit" ? 20000 : 7000));        since = r.last; first = false;  // the first call only learns where the list is, so old events don't replay on every page load
         if (r.events.some(e => e.kind.startsWith("alert")) && S.fn === "ALRT") render();
       } catch (e) { }
     };
@@ -917,7 +1010,7 @@
   }
   const NEEDS_BOOT = new Set(["PORT", "ORD", "AI", "GAIN", "JRNL"]);
   async function start() {
-    try { S.boot = await api("boot"); }
+    try { [S.boot] = await Promise.all([api("boot"), syncPrefs()]); S.sym = pref("sym", S.sym); }
     catch (e) { $("#main").innerHTML = `<div class="err">Couldn't start: ${esc(e.message)}</div>`; return; }
     Object.entries(S.boot.functions).forEach(([g, items]) => Object.keys(items).forEach(k => FN_GROUP[k] = g));
     const m = $("#mode"); m.textContent = S.boot.mode; m.className = "mode " + (S.boot.live ? "live" : "paper");
@@ -929,7 +1022,7 @@
     sideWatch(); events(); bootFollowUp();
     setInterval(() => { if (!live.on) pollQuotes(); }, 5000);  // backup when the live stream can't connect
     setInterval(() => !document.hidden && sideWatch(), 120000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) { pollQuotes(); liveSync(true); } else liveStop(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { pollQuotes(); liveSync(true); syncPrefs().then(paintRecent); } else liveStop(); });
   }
   start();
 })();

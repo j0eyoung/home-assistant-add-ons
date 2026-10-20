@@ -3,3 +3,14 @@ __pycache__/
 *.db
 ski_resorts.json
 ski_settings.json
+
+# Trading Terminal local development
+.env
+.venv/
+.cache/
+.smoke/
+prefs.json
+trade_pin.json
+exits.json
+journal.json
+alerts.json

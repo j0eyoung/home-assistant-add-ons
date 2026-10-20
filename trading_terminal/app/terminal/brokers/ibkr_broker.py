@@ -9,7 +9,7 @@ import asyncio
 import threading
 import time
 
-from ib_async import IB, LimitOrder, MarketOrder, Stock, StopOrder
+from ib_async import IB, LimitOrder, MarketOrder, Order, Stock, StopOrder
 
 from .base import Broker, OrderRequest
 
@@ -115,6 +115,7 @@ class IBKRBroker(Broker):
                     "symbol": t.contract.symbol,
                     "side": t.order.action.lower(),
                     "qty": t.order.totalQuantity,
+                    "filled_qty": t.orderStatus.filled,
                     "type": t.order.orderType.lower(),
                     "limit_price": t.order.lmtPrice if t.order.orderType == "LMT" else None,
                     "status": t.orderStatus.status,
@@ -186,8 +187,8 @@ class IBKRBroker(Broker):
         return self._run(go(), timeout=60)
 
     def submit_order(self, req: OrderRequest) -> str:
-        if req.is_option or req.take_profit or req.stop_loss:
-            raise ValueError("Options and bracket orders are only supported through Alpaca in this app.")
+        if req.is_option:
+            raise ValueError("Options orders are only supported through Alpaca in this app.")
 
         async def go():
             await self._ensure()
@@ -200,9 +201,34 @@ class IBKRBroker(Broker):
                 order = LimitOrder(action, req.qty, req.limit_price, tif=tif)
             elif req.order_type == "stop":
                 order = StopOrder(action, req.qty, req.stop_price, tif=tif)
+            elif req.order_type == "trailing":
+                order = Order(action=action, totalQuantity=req.qty, orderType="TRAIL", tif=tif)
+                if req.trail_percent:
+                    order.trailingPercent = req.trail_percent
+                else:
+                    order.auxPrice = req.trail_price
             else:
                 order = MarketOrder(action, req.qty, tif=tif)
+            # Bracket: the exits are children of the entry, sent together, and one cancels the other.
+            # Only the last order goes out with transmit=True so IBKR never sees an entry without its exits.
+            exit_action = "SELL" if action == "BUY" else "BUY"
+            children = []
+            if req.take_profit:
+                children.append(LimitOrder(exit_action, req.qty, req.take_profit, tif="GTC"))
+            if req.stop_loss:
+                children.append(StopOrder(exit_action, req.qty, req.stop_loss, tif="GTC"))
+            if children:
+                order.orderId = self.ib.client.getReqId()
+                order.transmit = False
+                oca = f"bracket-{order.orderId}"
+                for i, c in enumerate(children):
+                    c.orderId = self.ib.client.getReqId()
+                    c.parentId = order.orderId
+                    c.ocaGroup, c.ocaType = oca, 1
+                    c.transmit = i == len(children) - 1
             trade = self.ib.placeOrder(contract, order)
+            for c in children:
+                self.ib.placeOrder(contract, c)
             # Give IBKR a few seconds to accept or reject it, so problems show up here and not as a
             # status that never moves.
             for _ in range(25):

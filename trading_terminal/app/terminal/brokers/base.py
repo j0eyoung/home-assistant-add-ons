@@ -13,13 +13,16 @@ class OrderRequest:
     symbol: str
     side: str  # "buy" | "sell"
     qty: float
-    order_type: str = "market"  # "market" | "limit" | "stop"
+    order_type: str = "market"  # "market" | "limit" | "stop" | "trailing"
     limit_price: float | None = None
     stop_price: float | None = None
     tif: str = "day"  # "day" | "gtc"
     # Exit orders attached to the entry (a "bracket"); either or both may be set.
     take_profit: float | None = None
     stop_loss: float | None = None
+    # A trailing stop follows the price by a percent or a dollar amount (one of the two).
+    trail_percent: float | None = None
+    trail_price: float | None = None
 
     @property
     def is_option(self) -> bool:
@@ -31,6 +34,8 @@ class OrderRequest:
             price = f" @ {self.limit_price:,.2f} LIMIT"
         elif self.order_type == "stop":
             price = f" @ {self.stop_price:,.2f} STOP"
+        elif self.order_type == "trailing":
+            price = f" TRAILING STOP {self.trail_percent:g}%" if self.trail_percent else f" TRAILING STOP ${self.trail_price:,.2f}"
         else:
             price = " @ MARKET"
         exits = ""

@@ -9,6 +9,7 @@ from alpaca.trading.requests import (
     StopLossRequest,
     StopOrderRequest,
     TakeProfitRequest,
+    TrailingStopOrderRequest,
 )
 
 from .base import Broker, OrderRequest
@@ -88,7 +89,8 @@ class AlpacaBroker(Broker):
                 "symbol": o.symbol,
                 "side": o.side.value,
                 "qty": _f(o.qty),
-                "type": o.order_type.value,
+                "filled_qty": _f(o.filled_qty),
+                "type": o.order_type.value if o.order_type else "",
                 "limit_price": _f(o.limit_price),
                 "status": o.status.value,
                 "submitted": o.submitted_at,
@@ -114,6 +116,8 @@ class AlpacaBroker(Broker):
             order = LimitOrderRequest(limit_price=req.limit_price, **common)
         elif req.order_type == "stop":
             order = StopOrderRequest(stop_price=req.stop_price, **common)
+        elif req.order_type == "trailing":
+            order = TrailingStopOrderRequest(trail_percent=req.trail_percent, trail_price=req.trail_price, **common)
         else:
             order = MarketOrderRequest(**common)
         return str(self.client.submit_order(order_data=order).id)

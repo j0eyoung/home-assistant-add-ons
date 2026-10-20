@@ -24,13 +24,14 @@ def _save(entries: list[dict]) -> None:
     tmp.replace(PATH)
 
 
-def add(broker: str, order_id: str, req, price: float | None, note: str, tags: list[str]) -> None:
+def add(broker: str, order_id: str, req, price: float | None, note: str, tags: list[str],
+        risk_per_share: float | None = None) -> None:
     entries = load()
     entries.append({
         "id": uuid.uuid4().hex[:10], "time": time.time(), "broker": broker, "order_id": order_id,
         "mode": config.MODE_LABEL, "symbol": req.symbol, "side": req.side, "qty": req.qty,
         "type": req.order_type, "price": price, "stop_loss": req.stop_loss, "take_profit": req.take_profit,
-        "note": note.strip(), "tags": tags, "review": "",
+        "risk_per_share": risk_per_share, "note": note.strip(), "tags": tags, "review": "",
     })
     _save(entries)
 

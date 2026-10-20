@@ -1,5 +1,5 @@
 name: Trading Terminal
-version: "0.3.2"
+version: "0.4.0"
 slug: trading_terminal
 description: Market data, research and paper/live trading through Alpaca and Interactive Brokers
 image: "ghcr.io/j0eyoung/{arch}-ha-trading-terminal"
@@ -31,6 +31,8 @@ options:
   ai_choice: auto
   # new = the fast Bloomberg-style terminal; classic = the previous Streamlit screens (fallback)
   ui: new
+  # Forgot your trade PIN? Turn this on, restart the add-on, then turn it off again.
+  reset_trade_pin: false
   watchlist: SPY,QQQ,AAPL,MSFT,NVDA,AMZN,GOOGL,META,TSLA,JPM
   ibkr_enabled: false
   # The IB Gateway add-on from this repository (hostname shown on its Info tab). Leave ibkr_port
@@ -46,6 +48,7 @@ schema:
   trading_mode: list(paper|live)
   ai_choice: list(auto|claude_code|claude|gemini)
   ui: list(new|classic)
+  reset_trade_pin: bool
   alpaca_paper_api_key: password?
   alpaca_paper_secret_key: password?
   alpaca_live_api_key: password?
