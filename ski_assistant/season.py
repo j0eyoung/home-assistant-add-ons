@@ -1,13 +1,10 @@
-"""Season log, season summary, learning-to-ski log and gear upkeep, all from the SQLite tables in db.py."""
+"""Season log, season summary and gear upkeep, all from the SQLite tables in db.py."""
 import datetime as dt
 
 import db
 import resorts
 import settings
 import util
-
-SKILLS = ["stance and balance", "straight run", "pizza / wedge stop", "wedge turns", "traverse", "sideslip",
-          "linking turns", "parallel turns", "pole plant", "hockey stop", "riding the chairlift", "getting off the lift"]
 
 
 def season_start(today=None):
@@ -79,30 +76,6 @@ def stats():
            for d in db.q("SELECT * FROM days WHERE equipment = 'ski' AND date >= ? ORDER BY date", (last_start,))]
     return {"this_season": _totals(this), "last_season_to_date": _totals(last_to_date),
             "last_season": _totals(last_all), "ski_progress": ski}
-
-
-# Learning to ski
-def add_lesson(date, resort_id="", skills="", notes=""):
-    return db.x("INSERT INTO lessons(date, resort_id, skills, notes) VALUES (?,?,?,?)", (date, resort_id, skills, notes))
-
-
-def list_lessons():
-    return db.q("SELECT * FROM lessons ORDER BY date DESC, id DESC")
-
-
-def delete_lesson(lesson_id):
-    db.x("DELETE FROM lessons WHERE id = ?", (lesson_id,))
-
-
-def learning_summary():
-    lessons = list_lessons()
-    practiced = {}
-    for l in lessons:
-        for sk in filter(None, (x.strip() for x in (l["skills"] or "").split(","))):
-            practiced[sk] = practiced.get(sk, 0) + 1
-    ski_days = db.q("SELECT COUNT(*) AS n FROM days WHERE equipment = 'ski' AND date >= ?", (season_start(),))[0]["n"]
-    return {"ski_days": ski_days, "lessons": len(lessons), "skills": practiced,
-            "not_yet": [s for s in SKILLS if s not in practiced]}
 
 
 # Gear upkeep

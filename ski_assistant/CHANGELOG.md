@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.3 - Shorter Road Alerts, Tidier Tabs
+
+### 🌟 Features
+* **Road alerts are one line each.** "I-70, Exit 190 Vail Pass Summit to Exit 180 East Vail: two left lanes closed (road construction), today 12am to tomorrow 12am." Closures happening now come first, then ones starting within 24 hours; later ones are just counted. The same closure on several days is one line with the days listed.
+
+### 🔧 Improvements
+* **Only roads on your drives show up.** Closures on other roads (Aurora, Commerce City, CO-57 and so on) no longer appear, and I-70 only counts between Denver and Vail Pass.
+* **Garmin connect moved to Settings.**
+* **Removed the Learning to ski tab.** The ski-day option on the Plan tab (favours green and blue runs) and your ski stats on the Season log tab are still there.
+* The CDOT travel-time line is hidden while it only has empty readings.
+
 ## 0.5.2 - Radar Map: CARTO Key
 
 ### 🌟 Features

@@ -51,23 +51,12 @@
 
 <section id="log">
  <div class="card" id="statsbox"></div>
- <div class="card" id="garminbox"></div>
  <div class="card"><h3>Add a day</h3><div class="row">
   <input type="date" id="ld"><select id="lr"></select>
   <select id="le"><option value="board">Board</option><option value="ski">Skis</option></select>
   <input id="lv" type="number" placeholder="Vertical ft (optional)" style="width:180px">
   <input id="ln" placeholder="Notes" style="flex:1;min-width:160px"><button onclick="addDay()">Save</button></div></div>
  <div class="card wrap"><table id="days"></table></div>
-</section>
-
-<section id="learn">
- <div class="card"><h3>Add a lesson or practice</h3>
-  <div class="row"><input type="date" id="sd"><select id="sr"></select></div>
-  <div id="skillpick" class="row" style="margin:8px 0"></div>
-  <textarea id="sn" placeholder="What clicked, what to work on next"></textarea>
-  <button onclick="addLesson()">Save</button></div>
- <div class="card" id="learnsum"></div>
- <div class="card wrap"><table id="lessons"></table></div>
 </section>
 
 <section id="gear">
@@ -78,7 +67,7 @@
  <div class="card"><h3>Shopping list</h3><div class="row"><input id="shop" placeholder="Hand warmers"><button onclick="addShop()">Add to Home Assistant</button></div><p id="shopmsg" class="mute"></p></div>
 </section>
 
-<section id="settings"><div class="card" id="claudebox"></div><div class="card" id="setbox"></div></section>
+<section id="settings"><div class="card" id="claudebox"></div><div class="card" id="garminbox"></div><div class="card" id="setbox"></div></section>
 
 <script src="static/charts.js"></script>
 <script src="static/app.js"></script>

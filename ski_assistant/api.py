@@ -293,30 +293,6 @@ def garmin_disconnect():
     return garmin.status()
 
 
-# Learning to ski
-class Lesson(BaseModel):
-    date: str
-    resort_id: str = ""
-    skills: str = ""
-    notes: str = ""
-
-
-@app.get("/api/lessons")
-def lessons():
-    return {"lessons": season.list_lessons(), "summary": season.learning_summary(), "skill_list": season.SKILLS}
-
-
-@app.post("/api/lessons")
-def add_lesson(l: Lesson):
-    return {"id": season.add_lesson(l.date, l.resort_id, l.skills, l.notes)}
-
-
-@app.delete("/api/lessons/{lesson_id}")
-def delete_lesson(lesson_id: int):
-    season.delete_lesson(lesson_id)
-    return {"ok": True}
-
-
 # Gear upkeep
 class Service(BaseModel):
     date: str

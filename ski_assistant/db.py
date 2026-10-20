@@ -1,4 +1,5 @@
-"""SQLite season log: ride days, lessons, gear service, and sent-notification keys."""
+"""SQLite season log: ride days, gear service, and sent-notification keys. (A `lessons` table from 0.5.x may still
+exist in an old database; nothing uses it any more and it is left alone.)"""
 import os
 import sqlite3
 import threading
@@ -11,8 +12,6 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS days (id INTEGER PRIMARY KEY, date TEXT NOT NULL, resort_id TEXT NOT NULL,
   equipment TEXT NOT NULL CHECK (equipment IN ('board','ski')), vertical_ft INTEGER, notes TEXT DEFAULT '',
   garmin_ids TEXT DEFAULT '');
-CREATE TABLE IF NOT EXISTS lessons (id INTEGER PRIMARY KEY, date TEXT NOT NULL, resort_id TEXT DEFAULT '',
-  skills TEXT DEFAULT '', notes TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS service (id INTEGER PRIMARY KEY, date TEXT NOT NULL,
   equipment TEXT NOT NULL CHECK (equipment IN ('board','ski')), kind TEXT NOT NULL CHECK (kind IN ('wax','tune')));
 CREATE TABLE IF NOT EXISTS sent (key TEXT PRIMARY KEY, at TEXT);

@@ -15,8 +15,8 @@ const t12 = s => { const [h, m] = s.split(':').map(Number); return `${h % 12 || 
 const hm = n => n >= 60 ? `${Math.floor(n / 60)}h${String(n % 60).padStart(2, '0')}` : `${n} min`;
 
 let RESORTS = [], SET = {}, FC = null;
-const TABS = { forecast: 'Forecast', plan: 'Plan', radar: 'Radar', log: 'Season log', learn: 'Learning to ski', gear: 'Gear', settings: 'Settings' };
-const LOADERS = { forecast: () => {}, plan: loadRoads, radar: loadRadar, log: () => { loadStats(); loadGarmin(); loadDays(); }, learn: loadLessons, gear: loadGear, settings: () => { loadClaude(); loadSettings(); } };
+const TABS = { forecast: 'Forecast', plan: 'Plan', radar: 'Radar', log: 'Season log', gear: 'Gear', settings: 'Settings' };
+const LOADERS = { forecast: () => {}, plan: loadRoads, radar: loadRadar, log: () => { loadStats(); loadDays(); }, gear: loadGear, settings: () => { loadClaude(); loadGarmin(); loadSettings(); } };
 
 function show(t) {
   for (const k in TABS) { $(k).classList.toggle('on', k === t); $('b_' + k).classList.toggle('on', k === t); }
@@ -31,8 +31,8 @@ async function init() {
   RESORTS = await api('resorts');
   SET = (await api('settings')).settings;
   fillDepartures();
-  for (const id of ['d', 'ld', 'sd', 'gd']) $(id).value = today;
-  $('lr').innerHTML = ropts(); $('sr').innerHTML = ropts(true);
+  for (const id of ['d', 'ld', 'gd']) $(id).value = today;
+  $('lr').innerHTML = ropts();
   let t = 'forecast'; try { t = localStorage.getItem('tab') || 'forecast'; } catch (e) {}
   show(TABS[t] ? t : 'forecast');
   loadDailySnow(false); loadForecast(); loadAlerts(); rank();
@@ -248,12 +248,24 @@ async function rank() {
     <p><button onclick="going($('d').value, '${esc(top.id)}', $('skis').checked)">I'm going: add packing list</button> <span class="mute" id="goingmsg"></span></p>
     ${top.transit.length ? '<p><b>Shuttle / transit</b></p><ul>' + top.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}` : '';
 }
+function alertLines(al, limit) {
+  const now = al.filter(a => a.status !== 'later'), later = al.length - now.length;
+  const line = a => {
+    const road = [a.road, a.direction].filter(Boolean).join(' ');
+    const what = a.what ? a.what.charAt(0).toLowerCase() + a.what.slice(1) : a.kind.toLowerCase();
+    return `<li class="warnnote">${esc(road)}${a.where ? ', ' + esc(a.where) : ''}: ${esc(what)} <span class="mute">${esc(a.when)}${a.status === 'soon' ? ' (soon)' : ''}</span></li>`;
+  };
+  let h = now.length ? '<ul>' + now.slice(0, limit).map(line).join('') + '</ul>' : '';
+  if (now.length > limit) h += `<p class="small">+${now.length - limit} more right now or soon</p>`;
+  if (later) h += `<p class="small">${later} more planned later this week</p>`;
+  return h;
+}
 function trafficText(tr) {
   if (!tr) return '';
   let s = '';
   if (tr.waze) s += `<p><b>Waze right now:</b> ${hm(tr.waze.minutes)}${tr.waze.route ? ' via ' + esc(tr.waze.route) : ''}.</p>`;
   const al = (tr.cotrip && tr.cotrip.alerts) || [];
-  if (al.length) s += '<ul>' + al.slice(0, 4).map(a => `<li class="warnnote">${esc(a.kind)}${a.road ? ' on ' + esc(a.road) : ''}${a.direction ? ' ' + esc(a.direction) : ''}: ${esc(a.text)}</li>`).join('') + '</ul>';
+  if (al.length) s += alertLines(al, 3);
   else if (tr.cotrip && tr.cotrip.configured) s += `<p class="mute">No CDOT alerts on ${esc(tr.roads.join(', '))} right now.</p>`;
   return s;
 }
@@ -265,9 +277,9 @@ async function loadRoads() {
   let h = '<h3>Roads right now</h3>';
   if (!t.cotrip.configured) h += '<p class="mute">Add a free COtrip key (manage-api.cotrip.org) in the add-on Configuration tab for live CDOT incidents, chain laws and closures.</p>';
   else if (t.cotrip.error && !al.length) h += `<p class="due">COtrip: ${esc(t.cotrip.error)}</p>`;
-  else h += al.length ? '<ul>' + al.slice(0, 10).map(a => `<li class="warnnote">${esc(a.kind)}${a.road ? ' on ' + esc(a.road) : ''}${a.direction ? ' ' + esc(a.direction) : ''}: ${esc(a.text)}</li>`).join('') + '</ul>'
-                      : '<p>No CDOT incidents or closures on your routes.</p>';
-  if (t.travel_times.length) h += '<p class="small">' + t.travel_times.slice(0, 8).map(x => `${esc(x.name)}: ${hm(Math.round(x.minutes))}${x.usual_minutes ? ` (usually ${hm(Math.round(x.usual_minutes))})` : ''}`).join(' · ') + '</p>';
+  else h += al.length ? alertLines(al, 6) : '<p>No CDOT incidents or closures on your routes.</p>';
+  const tt = t.travel_times.filter(x => x.minutes > 0 && !/VMS/i.test(x.name));
+  if (tt.length) h += '<p class="small">' + tt.slice(0, 6).map(x => `${esc(x.name)}: ${hm(Math.round(x.minutes))}${x.usual_minutes ? ` (usually ${hm(Math.round(x.usual_minutes))})` : ''}`).join(' · ') + '</p>';
   const w = Object.entries(t.waze).filter(([, v]) => v);
   h += w.length ? '<p class="small">Waze now: ' + w.map(([id, v]) => `${esc(rname(id))} ${hm(v.minutes)}`).join(' · ') + '</p>'
                : `<p class="small">${t.waze_sensors.length ? 'Waze sensors found, but none matched a resort: pick them in Settings.' : 'No Waze Travel Time sensors found in Home Assistant.'}</p>`;
@@ -306,8 +318,8 @@ async function loadStats() {
      <tr><th></th><th class="num">This season</th><th class="num">Last season, same date</th><th class="num">All last season</th></tr>
      ${row('days', 'Days', n)}${row('board_days', 'Board days', n)}${row('ski_days', 'Ski days', n)}
      ${row('vertical_ft', 'Vertical (ft)', n)}${row('top_speed_mph', 'Top speed (mph)', n)}${row('distance_mi', 'Distance (mi)', n)}${row('hours', 'Hours on snow', n)}</table></div>
-     ${s.ski_progress.length > 1 ? '<h3 style="margin-top:12px">Learning to ski: top speed per ski day (mph)</h3><div class="chart" id="c_ski"></div>' : ''}
-     <p class="small">Vertical, speed, distance and hours come from Garmin.</p>`;
+     ${s.ski_progress.length > 1 ? '<h3 style="margin-top:12px">Skiing: top speed per ski day (mph)</h3><div class="chart" id="c_ski"></div>' : ''}
+     <p class="small">Vertical, speed, distance and hours come from Garmin (connect it in Settings).</p>`;
   const sp = s.ski_progress.filter(x => x.top_speed_mph != null);
   if (sp.length > 1) Charts.add(() => lineChart($('c_ski'), [{ name: 'Top speed', color: 'var(--s1)', values: sp.map(x => x.top_speed_mph) }],
     { height: 130, labels: sp.map(x => x.date.slice(5)), labelEvery: Math.max(1, Math.ceil(sp.length / 8)), min: 0, unit: '',
@@ -360,25 +372,6 @@ async function addDay() {
 }
 async function flipDay(id, eq) { await api('days/' + id, { method: 'PATCH', body: JSON.stringify({ equipment: eq }) }); loadDays(); }
 async function delDay(id) { if (confirm('Delete this day?')) { await api('days/' + id, { method: 'DELETE' }); loadDays(); } }
-
-/* ---------- Learning to ski ---------- */
-async function loadLessons() {
-  const l = await api('lessons');
-  $('skillpick').innerHTML = l.skill_list.map(s => `<label class="inline"><input type="checkbox" value="${esc(s)}">${esc(s)}</label>`).join('');
-  const s = l.summary;
-  $('learnsum').innerHTML = `<h3>${s.ski_days} ski days · ${s.lessons} lessons</h3>
-    <p>${Object.entries(s.skills).map(([k, v]) => `${esc(k)} (${v})`).join(', ') || 'No skills logged yet.'}</p>
-    ${s.not_yet.length ? `<p class="mute">Not practiced yet: ${s.not_yet.map(esc).join(', ')}</p>` : ''}`;
-  $('lessons').innerHTML = '<tr><th>Date</th><th>Resort</th><th>Skills</th><th>Notes</th><th></th></tr>' +
-    l.lessons.map(x => `<tr><td>${x.date}</td><td>${esc(rname(x.resort_id))}</td><td>${esc(x.skills)}</td><td>${esc(x.notes)}</td>
-      <td><button onclick="delLesson(${x.id})">Delete</button></td></tr>`).join('');
-}
-async function addLesson() {
-  const skills = [...$('skillpick').querySelectorAll('input:checked')].map(i => i.value).join(', ');
-  await api('lessons', { method: 'POST', body: JSON.stringify({ date: $('sd').value, resort_id: $('sr').value, skills, notes: $('sn').value }) });
-  $('sn').value = ''; loadLessons();
-}
-async function delLesson(id) { if (confirm('Delete this lesson?')) { await api('lessons/' + id, { method: 'DELETE' }); loadLessons(); } }
 
 /* ---------- Gear ---------- */
 async function loadGear() {

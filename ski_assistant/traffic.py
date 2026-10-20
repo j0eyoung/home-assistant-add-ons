@@ -8,12 +8,14 @@ COtrip: CDOT's live data (incidents, road conditions, planned closures, travel t
 manage-api.cotrip.org in the add-on Configuration tab. The response format is parsed defensively (GeoJSON
 features or plain lists) because it couldn't be checked without a key; /api/traffic/debug shows the field names
 the feed actually sends so the parser can be tightened."""
+import datetime as dt
 import os
 import re
 
 import ha
 import httpjson
 import settings
+import util
 
 COTRIP = "https://data.cotrip.org/api/v1/{}?apiKey={}"
 FEEDS = {"incidents": "Incident", "roadConditions": "Road condition", "plannedEvents": "Planned closure"}
@@ -131,13 +133,122 @@ def _feed(name):
     return _items(httpjson.get(COTRIP.format(name, cotrip_key()), ttl=TTL, timeout=20))
 
 
+# I-70 only matters between Denver and Vail Pass for these drives (Aurora, Glenwood Springs and the like don't)
+ROAD_MILES = {"i70": (170, 265)}
+SOON_HOURS = 24
+
+
+def _road_id(s):
+    """'I-70E' / 'Interstate 70' -> 'i70'; 'US-6E' -> 'us6'; 'CO-57S' / 'SH 9' -> 'co57' / 'co9'."""
+    s = (s or "").lower().replace("interstate", "i").replace("state highway", "co")
+    m = re.search(r"\b(i|us|co|sh)[\s-]*(\d+)", s)
+    return f"{'co' if m.group(1) in ('co', 'sh') else m.group(1)}{m.group(2)}" if m else None
+
+
+def _clock(t):
+    """7:00AM -> '7am', 6:30PM -> '6:30pm', 12:00AM -> '12am'."""
+    return f"{t.hour % 12 or 12}{'' if t.minute == 0 else f':{t.minute:02d}'}{'am' if t.hour < 12 else 'pm'}"
+
+
+def _parse_when(part, now, after=None):
+    """'October 20, 2026 at 7:00AM MDT' / 'Tuesday at 6:30AM MDT' / 'Tuesday, at about 7:00PM MDT' -> aware datetime."""
+    tm = re.search(r"(\d{1,2}):(\d{2})\s*([AP]M)", part, re.I)
+    if not tm:
+        return None
+    hour, minute = int(tm.group(1)) % 12, int(tm.group(2))
+    if tm.group(3).upper() == "PM":
+        hour += 12
+    dm = re.search(r"([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})", part)
+    day = None
+    if dm:
+        try:
+            day = dt.datetime.strptime(f"{dm.group(1)} {dm.group(2)} {dm.group(3)}", "%B %d %Y").date()
+        except ValueError:
+            return None
+    else:
+        wd = next((i for i, n in enumerate(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"])
+                   if n in part.lower()), None)
+        if wd is None:
+            return None
+        base = (after or now).date()
+        day = base + dt.timedelta(days=(wd - base.weekday()) % 7)
+    return dt.datetime(day.year, day.month, day.day, hour, minute, tzinfo=util.TZ)
+
+
+def _when_text(start, end, now):
+    def day(d):
+        delta = (d.date() - now.date()).days
+        return "today" if delta == 0 else "tomorrow" if delta == 1 else d.strftime("%a %b ") + str(d.day)
+    if start.date() == end.date():
+        return f"{day(start)} {_clock(start)}-{_clock(end)}"
+    return f"{day(start)} {_clock(start)} to {day(end)} {_clock(end)}"
+
+
+def _summarize(kind, road, direction, text, now):
+    """One short, structured line from a CDOT notice. Returns None if the notice is for the wrong stretch."""
+    rid = _road_id(road) or _road_id(text)
+    miles = [float(x) for x in re.findall(r"Mile Point (\d+(?:\.\d+)?)", text)]
+    if rid in ROAD_MILES and miles and not (min(miles) <= ROAD_MILES[rid][1] and max(miles) >= ROAD_MILES[rid][0]):
+        return None
+    start = end = None
+    sm = re.search(r"Starting (.+?) until (.+?)\.(?:\s|$)", text)
+    if sm:
+        start = _parse_when(sm.group(1), now)
+        end = _parse_when(sm.group(2), now, after=start) if start else None
+    where = what = ""
+    lm = re.match(r"\s*Between (.+?) from Mile Point", text)
+    if lm:
+        where = re.sub(r"\s*\([^)]*\)", "", lm.group(1))
+        where = re.sub(r"(Exit \d+): ", r"\1 ", where).replace(" and ", " to ", 1)
+        rest = re.split(r"Mile Point [\d.]+\.\s*", text.split(" from Mile Point", 1)[1], maxsplit=1)
+        body = rest[1] if len(rest) > 1 else ""
+        body = re.split(r"\bStarting\b|Full schedule", body)[0].strip()
+        what = " ".join(re.split(r"(?<=\.)\s+", body)[:2]).rstrip(".")
+    else:
+        what = re.split(r"\bStarting\b|Full schedule", text)[0].strip().rstrip(".")
+    what = re.sub(r"\s+due to\s+", " (", what) + (")" if " due to " in what else "") if what else what
+    if start and end:
+        status = "now" if start <= now <= end else "soon" if 0 <= (start - now).total_seconds() <= SOON_HOURS * 3600 else \
+            ("gone" if end < now else "later")
+        when = _when_text(start, end, now)
+    else:
+        status, when = "now", "now"
+    if status == "gone":
+        return None
+    return {"kind": kind, "road": re.sub(r"(\d)[EWNS]\b", r"\1", (road or "").strip()),  # 'I-70W' -> 'I-70'
+            "direction": (direction or "").strip(), "where": where,
+            "what": what[:110], "when": when, "status": status}
+
+
+def _merge(items):
+    """The same closure on several days becomes one line with several times."""
+    merged = {}
+    for a in items:
+        k = (a["kind"], a["road"], a["direction"], a["where"], a["what"])
+        if k in merged:
+            m = merged[k]
+            m["whens"].append(a["when"])
+            if ["now", "soon", "later"].index(a["status"]) < ["now", "soon", "later"].index(m["status"]):
+                m["status"] = a["status"]
+        else:
+            merged[k] = dict(a, whens=[a["when"]])
+    out = []
+    for m in merged.values():
+        whens = m.pop("whens")
+        m["when"] = "; ".join(whens[:3]) + (f" (+{len(whens) - 3} more)" if len(whens) > 3 else "")
+        out.append(m)
+    return sorted(out, key=lambda x: ["now", "soon", "later"].index(x["status"]))
+
+
 def alerts(roads=None):
-    """Current incidents, road conditions and planned closures on the given roads (all roads if None).
-    {"configured", "alerts": [{kind, road, text, direction, start}], "error"}"""
+    """Incidents, road conditions and planned closures on the given roads (all roads if None), one short line each,
+    active now first, then starting within 24 hours, then later.
+    {"configured", "alerts": [{kind, road, direction, where, what, when, status}], "error"}"""
     if not cotrip_key():
         return {"configured": False, "alerts": [], "error": None}
-    want = {_road_key(x) for x in roads} if roads else None
-    out, errors = [], []
+    want = {_road_id(x) for x in roads} - {None} if roads else None
+    now = util.now()
+    found, errors = [], []
     for feed, kind in FEEDS.items():
         try:
             items = _feed(feed)
@@ -153,13 +264,17 @@ def alerts(roads=None):
             # Road conditions are only worth showing when they're not plain "dry"
             if feed == "roadConditions" and re.fullmatch(r"(dry|good|normal)\.?", text.lower()):
                 continue
-            blob = _road_key(f"{road or ''} {text}")
-            if want and not any(w in blob for w in want):
+            # Match on the notice's own road, not on roads it merely mentions ("...Colorado Avenue and I-70")
+            if want and _road_id(road) not in want:
                 continue
-            out.append({"kind": kind, "road": road, "text": text[:300],
-                        "direction": _first(p, "direction", "travelDirection"),
-                        "start": _first(p, "startTime", "start", "reportedTime", "lastUpdated")})
-    return {"configured": True, "alerts": out[:40], "error": "; ".join(errors) or None}
+            try:
+                a = _summarize(kind, road, _first(p, "direction", "travelDirection"), text, now)
+            except Exception:
+                a = {"kind": kind, "road": road or "", "direction": "", "where": "", "what": text[:110],
+                     "when": "now", "status": "now"}
+            if a:
+                found.append(a)
+    return {"configured": True, "alerts": _merge(found)[:40], "error": "; ".join(errors) or None}
 
 
 def travel_times():

@@ -1,6 +1,6 @@
 name: "Ski Assistant"
 description: "16-day snow forecasts for your resorts, Daily Snow, radar, powder alerts, best-day picks, leave times and a season log."
-version: "0.5.2"
+version: "0.5.3"
 slug: "ski_assistant"
 image: "ghcr.io/j0eyoung/{arch}-ski-assistant"
 arch:
