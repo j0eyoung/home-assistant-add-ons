@@ -90,7 +90,7 @@ def test_weekly_summary_once(clock, sent):
     assert nudger.tick(at("2026-10-23 16:00")) == []
     assert nudger.tick(at("2026-10-23 17:01")) == ["summary"]
     msg = sent["send"][0]["msg"]
-    assert "KISS: 0.75 h" in msg and "TORR: 0.50 h" in msg and "Total 1.25 h" in msg
+    assert "KISS: 1.00 h" in msg and "TORR: 0.50 h" in msg and "Total 1.50 h" in msg
     assert nudger.tick(at("2026-10-23 17:10")) == []
     assert db.get_setting("summary_week") == "2026-10-19"
 

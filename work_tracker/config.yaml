@@ -1,6 +1,6 @@
 name: "Work Tracker"
 description: "A 24/7 work log: hours by client and case, tasks and follow-ups with due dates, a stop-time nudge and a weekly summary on your phone."
-version: "0.2.0"
+version: "0.2.1"
 slug: "work_tracker"
 image: "ghcr.io/j0eyoung/{arch}-ha-work-tracker"
 arch:

@@ -1,7 +1,7 @@
 """Hours: the running timer, manual entries, totals and the timesheet export.
 
 Times are local and stored as text. The running timer is the one entry with no `end`, so it survives restarts.
-An entry counts toward the day it started. Timesheet hours are rounded to the nearest 0.25 h per
+An entry counts toward the day it started. Timesheet hours are rounded up to the next 0.25 h per
 (day, client, case), because each case is one Salesforce entry."""
 import csv
 import datetime
@@ -43,8 +43,8 @@ def minutes_of(e, at=None):
 
 
 def round_hours(minutes):
-    """Nearest 0.25 h (half a step rounds up)."""
-    return int(minutes / 15 + 0.5) / 4
+    """Up to the next 0.25 h (any part of a quarter hour counts as a whole one)."""
+    return -(-int(minutes) // 15) / 4
 
 
 def running():

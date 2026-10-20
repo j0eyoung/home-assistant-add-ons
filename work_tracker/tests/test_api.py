@@ -23,7 +23,7 @@ def test_entries_and_csv(client, clock):
     assert client.get("/api/entries").json()[0]["id"] == e["id"]
     assert client.patch(f"/api/entries/{e['id']}", json={"note": "n"}).json()["note"] == "n"
     csv = client.get("/api/export.csv")
-    assert csv.headers["content-type"].startswith("text/csv") and "KISS,1,Y,50,0.75,n" in csv.text
+    assert csv.headers["content-type"].startswith("text/csv") and "KISS,1,Y,50,1.00,n" in csv.text
     assert client.delete(f"/api/entries/{e['id']}").status_code == 200
     assert client.delete(f"/api/entries/{e['id']}").status_code == 404
 
