@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import accuracy
 import advisor
 import claudecode
 import dailysnow
@@ -158,7 +159,7 @@ def resort_detail(resort_id: str, band: str = "mid", departure: Optional[str] = 
             "band": band, "elevations": forecast.band_ft(r), "models": list(forecast.MODELS.values()),
             "daily": days, "next48": hours, **_report(r),
             "info": resortinfo.info(r) | {"openskimap_url": resortinfo.openskimap_url(r)},
-            "transit": transit.for_resort(r), "traffic": traffic.for_resort(r),
+            "transit": transit.for_resort(r), "traffic": traffic.for_resort(r), "accuracy": accuracy.scores(r["id"]),
             "leave_today": drive.plan(r, settings.departure(departure), today, st["arrive_by"], st["buffer_min"])}
 
 
@@ -191,6 +192,28 @@ class Day(BaseModel):
     equipment: str  # board | ski
     vertical_ft: Optional[int] = None
     notes: str = ""
+
+
+class Going(BaseModel):
+    date: str
+    resort_id: str
+    skis: bool = False
+
+
+@app.post("/api/going")
+def going(g: Going):
+    """'I'm going': puts the day's packing list on the Home Assistant to-do list."""
+    db.x("INSERT OR IGNORE INTO plans(date, resort_id, created) VALUES (?,?,?)",
+         (g.date, g.resort_id, util.now().strftime("%Y-%m-%d %H:%M")))
+    if not ha.available():
+        return {"added": [], "note": "Saved. The packing list goes to Home Assistant when the add-on runs there."}
+    added = scheduler.packing_list(g.resort_id, g.date, skis=g.skis)
+    return {"added": added, "note": f"{len(added)} items added to your list." if added else "Already on your list."}
+
+
+@app.get("/api/stats")
+def stats():
+    return season.stats()
 
 
 @app.get("/api/days")

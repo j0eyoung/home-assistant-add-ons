@@ -106,6 +106,10 @@ svg .bar.hl { opacity: .75; }
        box-shadow: 0 4px 14px rgba(0, 0, 0, .18); display: none; max-width: 240px; }
 #tip b { font-weight: 600; }
 
+/* Webcams */
+.cams { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.cams img { width: 100%; border-radius: 8px; display: block; background: var(--raised); min-height: 120px; }
+
 /* Radar */
 #map { height: 70vh; min-height: 380px; border-radius: 10px; border: 1px solid var(--border); }
 .snowpin { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 12px;

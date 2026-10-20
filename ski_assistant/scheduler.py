@@ -7,11 +7,14 @@ import threading
 import time
 import traceback
 
+import accuracy
 import advisor
 import dailysnow
 import db
+import forecast
 import ha
 import ranking
+import resortinfo
 import resorts
 import season
 import settings
@@ -49,7 +52,7 @@ def powder_morning():
     waze = (top.get("traffic") or {}).get("waze")
     if waze:
         msg += f" Waze says {waze['minutes']} minutes right now."
-    actions = [lambda: _push("Powder morning", msg)]
+    actions = [lambda: _push("Powder morning", msg), lambda: packing_list(top["id"], now.date().isoformat())]
     if s["powder_lights"]:
         actions.append(lambda: ha.turn_on(s["powder_lights"]))
     if s["tts_entity"] and s["speaker_entity"]:
@@ -107,6 +110,105 @@ def drying_reminder(resort_name):
             traceback.print_exc()
 
 
+def weekend_outlook():
+    """Thursday evening: the best weekend day and resort, when to leave, and any parking reservation to book."""
+    s = settings.load()
+    now = util.now()
+    if not s["weekend_outlook"] or now.weekday() != 3 or now.strftime("%H:%M") < s["outlook_time"]:
+        return
+    if not db.once(f"outlook:{now.date()}"):
+        return
+    best = []
+    for days_ahead in (2, 3):  # Saturday, Sunday
+        date = (now.date() + dt.timedelta(days=days_ahead)).isoformat()
+        rows = [r for r in ranking.best_days(resorts.load(), date) if "error" not in r]
+        if rows:
+            best.append((date, rows[0]))
+    if not best:
+        return
+    day, top = max(best, key=lambda x: x[1]["score"])
+    by_id = {r["id"]: r for r in resorts.load()}
+    name = dt.date.fromisoformat(day).strftime("%A")
+    lines = [f"{name} at {top['resort']}: {top['fresh_in']} in fresh, high {round(top['tmax_f'])}F. "
+             f"Leave {top['leave']['leave_at']}."]
+    other = [b for b in best if b[0] != day]
+    if other:
+        od, o = other[0]
+        lines.append(f"{dt.date.fromisoformat(od).strftime('%A')}: {o['resort']}, {o['fresh_in']} in.")
+    park = resortinfo.parking_needed(by_id[top["id"]], day)
+    if park:
+        lines.append(park["note"])
+    if s["phone_service"]:
+        ha.notify(s["phone_service"], "Weekend ski outlook", " ".join(lines),
+                  link=park["url"] if park else None, link_title="Book parking")
+
+
+_trend = {}  # resort id -> [(time, next 5 days inches)], kept in memory only (no disk writes)
+
+
+def storm_trends():
+    """Storm trending up: the next-5-day total has jumped since earlier today and the two models agree."""
+    if not settings.load()["storm_alerts"]:
+        return
+    now = time.time()
+    for r in resorts.load():
+        try:
+            days = [d for d in forecast.daily(r) if d["date"] >= util.today().isoformat()][:5]
+        except Exception:
+            continue
+        total = round(sum(d["snow_in"] for d in days), 1)
+        history = [h for h in _trend.get(r["id"], []) if now - h[0] < 24 * 3600]
+        history.append((now, total))
+        _trend[r["id"]] = history
+        earlier = [v for t, v in history if now - t >= 6 * 3600]
+        if not earlier or total < 4 or total < ALERT_IN * 0.5:
+            continue
+        before = earlier[0]
+        model_totals = [sum(d["models"].get(m) or 0 for d in days) for m in forecast.MODELS.values()]
+        agree = min(model_totals) >= 0.6 * max(model_totals) if max(model_totals) > 0 else False
+        if total - before >= 3 and agree and db.once(f"trend:{r['id']}:{util.today()}"):
+            _push("Storm trending up", f"{r['name']}: next 5 days now {total} in (was {before} in earlier today). "
+                                       "ECMWF and GFS agree.")
+
+
+def model_accuracy():
+    """Evening: save tomorrow's forecasts. Late morning: score the past ones against SNOTEL."""
+    now = util.now()
+    if now.hour >= 19 and db.once(f"acc_record:{now.date()}"):
+        accuracy.record_tomorrow()
+    if now.hour >= 11 and db.once(f"acc_score:{now.date()}"):
+        accuracy.score_past()
+
+
+def packing_list(resort_id, date_iso, skis=False):
+    """Add the day's gear call (plus the basics) to the Home Assistant to-do list, once per day and resort."""
+    s = settings.load()
+    r = next((x for x in resorts.load() if x["id"] == resort_id), None)
+    if not r or not db.once(f"packing:{date_iso}:{resort_id}"):
+        return []
+    row = next((x for x in ranking.best_days([r], date_iso, skis=skis) if "error" not in x), None)
+    items = ["Pass", "Helmet and goggles", "Gloves", "Water and snacks"]
+    if row:
+        items = row["gear"]["wear"] + [n for n in row["gear"]["notes"]
+                                       if not n.startswith(("Powder day", "Skis:", "Expect lift"))] + items
+        if row["tmax_f"] < 20:
+            items.append("Hand warmers")
+    items.append("Skis, poles and ski boots" if skis else "Board and boots")
+    added = []
+    for item in dict.fromkeys(items):  # keep order, drop duplicates
+        label = f"Ski {date_iso[5:]}: {item}"
+        try:
+            if s["packing_todo"]:
+                ha.todo_add(s["packing_todo"], label)
+            else:
+                ha.shopping_add(label)
+            added.append(item)
+        except Exception:
+            traceback.print_exc()
+            break
+    return added
+
+
 def daily_snow():
     """Write the Daily Snow once a day, from 5:30am, so it's ready for the morning (one Claude call)."""
     now = util.now()
@@ -115,7 +217,8 @@ def daily_snow():
         dailysnow.get()
 
 
-TASKS = [daily_snow, powder_alerts, powder_morning, upkeep_reminders, thermostat, sensors]
+TASKS = [daily_snow, powder_alerts, powder_morning, storm_trends, weekend_outlook, model_accuracy,
+         upkeep_reminders, thermostat, sensors]
 
 
 def _loop():

@@ -59,11 +59,14 @@ def panel_url():
     return _panel["url"] or None
 
 
-def notify(phone_service, title, message):
+def notify(phone_service, title, message, link=None, link_title=None):
+    """Phone notification; tapping it opens the add-on. `link` adds a button that opens that web page."""
     data = {}
     url = panel_url()
     if url:
         data = {"clickAction": url, "url": url}  # Android uses clickAction, iPhone uses url
+    if link:
+        data["actions"] = [{"action": "URI", "title": link_title or "Open", "uri": link}]
     return service("notify", phone_service, {"title": title, "message": message, "data": data})
 
 
@@ -78,6 +81,10 @@ def turn_on(entities):
 
 def set_temperature(climate_entity, temp_f):
     return service("climate", "set_temperature", {"entity_id": climate_entity, "temperature": temp_f})
+
+
+def todo_add(entity_id, item):
+    return service("todo", "add_item", {"entity_id": entity_id, "item": item})
 
 
 def shopping_add(item):

@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS service (id INTEGER PRIMARY KEY, date TEXT NOT NULL,
   equipment TEXT NOT NULL CHECK (equipment IN ('board','ski')), kind TEXT NOT NULL CHECK (kind IN ('wax','tune')));
 CREATE TABLE IF NOT EXISTS sent (key TEXT PRIMARY KEY, at TEXT);
 CREATE TABLE IF NOT EXISTS daily_snow (date TEXT PRIMARY KEY, text TEXT, created TEXT);
+CREATE TABLE IF NOT EXISTS forecast_check (date TEXT NOT NULL, resort_id TEXT NOT NULL, model TEXT NOT NULL,
+  forecast_in REAL, observed_in REAL, PRIMARY KEY (date, resort_id, model));
+CREATE TABLE IF NOT EXISTS plans (date TEXT NOT NULL, resort_id TEXT NOT NULL, created TEXT, PRIMARY KEY (date, resort_id));
 """
 
 
@@ -30,8 +33,10 @@ def init():
     with _lock, closing(_conn()) as c:
         c.executescript(SCHEMA)
         # Columns added after the first release
-        if "garmin_ids" not in {r[1] for r in c.execute("PRAGMA table_info(days)")}:
-            c.execute("ALTER TABLE days ADD COLUMN garmin_ids TEXT DEFAULT ''")
+        have = {r[1] for r in c.execute("PRAGMA table_info(days)")}
+        for col in ("garmin_ids TEXT DEFAULT ''", "top_speed_mph REAL", "distance_mi REAL", "hours REAL"):
+            if col.split()[0] not in have:
+                c.execute(f"ALTER TABLE days ADD COLUMN {col}")
         c.commit()
 
 

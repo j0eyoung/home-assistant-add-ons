@@ -22,6 +22,10 @@ DEFAULTS = {
     "climate_entity": "",
     "normal_temp_f": 68,
     "drying_reminder": True,
+    "weekend_outlook": True,       # Thursday evening phone note: best weekend day and when to leave
+    "outlook_time": "18:00",
+    "storm_alerts": True,          # storm trending up (next-5-day total jumps and the models agree)
+    "packing_todo": "",            # to-do list entity for the packing list, e.g. todo.ski_packing (blank = shopping list)
     "waze_sensors": {},            # {resort_id: sensor.entity_id}; empty = match Waze sensors by name
 }
 

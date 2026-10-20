@@ -55,6 +55,32 @@ def pass_summary(since=None):
             "vertical_ft": sum(d["vertical_ft"] or 0 for d in days)}
 
 
+# Season stats (Garmin days carry vertical, top speed, distance and hours)
+def _totals(rows):
+    return {"days": len(rows), "board_days": sum(1 for d in rows if d["equipment"] == "board"),
+            "ski_days": sum(1 for d in rows if d["equipment"] == "ski"),
+            "vertical_ft": sum(d["vertical_ft"] or 0 for d in rows),
+            "top_speed_mph": max([d["top_speed_mph"] or 0 for d in rows] or [0]) or None,
+            "distance_mi": round(sum(d["distance_mi"] or 0 for d in rows), 1),
+            "hours": round(sum(d["hours"] or 0 for d in rows), 1)}
+
+
+def stats():
+    """This season against last season to the same date, the full last season, and your ski days in order
+    (vertical and top speed) to show progress while learning."""
+    start = season_start()
+    today = util.today()
+    last_start = (dt.date.fromisoformat(start) - dt.timedelta(days=365)).isoformat()
+    same_day_last_year = (today - dt.timedelta(days=365)).isoformat()
+    this = db.q("SELECT * FROM days WHERE date >= ? ORDER BY date", (start,))
+    last_all = db.q("SELECT * FROM days WHERE date >= ? AND date < ? ORDER BY date", (last_start, start))
+    last_to_date = [d for d in last_all if d["date"] <= same_day_last_year]
+    ski = [{"date": d["date"], "vertical_ft": d["vertical_ft"], "top_speed_mph": d["top_speed_mph"]}
+           for d in db.q("SELECT * FROM days WHERE equipment = 'ski' AND date >= ? ORDER BY date", (last_start,))]
+    return {"this_season": _totals(this), "last_season_to_date": _totals(last_to_date),
+            "last_season": _totals(last_all), "ski_progress": ski}
+
+
 # Learning to ski
 def add_lesson(date, resort_id="", skills="", notes=""):
     return db.x("INSERT INTO lessons(date, resort_id, skills, notes) VALUES (?,?,?,?)", (date, resort_id, skills, notes))

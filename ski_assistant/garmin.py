@@ -17,6 +17,7 @@ import traceback
 
 import db
 import resorts
+import season
 import util
 
 TOKEN_PATH = os.getenv("GARMIN_TOKEN_PATH", "/data/garmin_tokens.json")              # this add-on's own login
@@ -154,16 +155,21 @@ def import_activity(a):
     r = nearest_resort(a.get("startLatitude"), a.get("startLongitude"))
     rid = r["id"] if r else "other"
     vert = round((a.get("elevationLoss") or 0) * M_TO_FT) or None
+    speed = round(a["maxSpeed"] * 2.23694, 1) if a.get("maxSpeed") else None
+    miles = round(a["distance"] / 1609.34, 1) if a.get("distance") else None
+    hours = round(a["duration"] / 3600, 2) if a.get("duration") else None
     same = db.q("SELECT * FROM days WHERE date = ? AND resort_id = ? ORDER BY id LIMIT 1", (date, rid))
     if same:
         d = same[0]
         ids = ",".join(filter(None, [d.get("garmin_ids"), gid]))
         total = (d["vertical_ft"] or 0) + (vert or 0) or None
         notes = d["notes"] if d["notes"] else _note(a)
-        db.x("UPDATE days SET garmin_ids = ?, vertical_ft = ?, notes = ? WHERE id = ?", (ids, total, notes, d["id"]))
+        db.x("UPDATE days SET garmin_ids = ?, vertical_ft = ?, notes = ?, top_speed_mph = MAX(COALESCE(top_speed_mph, 0), ?), "
+             "distance_mi = COALESCE(distance_mi, 0) + ?, hours = COALESCE(hours, 0) + ? WHERE id = ?",
+             (ids, total, notes, speed or 0, miles or 0, hours or 0, d["id"]))
     else:
-        db.x("INSERT INTO days(date, resort_id, equipment, vertical_ft, notes, garmin_ids) VALUES (?,?,?,?,?,?)",
-             (date, rid, eq, vert, _note(a), gid))
+        db.x("INSERT INTO days(date, resort_id, equipment, vertical_ft, notes, garmin_ids, top_speed_mph, distance_mi, hours) "
+             "VALUES (?,?,?,?,?,?,?,?,?)", (date, rid, eq, vert, _note(a), gid, speed, miles, hours))
     return True
 
 
@@ -173,6 +179,10 @@ def sync():
     if not connected():
         return 0, "Garmin isn't connected.", []
     start = (util.today() - dt.timedelta(days=LOOKBACK_DAYS)).isoformat()
+    # The first sync goes back to the start of last season, so season stats can compare the two
+    if not db.q("SELECT key FROM sent WHERE key = 'garmin_backfill'"):
+        last_season = dt.date.fromisoformat(season.season_start()) - dt.timedelta(days=365)
+        start = last_season.isoformat()
     try:
         g = _garmin()
         g.login(token_path())
@@ -187,6 +197,7 @@ def sync():
             added += 1
             if (a.get("startTimeLocal") or "")[:10] == util.today().isoformat():
                 new_today.append(a)
+    db.once("garmin_backfill")
     _last.update(at=util.now().strftime("%Y-%m-%d %H:%M"), added=added, error=None)
     return added, None, new_today
 

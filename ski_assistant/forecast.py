@@ -133,23 +133,44 @@ def hourly(r):
         raise RuntimeError("no forecast model answered")
     times = fetched[0][1][0]["hourly"]["time"]
     per_model = {m: {b: _hours(loc, m) for b, loc in zip(BANDS, locs)} for m, locs in fetched}
-    blend = {b: [_mean([per_model[m][b][i] for m in per_model]) for i in range(len(times))] for b in BANDS}
+    # Weight each model by how well it has matched this resort's SNOTEL this season (equal until there's data)
+    try:
+        import accuracy
+        weights = accuracy.weights(r["id"])
+    except Exception:
+        weights = {}
+    blend = {b: [_mean([per_model[m][b][i] for m in per_model], [weights.get(m, 1.0) for m in per_model])
+                 for i in range(len(times))] for b in BANDS}
     out = {"times": times, "models": per_model, "blend": blend}
     with _lock:
         _derived[key] = (time.time(), out)
     return out
 
 
-def _mean(hours):
-    hs = [h for h in hours if h]
-    if not hs:
+def _mean(hours, weights=None):
+    """Weighted mean of the models' hours (models with no data for that hour are left out)."""
+    weights = weights or [1.0] * len(hours)
+    pairs = [(h, w) for h, w in zip(hours, weights) if h]
+    if not pairs:
         return None
-    out = {"time": hs[0]["time"]}
-    for k in hs[0]:
+    out = {"time": pairs[0][0]["time"]}
+    for k in pairs[0][0]:
         if k == "time":
             continue
-        vals = [h[k] for h in hs if h[k] is not None]
-        out[k] = sum(vals) / len(vals) if vals else None
+        vals = [(h[k], w) for h, w in pairs if h[k] is not None]
+        total = sum(w for _, w in vals)
+        out[k] = sum(v * w for v, w in vals) / total if vals and total else None
+    return out
+
+
+def day_water(r, date_iso, band="mid"):
+    """Each model's forecast water (inches) for one calendar day, midnight to midnight like SNOTEL's daily values."""
+    h = hourly(r)
+    out = {}
+    for m, bands in h["models"].items():
+        hours = [x for x in bands[band] if x and x["time"].startswith(date_iso)]
+        if len(hours) >= 20:
+            out[m] = round(sum(x["water_in"] for x in hours), 3)
     return out
 
 

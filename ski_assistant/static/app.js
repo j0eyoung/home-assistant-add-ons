@@ -16,7 +16,7 @@ const hm = n => n >= 60 ? `${Math.floor(n / 60)}h${String(n % 60).padStart(2, '0
 
 let RESORTS = [], SET = {}, FC = null;
 const TABS = { forecast: 'Forecast', plan: 'Plan', radar: 'Radar', log: 'Season log', learn: 'Learning to ski', gear: 'Gear', settings: 'Settings' };
-const LOADERS = { forecast: () => {}, plan: loadRoads, radar: loadRadar, log: () => { loadGarmin(); loadDays(); }, learn: loadLessons, gear: loadGear, settings: () => { loadClaude(); loadSettings(); } };
+const LOADERS = { forecast: () => {}, plan: loadRoads, radar: loadRadar, log: () => { loadStats(); loadGarmin(); loadDays(); }, learn: loadLessons, gear: loadGear, settings: () => { loadClaude(); loadSettings(); } };
 
 function show(t) {
   for (const k in TABS) { $(k).classList.toggle('on', k === t); $('b_' + k).classList.toggle('on', k === t); }
@@ -134,13 +134,18 @@ async function openResort(id, band) {
      ${tile(sn.depth_in != null ? inch(sn.depth_in) : null, `SNOTEL depth${sn.as_of ? ' (' + esc(sn.as_of) + ')' : ''}`)}
      ${tile(sn.new_72h_in != null ? inch(sn.new_72h_in) : null, 'SNOTEL 72h change')}
    </div>${rep.status ? `<p class="small">Resort status: ${esc(rep.status)}${rep.conditions ? ' · ' + esc(rep.conditions) : ''}</p>` : ''}</div>
+   ${d.info.webcam_images.length ? `<div class="card"><h3>Webcams right now</h3><div class="cams">${d.info.webcam_images.map(u =>
+     `<a href="${esc(d.info.webcams_url || u)}" target="_blank" rel="noopener"><img loading="lazy" alt="${esc(d.resort.name)} webcam" src="${esc(u)}${u.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 300000)}"></a>`).join('')}</div></div>` : ''}
    <div class="card"><h3>Daily snow, next 15 days <span class="small">(${band}, ${d.elevations[band].toLocaleString()} ft; 6am to 6am)</span></h3>
      <div class="legend"><span><i class="box" style="background:var(--snow-past)"></i>Last 5 days (modelled)</span><span><i class="box" style="background:var(--snow)"></i>Days 1-10</span><span><i class="box" style="background:var(--snow-low)"></i>Days 11-15</span></div>
      <div class="chart" id="c_daily"></div></div>
    <div class="card"><h3>Model check: running snow total</h3>
      <div class="legend">${d.models.map((m, i) => `<span><i style="background:var(--s${i + 1})"></i>${esc(m)}</span>`).join('')}</div>
      <div class="chart" id="c_models"></div>
-     <p class="small">When the two lines split apart, the forecast is uncertain. ECMWF ends a day earlier than GFS.</p></div>
+     <p class="small">When the two lines split apart, the forecast is uncertain. ECMWF ends a day earlier than GFS.</p>
+     <p class="small">${Object.entries(d.accuracy).some(([, v]) => v.days) ? 'Checked against SNOTEL, last 30 days: ' + Object.entries(d.accuracy).map(([m, v]) =>
+       `${esc(m)} ${v.mean_miss_in != null ? 'off by ' + v.mean_miss_in + '" water a day' : 'no data'} over ${v.days} wet days, weight ${Math.round(v.weight * 100)}%`).join(' · ')
+       : 'Each model gets checked against SNOTEL every day; the blend leans toward the better one once there are 5 wet days to judge.'}</p></div>
    <div class="card"><h3>Next 48 hours: snow per hour</h3><div class="chart" id="c_h_snow"></div>
      <h3 style="margin-top:12px">Next 48 hours: temperature (&deg;F)</h3><div class="chart" id="c_h_temp"></div></div>
    <div class="card wrap"><h3>Day by day</h3><table>
@@ -150,6 +155,7 @@ async function openResort(id, band) {
        <td class="num">${Math.round(x.tmax_f)}° / ${Math.round(x.tmin_f)}°</td><td class="num">${Math.round(x.wind_mph)} / ${Math.round(x.gust_mph)} mph</td>
        <td class="num">${x.freezing_ft ? x.freezing_ft.toLocaleString() + ' ft' : '-'}</td></tr>`).join('')}</table></div>
    <div class="card"><h3>Getting there</h3>${leaveText(d.leave_today)}${trafficText(d.traffic)}
+     <p><button onclick="going('${today}', '${esc(id)}')">I'm going today: packing list</button> <span class="mute" id="goingmsg"></span></p>
      ${d.transit.length ? '<ul>' + d.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}
      <p>${d.info.webcams_url ? `<a href="${esc(d.info.webcams_url)}" target="_blank" rel="noopener">Webcams</a>` : ''}
        ${d.info.openskimap_url ? ` · <a href="${esc(d.info.openskimap_url)}" target="_blank" rel="noopener">Trail map (OpenSkiMap)</a>` : ''}
@@ -228,6 +234,7 @@ async function rank() {
     <p><b>Wear</b> (feels like ${top.gear.feels_like_f}°F): ${top.gear.wear.map(esc).join(', ')}</p>
     ${top.gear.notes.length ? `<p><b>Also</b>: ${top.gear.notes.map(esc).join('; ')}</p>` : ''}
     ${top.beginner_pct != null ? `<p class="mute">${top.beginner_pct}% of runs are green or blue.</p>` : ''}
+    <p><button onclick="going($('d').value, '${esc(top.id)}', $('skis').checked)">I'm going: add packing list</button> <span class="mute" id="goingmsg"></span></p>
     ${top.transit.length ? '<p><b>Shuttle / transit</b></p><ul>' + top.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}` : '';
 }
 function trafficText(tr) {
@@ -273,6 +280,29 @@ async function askClaude() {
 }
 
 /* ---------- Season log ---------- */
+async function going(date, resortId, skis = false) {
+  const r = await api('going', { method: 'POST', body: JSON.stringify({ date, resort_id: resortId, skis }) }).catch(e => ({ note: e.message }));
+  $('goingmsg').textContent = r.note || '';
+}
+
+async function loadStats() {
+  const s = await api('stats').catch(() => null);
+  if (!s) return;
+  const t = s.this_season, l = s.last_season_to_date, full = s.last_season;
+  const row = (k, label, fmt) => `<tr><td>${label}</td><td class="num"><b>${fmt(t[k])}</b></td><td class="num">${fmt(l[k])}</td><td class="num mute">${fmt(full[k])}</td></tr>`;
+  const n = v => v == null ? '-' : Number(v).toLocaleString();
+  $('statsbox').innerHTML = `<h3>Season stats</h3><div class="wrap"><table>
+     <tr><th></th><th class="num">This season</th><th class="num">Last season, same date</th><th class="num">All last season</th></tr>
+     ${row('days', 'Days', n)}${row('board_days', 'Board days', n)}${row('ski_days', 'Ski days', n)}
+     ${row('vertical_ft', 'Vertical (ft)', n)}${row('top_speed_mph', 'Top speed (mph)', n)}${row('distance_mi', 'Distance (mi)', n)}${row('hours', 'Hours on snow', n)}</table></div>
+     ${s.ski_progress.length > 1 ? '<h3 style="margin-top:12px">Learning to ski: top speed per ski day (mph)</h3><div class="chart" id="c_ski"></div>' : ''}
+     <p class="small">Vertical, speed, distance and hours come from Garmin.</p>`;
+  const sp = s.ski_progress.filter(x => x.top_speed_mph != null);
+  if (sp.length > 1) Charts.add(() => lineChart($('c_ski'), [{ name: 'Top speed', color: 'var(--s1)', values: sp.map(x => x.top_speed_mph) }],
+    { height: 130, labels: sp.map(x => x.date.slice(5)), labelEvery: Math.max(1, Math.ceil(sp.length / 8)), min: 0, unit: '',
+      title: 'Ski top speed by day', tip: i => `<b>${esc(sp[i].date)}</b><br>${sp[i].top_speed_mph} mph${sp[i].vertical_ft ? `<br>${Number(sp[i].vertical_ft).toLocaleString()} ft vertical` : ''}` }));
+}
+
 async function loadDays() {
   const d = await api('days');
   $('days').innerHTML = '<tr><th>Date</th><th>Resort</th><th>On</th><th class="num">Vertical</th><th>Notes</th><th></th></tr>' +
@@ -355,7 +385,8 @@ async function addShop() {
 const FIELDS = [['arrive_by', 'On the lifts by (HH:MM)'], ['buffer_min', 'Buffer for parking and boots (min)', 'n'],
   ['phone_service', 'Phone notify service'], ['tts_entity', 'TTS entity (tts.*)'], ['speaker_entity', 'Speaker (media_player.*)'],
   ['wake_time', 'Powder wake-up time (HH:MM)'], ['tracker_entity', 'Phone tracker (device_tracker.*)'],
-  ['climate_entity', 'Thermostat (climate.*)'], ['normal_temp_f', 'Normal temperature (F)', 'n']];
+  ['climate_entity', 'Thermostat (climate.*)'], ['normal_temp_f', 'Normal temperature (F)', 'n'],
+  ['outlook_time', 'Thursday weekend outlook at (HH:MM)'], ['packing_todo', 'Packing list (todo.*, blank = shopping list)']];
 async function loadSettings() {
   const r = await api('settings'); const s = r.settings; SET = s;
   $('setbox').innerHTML = `<h3>Settings</h3>
@@ -369,6 +400,8 @@ async function loadSettings() {
     <label>Default departure<input id="s_default_departure" value="${esc(s.default_departure)}"></label>
     <h3>Waze travel times</h3><div id="wazemap" class="row"><span class="mute">Looking for Waze sensors...</span></div>
     <label class="inline"><input type="checkbox" id="s_drying" ${s.drying_reminder ? 'checked' : ''}> Boot and glove drying reminder after a logged day</label>
+    <label class="inline"><input type="checkbox" id="s_outlook" ${s.weekend_outlook ? 'checked' : ''}> Thursday weekend outlook on my phone</label>
+    <label class="inline"><input type="checkbox" id="s_storm" ${s.storm_alerts ? 'checked' : ''}> Storm trending up alerts</label>
     <p><button onclick="saveSettings()">Save</button> <span id="setmsg" class="mute"></span></p>`;
   const t = await api('traffic').catch(() => null);
   const ws = t ? t.waze_sensors : [];
@@ -408,6 +441,7 @@ async function saveSettings() {
     .map(([name, lat, lon]) => ({ name, lat: +lat, lon: +lon }));
   if (!p.departures.length) { $('setmsg').textContent = 'Add at least one departure point.'; return; }
   p.default_departure = $('s_default_departure').value.trim(); p.drying_reminder = $('s_drying').checked;
+  p.weekend_outlook = $('s_outlook').checked; p.storm_alerts = $('s_storm').checked;
   const wm = {}; document.querySelectorAll('#wazemap select').forEach(el => { if (el.value) wm[el.dataset.resort] = el.value; });
   if (document.querySelector('#wazemap select')) p.waze_sensors = wm;
   await api('settings', { method: 'PUT', body: JSON.stringify(p) }); $('setmsg').textContent = 'Saved.';

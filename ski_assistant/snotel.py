@@ -36,3 +36,26 @@ def resort_snowpack(r):
     except Exception:
         return None
     return max(s.values(), key=lambda v: v["depth_in"]) if s else None
+
+
+def daily_precip(triplets, days=35):
+    """{date: inches} of daily precipitation from the first station in the list that reports it (PREC is the
+    water-year running total, so each day is the difference from the day before)."""
+    end = dt.date.today()
+    begin = end - dt.timedelta(days=days)
+    q = f"?stationTriplets={','.join(triplets)}&elements=PREC&duration=DAILY&beginDate={begin}&endDate={end}"
+    by_station = {}
+    for st in httpjson.get(URL + q, ttl=6 * 3600):
+        for el in st.get("data", []):
+            vals = [(v["date"][:10], v.get("value")) for v in el["values"] if v.get("value") is not None]
+            if len(vals) >= 2:
+                by_station[st["stationTriplet"]] = vals
+    for trip in triplets:
+        vals = by_station.get(trip)
+        if vals:
+            out = {}
+            for (_, v0), (d1, v1) in zip(vals, vals[1:]):
+                if v1 >= v0:  # PREC resets to zero on Oct 1; skip that day
+                    out[d1] = round(v1 - v0, 2)
+            return out
+    return {}
