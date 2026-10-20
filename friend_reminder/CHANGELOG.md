@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3
+
+- Contacts import: every contact now starts on "Don't remind". Pick Close, Good or Casual only for the people you want reminders about. Saving remembers the rest, so the next import of the same file lists only new contacts. Searching (or ticking "Also show the contacts already sorted") still finds them if you change your mind.
+- Without a contact picker (for example in the Home Assistant app), the contacts-file import is shown first.
+- The page now uses the add-on's icon as its browser tab icon.
+
+## 0.1.2
+
+- Moved into the shared add-ons repository; options can be filled from the shared secrets file.
+
 ## 0.1.0
 
 First version.

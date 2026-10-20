@@ -581,8 +581,12 @@ $("#pick-btn").addEventListener("click", async () => {
 $("#diag-save").addEventListener("click", () => { sendDiag("not tried", true); });
 
 // ---------------------------------------------------------------- contacts file (.vcf)
-let vcf = [];                 // contacts read from the file: {name, phone, email, birthday, on_list, on, tier}
+// Every contact starts on "Don't remind"; pick how close you are for the people you want reminders about.
+// Saving adds those as friends and remembers the rest, so the next import lists only new contacts.
+const NONE = "none";
+let vcf = [];                 // contacts read from the file: {name, phone, email, birthday, on_list, ignored, tier}
 let vcfFilter = "";
+let vcfShowAll = false;       // also list contacts already sorted (friends, and Don't remind from an earlier import)
 const VCF_SHOWN = 200;        // rows drawn at once; the search narrows a big address book
 
 // Photos make exported files large; drop them before upload (a property line plus its folded continuation lines).
@@ -597,21 +601,54 @@ const bdayShort = b => {
   return `🎂 ${MONTHS[m - 1]} ${d}`;
 };
 
+const vcfOptions = sel => `<option value="${NONE}"${sel === NONE ? " selected" : ""}>Don't remind</option>${tierOptions(sel, false)}`;
+
+function vcfCounts() {
+  const open = vcf.filter(c => !c.on_list);
+  return {
+    add: open.filter(c => c.tier !== NONE).length,                  // will become friends
+    park: open.filter(c => !c.ignored && c.tier === NONE).length,   // new contacts that will be set to Don't remind
+    sorted: vcf.filter(c => c.on_list || c.ignored).length,
+  };
+}
+
+function vcfSubline(c) {
+  if (c.on_list) return "Already a friend";
+  const details = [c.phone || c.email || "No phone", bdayShort(c.birthday)].filter(Boolean).join(" · ");
+  return c.ignored ? `Don't remind, from an earlier import · ${details}` : details;
+}
+
+function syncVcfFooter() {
+  const { add, park } = vcfCounts();
+  const sum = $("#vcf-sum"), btn = $("#vcf-save");
+  if (!sum || !btn) return;
+  sum.textContent = add && park ? `Saving adds ${plural(add, "friend")}. The other ${plural(park, "new contact")} stay on Don't remind and won't be listed next time.`
+    : add ? `Saving adds ${plural(add, "friend")}.`
+    : park ? `Nobody picked yet. Saving sets all ${plural(park, "new contact")} to Don't remind, so they won't be listed next time.`
+    : "Everyone in this file is already sorted.";
+  btn.textContent = add ? `Add ${plural(add, "friend")} and save` : "Save";
+  btn.disabled = !add && !park;
+}
+
 function renderVcf() {
   const box = $("#vcf-list");
   if (!vcf.length) { box.innerHTML = ""; return; }
   const q = fold(vcfFilter.trim());
-  const rows = vcf.map((c, i) => [c, i]).filter(([c]) => !q || fold(c.name).includes(q) || (c.phone || "").includes(q));
-  const n = vcf.filter(c => c.on).length;
+  const { sorted } = vcfCounts();
+  // A search looks through everyone, so someone set to Don't remind earlier can still be found and changed
+  const rows = vcf.map((c, i) => [c, i])
+    .filter(([c]) => q ? fold(c.name).includes(q) || (c.phone || "").includes(q) : vcfShowAll || (!c.on_list && !c.ignored));
   box.innerHTML = `<div class="pick-head"><label for="vcf-q" class="sr">Search contacts</label>
       <input type="search" id="vcf-q" placeholder="Search ${plural(vcf.length, "contact")}" value="${esc(vcfFilter)}" autocomplete="off"></div>
-    <div id="vcf-rows">${rows.slice(0, VCF_SHOWN).map(([c, i]) => `<div class="pick-row">
-      <label><input type="checkbox" data-vi="${i}"${c.on ? " checked" : ""}${c.on_list ? " disabled" : ""}><span class="txt"><span>${esc(c.name)}</span><span class="muted">${
-        c.on_list ? "Already on your list" : esc([c.phone || c.email || "No phone", bdayShort(c.birthday)].filter(Boolean).join(" · "))}</span></span></label>
-      ${c.on_list ? "" : `<select data-vt="${i}" aria-label="How close is ${esc(c.name)}">${tierOptions(c.tier, false)}</select>`}</div>`).join("")}
+    ${sorted ? `<label class="row vcf-all"><input type="checkbox" id="vcf-all"${vcfShowAll ? " checked" : ""}> Also show the ${plural(sorted, "contact")} already sorted</label>` : ""}
+    <div id="vcf-rows">${rows.slice(0, VCF_SHOWN).map(([c, i]) => `<div class="pick-row${!c.on_list && c.tier !== NONE ? " chosen" : ""}" data-row="${i}">
+      <span class="txt"><span>${esc(c.name)}</span><span class="muted">${esc(vcfSubline(c))}</span></span>
+      ${c.on_list ? `<span class="chip">Friend</span>` : `<select data-vt="${i}" aria-label="${esc(c.name)}: how close">${vcfOptions(c.tier)}</select>`}</div>`).join("")}
     ${rows.length > VCF_SHOWN ? `<p class="muted">Showing ${VCF_SHOWN} of ${rows.length}. Search to find someone.</p>` : ""}
-    ${!rows.length ? `<p class="muted">Nobody matches.</p>` : ""}</div>
-    <button type="button" class="btn primary" id="vcf-add"${n ? "" : " disabled"}>Add ${plural(n, "friend")}</button>`;
+    ${!rows.length ? `<p class="muted">${q ? "Nobody matches." : "Everyone in this file is already sorted. Tick the box above to see them."}</p>` : ""}</div>
+    <p class="hint" id="vcf-sum"></p>
+    <button type="button" class="btn primary" id="vcf-save"></button>`;
+  syncVcfFooter();
 }
 
 $("#vcf-file").addEventListener("change", async e => {
@@ -623,11 +660,12 @@ $("#vcf-file").addEventListener("change", async e => {
     const text = stripPhotos(await file.text());
     if (!/BEGIN:VCARD/i.test(text)) throw new Error("That is not a contacts (.vcf) file.");
     const r = await api("import/vcf", "POST", { text }, 120000);
-    vcf = r.contacts.map(c => ({ ...c, on: false, tier: "good" }));
+    vcf = r.contacts.map(c => ({ ...c, tier: NONE }));
     vcfFilter = "";
-    const fresh = vcf.filter(c => !c.on_list).length;
-    $("#vcf-note").textContent = `${plural(vcf.length, "contact")} in ${file.name}. Tick the friends to add${
-      fresh < vcf.length ? ` (${vcf.length - fresh} already on your list)` : ""}.`;
+    vcfShowAll = false;
+    const { sorted } = vcfCounts();
+    $("#vcf-note").textContent = `${plural(vcf.length, "contact")} in ${file.name}. Everyone starts on Don't remind: `
+      + `pick how close you are for the people you want reminders about${sorted ? `. ${plural(sorted, "contact")} already sorted ${sorted === 1 ? "is" : "are"} hidden` : ""}.`;
     renderVcf();
   }, null, { keep: true, btn: $("#vcf-choose"), label: "Reading the file…" });
 });
@@ -644,33 +682,39 @@ $("#vcf-list").addEventListener("input", e => {
 
 $("#vcf-list").addEventListener("change", e => {
   const t = e.target;
-  if (t.dataset.vi !== undefined) vcf[+t.dataset.vi].on = t.checked;
-  else if (t.dataset.vt !== undefined) { vcf[+t.dataset.vt].tier = t.value; return; }
-  else return;
-  const n = vcf.filter(c => c.on).length, b = $("#vcf-add");
-  b.textContent = `Add ${plural(n, "friend")}`;
-  b.disabled = n === 0;
+  if (t.id === "vcf-all") { vcfShowAll = t.checked; renderVcf(); return; }
+  if (t.dataset.vt === undefined) return;
+  const c = vcf[+t.dataset.vt];
+  c.tier = t.value;
+  t.closest(".pick-row").classList.toggle("chosen", c.tier !== NONE);
+  syncVcfFooter();
 });
 
 $("#vcf-list").addEventListener("click", e => {
-  if (e.target.id !== "vcf-add") return;
-  const items = vcf.filter(c => c.on).map(c => ({
-    name: c.name, phone: c.phone, email: c.email, birthday: c.birthday, tier: c.tier,
+  if (e.target.id !== "vcf-save") return;
+  const open = vcf.filter(c => !c.on_list);
+  const chosen = open.filter(c => c.tier !== NONE).map(c => ({
+    name: cut(c.name, 80), phone: c.phone ? cut(c.phone, 40) : null, email: c.email ? cut(c.email, 120) : null,
+    birthday: c.birthday, tier: c.tier,
   }));
-  if (!items.length) return;
+  const ignore = open.filter(c => !c.ignored && c.tier === NONE).map(c => ({ name: cut(c.name, 80), phone: c.phone ? cut(c.phone, 40) : null }));
+  if (!chosen.length && !ignore.length) return;
+  if (chosen.length > 500) return toast("Add up to 500 friends at a time.");
   act(async () => {
-    const r = await api("friends", "POST", { friends: items });
+    const r = await api("import/save", "POST", { friends: chosen, ignore });
     vcf = [];
+    vcfFilter = "";
+    vcfShowAll = false;
     renderVcf();
     $("#vcf-note").textContent = "";
     $("#add-dlg").close();
     const parts = [];
     if (r.added.length) parts.push(`Added ${plural(r.added.length, "friend")}.`);
+    if (r.ignored) parts.push(`${plural(r.ignored, "contact")} set to Don't remind.`);
     if (r.skipped.length) parts.push(`Already on your list: ${r.skipped.join(", ")}.`);
-    toast(parts.join(" ") || "Nothing to add.", 6000);
+    toast(parts.join(" ") || "Saved.", 6000);
   }, null, { keep: true, btn: e.target });
 });
-
 // ---------------------------------------------------------------- add sheet
 let addBuilt = false;
 
@@ -680,6 +724,9 @@ async function openAdd() {
   $$("#add-dlg input[type=date]").forEach(i => { i.max = S.today; });
   renderPickerUi();
   renderChecks();
+  // Without a contact picker (e.g. the Home Assistant app), the file import is the main way in: show it first
+  const pick = $("#pick-h").closest("section"), file = $("#vcf-h").closest("section");
+  if (!pickerApi() && pick.nextElementSibling === file) pick.before(file);
   const dlg = $("#add-dlg");
   if (!dlg.open) dlg.showModal();
   await propsReady;          // the supported-details list may arrive a moment after the sheet opens

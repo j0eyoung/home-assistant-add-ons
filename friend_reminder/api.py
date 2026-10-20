@@ -53,7 +53,7 @@ async def only_home_assistant(request: Request, call_next):
             ok = False
         if not ok:
             return JSONResponse({"detail": "Open Friend Reminder from Home Assistant."}, status_code=403)
-    limit = MAX_VCF + 1000 if request.url.path == "/api/import/vcf" else MAX_BODY
+    limit = {"/api/import/vcf": MAX_VCF + 1000, "/api/import/save": 4 * MAX_BODY}.get(request.url.path, MAX_BODY)
     if int(request.headers.get("content-length") or 0) > limit:
         return JSONResponse({"detail": "That is too much at once."}, status_code=413)
     return await call_next(request)
@@ -184,6 +184,16 @@ class VcfIn(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_VCF)
 
 
+class Contact(Checked):
+    name: str = Field(min_length=1, max_length=80)
+    phone: Optional[str] = Field(None, max_length=40)
+
+
+class ImportSave(BaseModel):
+    friends: List[FriendIn] = Field(default_factory=list, max_length=500)
+    ignore: List[Contact] = Field(default_factory=list, max_length=vcard.MAX_CONTACTS)
+
+
 class Diag(BaseModel):
     report: dict
 
@@ -285,9 +295,17 @@ def import_vcf(req: VcfIn):
     if not contacts:
         raise HTTPException(422, "No contacts found in that file. Export a .vcf (vCard) file from the Contacts app "
                                  "or Google Contacts and try again.")
-    for c, known in zip(contacts, friends.on_list(contacts)):
-        c["on_list"] = known
+    for c, status in zip(contacts, friends.import_status(contacts)):
+        c["on_list"], c["ignored"] = status == "friend", status == "ignored"
     return {"contacts": contacts}
+
+
+@app.post("/api/import/save")
+def save_import(req: ImportSave):
+    """Adds the contacts given a closeness and remembers the ones left on Don't remind."""
+    if not req.friends and not req.ignore:
+        raise HTTPException(422, "Nothing to save.")
+    return friends.save_import([f.model_dump() for f in req.friends], [c.model_dump() for c in req.ignore])
 
 
 # ---------------------------------------------------------------- nudges

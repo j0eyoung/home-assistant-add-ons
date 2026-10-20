@@ -21,6 +21,12 @@ CREATE TABLE IF NOT EXISTS friends (
     added TEXT NOT NULL                  -- YYYY-MM-DD
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS ignored (     -- contacts set to "Don't remind" on an import, hidden on the next one
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    phone TEXT,
+    added TEXT NOT NULL
+);
 """
 
 _keeper = None   # one connection held open so the WAL files are not created and deleted on every query

@@ -62,9 +62,41 @@ def on_list(contacts):
     return [known.has(c["name"], c.get("phone")) for c in contacts]
 
 
+def ignored_rows():
+    return db.rows("SELECT id, name, phone FROM ignored")
+
+
+def import_status(contacts):
+    """For each contact: "friend" (already on the list), "ignored" (set to Don't remind on an earlier import) or ""."""
+    friends_, ignored = Known(all_rows()), Known(ignored_rows())
+    return ["friend" if friends_.has(c["name"], c.get("phone"))
+            else "ignored" if ignored.has(c["name"], c.get("phone")) else "" for c in contacts]
+
+
+def save_import(new_friends, ignore):
+    """Saves an import: adds the friends given a closeness and remembers everyone left on Don't remind, so the
+    next import can hide them. Adding someone who was on Don't remind takes them off that list."""
+    out = add_many(new_friends)
+    stmts = []
+    friends_, ignored = Known(all_rows()), Known(ignored_rows())
+    iso = today().isoformat()
+    remembered = 0
+    for c in ignore:
+        if friends_.has(c["name"], c.get("phone")) or ignored.has(c["name"], c.get("phone")):
+            continue
+        ignored.add(c["name"], c.get("phone"))
+        stmts.append(("INSERT INTO ignored(name, phone, added) VALUES(?,?,?)", (c["name"], c.get("phone"), iso)))
+        remembered += 1
+    if stmts:
+        db.run_many(stmts)
+    out["ignored"] = remembered
+    return out
+
+
 def add_many(items):
     """Adds friends (dicts of FIELDS). Skips anyone already on the list (see Known), so picking or
-    importing the same contacts twice does not create duplicates."""
+    importing the same contacts twice does not create duplicates. A new friend who was set to Don't remind
+    on an earlier import is taken off that list, however they were added."""
     known = Known(all_rows())
     added, skipped, stmts = [], [], []
     iso = today().isoformat()
@@ -78,7 +110,11 @@ def add_many(items):
                       (it["name"], it.get("phone"), it.get("email"), it.get("tier") or "good", it.get("interval_days"),
                        it.get("last_contact"), it.get("birthday"), it.get("notes") or "", iso)))
         added.append(it["name"])
-    ids = db.run_many(stmts) if stmts else []
+    if not stmts:
+        return {"added": [], "ids": [], "skipped": skipped}
+    new = Known([it for it in items if it["name"] in added])
+    unignore = [("DELETE FROM ignored WHERE id=?", (r["id"],)) for r in ignored_rows() if new.has(r["name"], r["phone"])]
+    ids = db.run_many(stmts + unignore)[:len(stmts)]
     return {"added": added, "ids": ids, "skipped": skipped}
 
 

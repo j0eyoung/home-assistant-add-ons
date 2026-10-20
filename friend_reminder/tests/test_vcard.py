@@ -1,6 +1,7 @@
 """Contacts file (.vcf) import: the parser and the api/import/vcf endpoint."""
 import pytest
 
+import db
 import vcard
 
 ANDROID_21 = (
@@ -122,3 +123,64 @@ def test_import_accepts_a_body_over_the_normal_limit(client):
     text = "".join(card.format(i) for i in range(1500))          # ~1.4 MB
     r = client.post("/api/import/vcf", json={"text": text})
     assert r.status_code == 200 and len(r.json()["contacts"]) == 1500
+
+
+# ---------------------------------------------------------------- saving an import (Don't remind)
+
+def _import(client, text=ANDROID_21 + GOOGLE_30):
+    return {c["name"]: c for c in client.post("/api/import/vcf", json={"text": text}).json()["contacts"]}
+
+
+def test_save_adds_the_chosen_and_remembers_the_rest_as_dont_remind(client):
+    r = client.post("/api/import/save", json={
+        "friends": [{"name": "Ana Lopez", "phone": "(720) 555-0111", "tier": "close", "birthday": "07-02"}],
+        "ignore": [{"name": "Mike Torres", "phone": "+1 303 555 0101"}, {"name": "Sam, the Plumber", "phone": "555 0199 222"}],
+    })
+    assert r.status_code == 200
+    assert r.json()["added"] == ["Ana Lopez"] and r.json()["ignored"] == 2
+    by = _import(client)
+    assert by["Ana Lopez"]["on_list"] is True and by["Ana Lopez"]["ignored"] is False
+    assert by["Mike Torres"]["ignored"] is True and by["Mike Torres"]["on_list"] is False
+    assert by["Élodie Dupré"]["ignored"] is False                                   # not in that save: still new
+    assert [f["name"] for f in client.get("/api/state").json()["friends"]] == ["Ana Lopez"]
+
+
+def test_dont_remind_matches_by_phone_number_not_just_the_name(client):
+    client.post("/api/import/save", json={"ignore": [{"name": "Mike T", "phone": "303.555.0101"}]})
+    assert _import(client)["Mike Torres"]["ignored"] is True
+
+
+def test_adding_someone_on_dont_remind_takes_them_off_that_list(client):
+    client.post("/api/import/save", json={"ignore": [{"name": "Mike Torres", "phone": "+1 303 555 0101"}]})
+    r = client.post("/api/import/save", json={"friends": [{"name": "Mike Torres", "phone": "+1 303 555 0101", "tier": "good"}]})
+    assert r.json()["added"] == ["Mike Torres"]
+    mike = _import(client)["Mike Torres"]
+    assert mike["on_list"] is True and mike["ignored"] is False
+    assert db.rows("SELECT count(*) AS n FROM ignored")[0]["n"] == 0
+
+
+def test_saving_the_same_dont_remind_twice_stores_it_once(client):
+    body = {"ignore": [{"name": "Mike Torres", "phone": "+1 303 555 0101"}]}
+    client.post("/api/import/save", json=body)
+    assert client.post("/api/import/save", json=body).json()["ignored"] == 0
+    assert db.rows("SELECT count(*) AS n FROM ignored")[0]["n"] == 1
+
+
+def test_a_friend_is_never_put_on_dont_remind(client):
+    client.post("/api/friends", json={"friends": [{"name": "Mike Torres", "phone": "3035550101"}]})
+    assert client.post("/api/import/save", json={"ignore": [{"name": "Mike", "phone": "+1 303 555 0101"}]}).json()["ignored"] == 0
+
+
+def test_saving_nothing_is_an_error(client):
+    assert client.post("/api/import/save", json={}).status_code == 422
+
+
+def test_a_whole_address_book_can_be_set_to_dont_remind(client):
+    ignore = [{"name": f"Contact {i} " + "x" * 60, "phone": f"+1 720 555 {i:04d}"} for i in range(5000)]
+    r = client.post("/api/import/save", json={"ignore": ignore})
+    assert r.status_code == 200 and r.json()["ignored"] == 5000
+
+def test_adding_by_hand_also_takes_someone_off_dont_remind(client):
+    client.post("/api/import/save", json={"ignore": [{"name": "Mike Torres", "phone": "+1 303 555 0101"}]})
+    client.post("/api/friends", json={"friends": [{"name": "Mike", "phone": "303-555-0101"}]})
+    assert db.rows("SELECT count(*) AS n FROM ignored")[0]["n"] == 0
