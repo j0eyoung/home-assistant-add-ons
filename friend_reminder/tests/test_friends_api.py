@@ -818,3 +818,41 @@ def test_oversized_request_bodies_get_413(client):
     r = client.post("/api/diag", content=b"x" * 1_000_001, headers={"content-type": "application/json"})
     assert r.status_code == 413
     assert client.get("/api/diag").json() == {}
+
+
+# ---------------------------------------------------------------- other add-ons (e.g. Daily Briefing)
+
+PEER = "172.30.33.17"          # another add-on container on Home Assistant's internal network
+
+
+def test_another_add_on_can_read_a_slim_state(client_from, in_home_assistant, monkeypatch, today):
+    monkeypatch.setattr(ha, "_call", lambda *a, **k: None)
+    client_from("172.30.32.2").post("/api/friends", json={"friends": [
+        {"name": "Mike", "phone": "303-555-0101", "email": "m@example.com", "notes": "private",
+         "last_contact": (today - datetime.timedelta(days=40)).isoformat()}]})
+    r = client_from(PEER).get("/api/state")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["settings"] == {"nudges_per_day": 1}
+    assert body["friends"] == [{"name": "Mike", "days_since": 40, "never_logged": False,
+                                "birthday_today": False, "due": True, "snoozed": False}]
+    assert "private" not in r.text and "303-555" not in r.text and "m@example.com" not in r.text
+
+
+@pytest.mark.parametrize("method,path", [
+    ("post", "/api/friends/1/done"), ("post", "/api/friends"), ("delete", "/api/friends/1"),
+    ("get", "/"), ("get", "/api/diag"), ("post", "/api/nudge/test"),
+])
+def test_another_add_on_cannot_write_or_open_anything_else(client_from, in_home_assistant, method, path):
+    r = getattr(client_from(PEER), method)(path)
+    assert r.status_code == 403
+
+
+def test_outside_the_add_on_network_state_stays_closed(client_from, in_home_assistant):
+    assert client_from("192.168.1.50").get("/api/state").status_code == 403
+
+
+def test_the_ingress_page_still_gets_the_full_state(client_from, in_home_assistant, monkeypatch):
+    monkeypatch.setattr(ha, "_call", lambda *a, **k: None)
+    body = client_from("172.30.32.2").get("/api/state").json()
+    assert "tiers" in body and "notify_service" in body["settings"]

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Other add-ons (such as Daily Briefing) can read today's list from GET /api/state on Home Assistant's internal network. They get a slim read-only view: names, days since you talked, due, snoozed and birthday today, plus how many nudges a day. No phone numbers, emails or notes. Everything else still opens only from Home Assistant.
+
 ## 0.1.3
 
 - Contacts import: every contact now starts on "Don't remind". Pick Close, Good or Casual only for the people you want reminders about. Saving remembers the rest, so the next import of the same file lists only new contacts. Searching (or ticking "Also show the contacts already sorted") still finds them if you change your mind.

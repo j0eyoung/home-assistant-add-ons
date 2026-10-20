@@ -37,22 +37,27 @@ VERSION = _version()
 db.init_db()
 app = FastAPI(title="Friend Reminder", docs_url=None, redoc_url=None, openapi_url=None)
 
-# Only Home Assistant's ingress proxy (172.30.32.2, already logged in to HA) may talk to the add-on.
+# Only Home Assistant's ingress proxy (172.30.32.2, already logged in to HA) may use the add-on. Other add-ons on
+# the internal network (e.g. Daily Briefing) may only GET /api/state, and get a slim read-only view of it.
 # Outside Home Assistant (local development) everything is allowed.
 INGRESS = ipaddress.ip_address("172.30.32.2")
+HASSIO_NET = ipaddress.ip_network("172.30.32.0/23")
 MAX_BODY = 1_000_000
 MAX_VCF = 15_000_000        # a whole address book; photos are stripped by the page before upload
 
 
 @app.middleware("http")
 async def only_home_assistant(request: Request, call_next):
+    request.state.peer = False
     if os.getenv("SUPERVISOR_TOKEN"):
         try:
-            ok = ipaddress.ip_address(request.client.host) == INGRESS
+            ip = ipaddress.ip_address(request.client.host)
         except Exception:
-            ok = False
-        if not ok:
-            return JSONResponse({"detail": "Open Friend Reminder from Home Assistant."}, status_code=403)
+            ip = None
+        if ip != INGRESS:
+            if ip is None or ip not in HASSIO_NET or request.method != "GET" or request.url.path != "/api/state":
+                return JSONResponse({"detail": "Open Friend Reminder from Home Assistant."}, status_code=403)
+            request.state.peer = True
     limit = {"/api/import/vcf": MAX_VCF + 1000, "/api/import/save": 4 * MAX_BODY}.get(request.url.path, MAX_BODY)
     if int(request.headers.get("content-length") or 0) > limit:
         return JSONResponse({"detail": "That is too much at once."}, status_code=413)
@@ -208,10 +213,19 @@ def _found(ok):
 
 # ---------------------------------------------------------------- state
 
+# What other add-ons get from /api/state: enough to show today's picks, no phone numbers, emails or notes.
+# Daily Briefing reads these names; keep them stable.
+PEER_FIELDS = ("name", "days_since", "never_logged", "birthday_today", "due", "snoozed")
+
+
 @app.get("/api/state")
-def state():
+def state(request: Request):
     opts = config.options()
     ranked = friends.ranked()
+    if request.state.peer:
+        return {"version": VERSION, "today": friends.today().isoformat(),
+                "settings": {"nudges_per_day": opts["nudges_per_day"]},
+                "friends": [{k: f[k] for k in PEER_FIELDS} for f in ranked]}
     service = ha.notify_service()
     return {
         "version": VERSION,
