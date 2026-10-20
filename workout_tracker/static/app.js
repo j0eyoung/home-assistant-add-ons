@@ -52,10 +52,10 @@ const state = {
   open: new Set(), // expanded how-to / history / library panels
   history: null,
   progress: { exercise: "", days: [] },
-  coach: store.get("coach", null) || [
-    { role: "assistant", content: "Hey Joe, how did the left flank feel during those wall sits today?" },
-  ],
-  coachBusy: false,
+  coach: [],       // the chat is kept on the add-on (shared by every device); loadCoach() fills this
+  coachLoaded: false,
+  coachBusy: false,   // this device is waiting for a reply
+  coachRemoteBusy: false,   // another device is waiting for one
   mind: null, mindFilter: "all", mindQ: "",
   week: null, weekOffset: 0, coachDraft: "", secondOpen: false, ck: null, ckEdit: false, snowOpen: false, snow: null,
   garmin: null, garminMsg: "", ha: null,
@@ -1365,43 +1365,88 @@ function changesBlock(m, i) {
   return html;
 }
 
-function renderCoach() {
+const COACH_GREETING = { role: "assistant", content: "Hey Joe, how did the left flank feel during those wall sits today?" };
+
+// The chat lives on the add-on, so the phone and the PC show the same conversation. This device brings it in, and
+// picks up what the other device wrote (and whether it is waiting on a reply) while the Coach tab is open.
+async function loadCoach() {
+  try {
+    let r = await api("api/coach/chat");
+    // one time: the chat this device had saved on its own moves to the shared chat, if that is still empty
+    const local = store.get("coach", null);
+    if (!r.messages.length && Array.isArray(local) && local.some((m) => m.role === "user")) {
+      try { r = await api("api/coach/chat/import", { method: "POST", body: JSON.stringify({ messages: local }) }); } catch { /* try again next time */ }
+    }
+    if (local) store.remove("coach");
+    const sig = (list, busy) => JSON.stringify([list.map((m) => [m.id, m.applied, m.dismissed]), busy]);
+    const changed = !state.coachLoaded || sig(r.messages, r.busy) !== sig(state.coach, state.coachRemoteBusy);
+    state.coach = r.messages;
+    state.coachRemoteBusy = r.busy;
+    state.coachLoaded = true;
+    return changed;
+  } catch { return false; }
+}
+
+let coachPoll;
+function pollCoach() {
+  clearTimeout(coachPoll);
+  if (state.tab !== "coach" || document.visibilityState !== "visible") return;
+  coachPoll = setTimeout(async () => {
+    if (state.tab === "coach" && !state.coachBusy && await loadCoach() && state.tab === "coach") renderCoach(true);
+    pollCoach();
+  }, 6000);
+}
+
+function renderCoach(keepScroll) {
   if (!state.claude) loadClaude();
+  if (!state.coachLoaded) {
+    $view.innerHTML = `<div class="spinner">Loading your chat…</div>`;
+    loadCoach().then(() => { if (state.tab === "coach") renderCoach(); });
+    return;
+  }
+  const typing = document.getElementById("coach-input");
+  const hadFocus = typing && document.activeElement === typing;
+  if (typing) state.coachDraft = typing.value;      // a refresh must not lose what you're typing
   const signedOut = state.claude && !state.claude.signed_in;
+  const list = state.coach.length ? state.coach : [COACH_GREETING];
+  const waiting = state.coachBusy || state.coachRemoteBusy;
   $view.innerHTML = `
     ${signedOut ? `<div class="card warning"><p style="margin:0 0 8px">The coach isn't connected to your Claude account yet.</p>
       <button type="button" class="btn primary" data-act="goto-settings">Connect in Settings</button></div>` : ""}
     <div class="chat">
-      ${state.coach.map((m, i) => `<div class="msg ${m.role}${m.error ? " error" : ""}">${esc(m.content)}${changesBlock(m, i)}</div>`).join("")}
-      ${state.coachBusy ? `<div class="msg assistant muted">Coach is thinking…</div>` : ""}
+      ${list.map((m, i) => `<div class="msg ${m.role}${m.error ? " error" : ""}">${esc(m.content)}${changesBlock(m, i)}</div>`).join("")}
+      ${waiting ? `<div class="msg assistant muted">Coach is thinking…</div>` : ""}
     </div>
     <div class="composer">
-      <textarea id="coach-input" placeholder="E.g. my kidney is tight today…" aria-label="Message the coach">${esc(state.coachDraft)}</textarea>
+      <textarea id="coach-input" enterkeyhint="send" placeholder="E.g. my kidney is tight today…" aria-label="Message the coach">${esc(state.coachDraft)}</textarea>
       <button type="button" class="btn primary" style="width:auto" data-act="send" ${state.coachBusy || signedOut ? "disabled" : ""}>Send</button>
-    </div>`;
-  if (!signedOut) window.scrollTo({ top: document.body.scrollHeight });
+    </div>
+    ${state.coach.length ? `<div class="small muted" style="text-align:center"><button type="button" class="btn link small muted-link" data-act="coach-clear">Clear chat</button>
+      · shared with your other devices</div>` : ""}`;
+  if (hadFocus) { const t = document.getElementById("coach-input"); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+  if (!signedOut && !keepScroll) window.scrollTo({ top: document.body.scrollHeight });
+  pollCoach();
 }
 
 async function sendCoach() {
+  if (!state.coachLoaded) await loadCoach();       // the Weekly recap button sends before the chat has loaded
   const input = document.getElementById("coach-input");
-  const message = input.value.trim();
+  const message = (input ? input.value : state.coachDraft).trim();
   if (!message || state.coachBusy) return;
   state.coachDraft = "";
-  const recent = state.coach.slice(-6);
-  state.coach.push({ role: "user", content: message });
+  if (input) input.value = "";       // renderCoach keeps what is typed, so empty the box first
+  state.coach.push({ role: "user", content: message });   // shown at once; the saved copy replaces it below
   state.coachBusy = true;
   renderCoach();
   try {
-    const res = await api("api/coach", { method: "POST", body: JSON.stringify({ message, recent }) });
-    state.coach.push(res.error
-      ? { role: "assistant", content: `Coach hit an error: ${res.error}`, error: true }
-      : { role: "assistant", content: res.reply || "(no reply)", changes: res.changes || [], rejected: res.rejected || [] });
+    await api("api/coach", { method: "POST", body: JSON.stringify({ message }) });
   } catch {
-    state.coach.push({ role: "assistant", content: "Couldn't reach the coach. Check your connection.", error: true });
+    // the connection dropped: the add-on may still have answered, so look again before giving up
   }
   state.coachBusy = false;
-  if (state.coach[state.coach.length - 1].error) state.claude = null;  // re-check sign-in after a failure
-  store.set("coach", state.coach.slice(-50));
+  await loadCoach();
+  const last = state.coach[state.coach.length - 1];
+  if (last?.error) state.claude = null;  // re-check sign-in after a failure
   if (state.tab === "coach") renderCoach();
 }
 
@@ -2457,19 +2502,25 @@ const actions = {
     try {
       const r = await api("api/plan/changes", { method: "POST", body: JSON.stringify({ changes: m.changes }) });
       m.applied = r.applied;
+      api(`api/coach/chat/${m.id}/state`, { method: "POST", body: JSON.stringify({ applied: r.applied }) }).catch(() => {});
       state.week = null;
       if (saveTimer) await saveDraft();
       await refreshPlan();
       toast(r.applied ? "Today's plan updated" : "Nothing was changed");
     } catch { toast("Couldn't update the plan"); el.disabled = false; return; }
-    store.set("coach", state.coach.slice(-50));
-    renderCoach();
+    renderCoach(true);
   },
   "dismiss-changes"(el) {
     const m = state.coach[Number(el.dataset.i)];
-    if (m) m.dismissed = true;
-    store.set("coach", state.coach.slice(-50));
-    renderCoach();
+    if (m) {
+      m.dismissed = true;
+      if (m.id) api(`api/coach/chat/${m.id}/state`, { method: "POST", body: JSON.stringify({ dismissed: true }) }).catch(() => {});
+    }
+    renderCoach(true);
+  },
+  async "coach-clear"() {
+    if (!confirm("Clear the whole chat on all your devices?")) return;
+    try { await api("api/coach/chat", { method: "DELETE" }); state.coach = []; renderCoach(); } catch { toast("Couldn't clear it"); }
   },
   async "ha-save"() {
     try {
@@ -2651,6 +2702,14 @@ $view.addEventListener("click", (e) => {
   if (el && actions[el.dataset.act]) actions[el.dataset.act](el, e);
 });
 
+// Enter sends the message to the coach; Shift+Enter makes a new line
+$view.addEventListener("keydown", (e) => {
+  if (e.target.id === "coach-input" && e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    sendCoach();
+  }
+});
+
 let searchTimer;
 $view.addEventListener("input", (e) => {
   const t = e.target;
@@ -2729,6 +2788,10 @@ $view.addEventListener("change", (e) => {
 // Save right away when the phone locks or the app goes to the background
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden" && saveTimer) saveDraft();
+  if (document.visibilityState === "visible" && state.tab === "coach" && state.coachLoaded && !state.coachBusy) {
+    loadCoach().then((changed) => { if (changed && state.tab === "coach") renderCoach(true); });
+    pollCoach();
+  }
   if (document.visibilityState === "visible" && state.plan) {
     api("api/plan").then((p) => { if (p.date !== state.plan.date) { loadPlan(p); render(); } }).catch(() => {});
   }
@@ -2785,6 +2848,9 @@ function showTab(tab) {
   if (tab === "history") { state.history = null; state.trends = null; state.bio = null; state.body = null; state.waterHist = null; }   // always fresh
   if (tab === "report") { state.report = null; state.questions = null; }
   if (tab === "settings") { state.bodySensors = null; state.bodyMsg = ""; }
+  if (tab === "coach" && state.coachLoaded) {   // pick up what the other device wrote since you were last here
+    loadCoach().then((changed) => { if (changed && state.tab === "coach") renderCoach(true); });
+  }
   if (tab === "week") state.ski = null;
   render();
   window.scrollTo({ top: 0 });

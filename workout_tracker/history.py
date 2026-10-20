@@ -67,6 +67,13 @@ SCHEMA = [
         source TEXT,             -- manual | ha (a Home Assistant sensor, e.g. Withings)
         UNIQUE (kind, ts, source)
     )""",
+    """CREATE TABLE IF NOT EXISTS coach_chat (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role TEXT,               -- user | assistant
+        content TEXT,
+        extra TEXT,              -- JSON: error, changes, rejected, applied, dismissed
+        created TEXT
+    )""",
 ]
 
 

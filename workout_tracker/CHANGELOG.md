@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.12.1 - Enter Sends, Coach Chat Syncs Between Devices
+
+### 🌟 Features
+* **Press Enter to send** in the Coach box (Shift+Enter makes a new line). On a phone the keyboard's return key now shows as "send".
+* **One coach chat on every device.** The conversation is kept on the add-on, so your phone and your PC show the same chat. A message sent on one device appears on the other within a few seconds, including "Coach is thinking…" while a reply is on its way, and what you're typing isn't lost when it refreshes. Apply and No thanks on the coach's suggested changes carry over too. "Clear chat" empties it everywhere. Your earlier chat on each device moves across the first time you open the Coach tab (the first device to do so wins if both have one).
+
 ## 0.12.0 - Questions for the PT, Guided Leaky Can, Water, Weight and Blood Pressure
 
 ### 🌟 Features

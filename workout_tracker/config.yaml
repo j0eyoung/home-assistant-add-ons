@@ -1,6 +1,6 @@
 name: "AI Workout Tracker"
 description: "Dynamic auto-regulating workout planner and tracker."
-version: "0.12.0"
+version: "0.12.1"
 slug: "ai_workout"
 image: "ghcr.io/j0eyoung/{arch}-ha-workout-tracker"
 arch:

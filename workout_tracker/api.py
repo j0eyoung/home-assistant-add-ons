@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import chatlog
 import coach
 import garmin_sync
 import ha
@@ -39,7 +40,7 @@ from engine import WorkoutEngine
 from exercises import CARDIO_IMAGES, GUIDES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "0.12.0"
+VERSION = "0.12.1"
 
 app = FastAPI(title="AI Workout Tracker")
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
@@ -727,11 +728,70 @@ def status():
 
 class CoachMessage(BaseModel):
     message: str
-    recent: list[dict] = []
+    recent: list[dict] = []     # ignored: the conversation is kept on the add-on so the phone and the PC share it
+
+
+@app.get("/api/coach/chat")
+def coach_chat():
+    return {"messages": chatlog.messages(DB_PATH), "busy": chatlog.busy()}
+
+
+class ChatImport(BaseModel):
+    messages: list[dict]
+
+
+@app.post("/api/coach/chat/import")
+def coach_chat_import(c: ChatImport):
+    """One-time: brings in the chat a device had saved on its own, only if the shared chat is still empty."""
+    if chatlog.count(DB_PATH) == 0:
+        for m in c.messages[-50:]:
+            role, text = m.get("role"), str(m.get("content") or "")[:20000]
+            if role in ("user", "assistant") and text:
+                extra = {k: m[k] for k in ("error", "changes", "rejected", "applied", "dismissed") if k in m}
+                chatlog.add(DB_PATH, role, text, extra)
+    return coach_chat()
+
+
+class ChatFlags(BaseModel):
+    applied: int | None = None
+    dismissed: bool | None = None
+
+
+@app.post("/api/coach/chat/{mid}/state")
+def coach_chat_state(mid: int, f: ChatFlags):
+    flags = {k: v for k, v in f.model_dump().items() if v is not None}
+    if flags:
+        chatlog.update(DB_PATH, mid, **flags)
+    return coach_chat()
+
+
+@app.delete("/api/coach/chat")
+def coach_chat_clear():
+    chatlog.clear(DB_PATH)
+    return coach_chat()
 
 
 @app.post("/api/coach")
 def ask_coach(m: CoachMessage):
+    # saved first, so the other device sees the question while the coach is still thinking
+    recent = chatlog.recent(DB_PATH, 6)
+    chatlog.add(DB_PATH, "user", m.message.strip()[:4000])
+    chatlog.set_busy(True)
+    try:
+        r = _ask_coach(m.message, recent)
+    except Exception as e:
+        r = {"reply": None, "error": f"{type(e).__name__}: {str(e)[:160]}", "rejected": [], "changes": []}
+    finally:
+        chatlog.set_busy(False)
+    if r["error"]:
+        chatlog.add(DB_PATH, "assistant", f"Coach hit an error: {r['error']}", {"error": True})
+    else:
+        extra = {"changes": r["changes"], "rejected": r["rejected"]}
+        chatlog.add(DB_PATH, "assistant", r["reply"] or "(no reply)", extra)
+    return r
+
+
+def _ask_coach(message, recent):
     plan = todays_workout()
     lib = get_library()
     today = datetime.date.fromisoformat(history.local_today())
@@ -752,7 +812,7 @@ def ask_coach(m: CoachMessage):
     info = _season(today)
     season_text = (f"{info['opening']} ({info['days']} days away)" if info["days"] > 0 else f"{info['opening']} (it has opened)") + \
         f". Phase: {info['phase']}: {info['text']}" if info else ""
-    reply, error = coach.ask(m.message, m.recent, plan_context=context, season=season_text, sports=selected_sports())
+    reply, error = coach.ask(message, recent, plan_context=context, season=season_text, sports=selected_sports())
     reply, data = planedit.extract(reply)
     ops, pause_rejects = _drop_paused((data or {}).get("changes") or [])
     changes, rejected = planedit.validate({"changes": [c for c in ops if c.get("op") != "day"]}, plan, lib["by_name"],
