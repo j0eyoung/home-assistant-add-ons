@@ -1,6 +1,6 @@
 name: "Work Tracker"
 description: "A 24/7 work log: hours by client and case, tasks and follow-ups with due dates, a stop-time nudge and a weekly summary on your phone."
-version: "0.1.0"
+version: "0.2.0"
 slug: "work_tracker"
 image: "ghcr.io/j0eyoung/{arch}-ha-work-tracker"
 arch:
@@ -20,7 +20,14 @@ map:
     read_only: false
   - type: homeassistant_config
     read_only: true
+# Optional LAN port for the laptop script (wt.py). Off until a host port is typed in the add-on's Network tab;
+# even then only /api/* answers, and only to a request carrying the api_key option as a Bearer token.
+ports:
+  8505/tcp: null
+ports_description:
+  8505/tcp: "API for the laptop script (needs api_key)"
 options:
+  api_key: ""
   notify_service: ""
   stop_time: "17:30"
   daily_target: 0
@@ -29,6 +36,7 @@ options:
   summary_day: "fri"
   summary_time: "17:00"
 schema:
+  api_key: password?
   notify_service: str?
   stop_time: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)?"
   daily_target: "float(0,24)?"

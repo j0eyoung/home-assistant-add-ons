@@ -6,7 +6,7 @@ OPTIONS_PATH = os.getenv("OPTIONS_PATH", "/data/options.json")
 
 _DEFAULTS = {
     "notify_service": "", "stop_time": "17:30", "daily_target": 0.0, "weekly_target": 0.0,
-    "task_time": "09:00", "summary_day": "fri", "summary_time": "17:00",
+    "api_key": "", "task_time": "09:00", "summary_day": "fri", "summary_time": "17:00",
 }
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 

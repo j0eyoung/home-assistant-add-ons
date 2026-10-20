@@ -12,7 +12,7 @@ OPTIONS = "/data/options.json"
 CANDIDATES = ["/homeassistant/addon_secrets.json", "/config/addon_secrets.json"]
 # Options this add-on accepts. Home Assistant leaves optional options without a default out of
 # options.json, so they have to be listed here to be filled.
-KEYS = ['notify_service', 'stop_time', 'daily_target', 'weekly_target', 'task_time', 'summary_day', 'summary_time']
+KEYS = ['api_key', 'notify_service', 'stop_time', 'daily_target', 'weekly_target', 'task_time', 'summary_day', 'summary_time']
 
 
 def main():

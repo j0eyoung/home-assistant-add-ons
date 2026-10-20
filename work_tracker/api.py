@@ -1,6 +1,7 @@
 """Add-on web server: JSON API for hours and tasks (the phone UI in static/ comes next). Served through Home
 Assistant ingress under a per-install path prefix, so the page only uses relative URLs (fetch("api/state"))."""
 import datetime
+import hmac
 import ipaddress
 import os
 import re
@@ -11,6 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import cases
 import config
 import db
 import ha
@@ -39,6 +41,15 @@ INGRESS = ipaddress.ip_address("172.30.32.2")
 MAX_BODY = 1_000_000
 
 
+def _key_ok(request):
+    """The optional LAN port (off until a port is set in the add-on's Network tab): /api/* only, and only with
+    `Authorization: Bearer <api_key>`. Without an api_key option nothing but ingress gets in."""
+    key = config.options()["api_key"]
+    got = request.headers.get("authorization", "")
+    return bool(key) and request.url.path.startswith("/api/") and got.startswith("Bearer ") \
+        and hmac.compare_digest(got[7:].encode(), key.encode())
+
+
 @app.middleware("http")
 async def only_home_assistant(request: Request, call_next):
     if os.getenv("SUPERVISOR_TOKEN"):
@@ -46,7 +57,7 @@ async def only_home_assistant(request: Request, call_next):
             ok = ipaddress.ip_address(request.client.host) == INGRESS
         except Exception:
             ok = False
-        if not ok:
+        if not ok and not _key_ok(request):
             return JSONResponse({"detail": "Open Work Tracker from Home Assistant."}, status_code=403)
     if int(request.headers.get("content-length") or 0) > MAX_BODY:
         return JSONResponse({"detail": "That is too much at once."}, status_code=413)
@@ -137,7 +148,7 @@ def _fields(m):
 def state():
     return {"version": VERSION, "now": hours.now().strftime(hours.FMT), "running": hours.running(),
             "totals": hours.totals(), "recent": hours.recent_clients(),
-            "tasks": tasks.listing(), "phone": ha.notify_service()}
+            "tasks": tasks.listing(), "cases": cases.listing(), "phone": ha.notify_service()}
 
 
 @app.post("/api/timer/start")
@@ -220,6 +231,21 @@ def tasks_snooze(tid: int):
 def tasks_delete(tid: int):
     _found(tasks.delete(tid))
     return {"ok": True}
+
+
+class CaseIn(BaseModel):
+    status: str
+
+
+@app.get("/api/cases")
+def cases_list():
+    return cases.listing()
+
+
+@app.put("/api/cases/{case_no}")
+def cases_put(case_no: str, body: CaseIn):
+    """The laptop pushes only a case number and a short status, nothing else about the case."""
+    return cases.put(case_no, body.status)
 
 
 @app.post("/api/test-nudge")

@@ -1,4 +1,9 @@
 configuration:
+  api_key:
+    name: API key
+    description: >-
+      Optional. A long random secret that lets the wt.py script on your laptop log hours, tasks and case
+      statuses. Only used when you also set a host port in the Network tab. Blank = ingress only.
   notify_service:
     name: Notify service
     description: >-

@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     done_at TEXT,                        -- NULL = open
     created TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS cases (
+    case_no TEXT PRIMARY KEY,
+    status TEXT NOT NULL,                -- short text pushed from the laptop
+    updated TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 """
 

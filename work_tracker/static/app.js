@@ -76,6 +76,8 @@ function table(title, rows) {
 }
 function renderWeek() {
   $("#week-totals").innerHTML = table("Today", S.totals.day) + table("This week (from " + S.totals.week_start + ")", S.totals.week);
+  $("#cases").innerHTML = S.cases.length ? `<div class="card"><h3>Case statuses</h3>${S.cases.map(c =>
+    `<div class="item"><b>${esc(c.case_no)}</b><span class="muted">${esc(c.status)}</span></div>`).join("")}</div>` : "";
   $("#phone").textContent = S.phone ? "Sending to notify." + S.phone : "No phone found. Set notify_service in the add-on's Configuration tab.";
   setLink();
 }
