@@ -60,7 +60,7 @@ const state = {
   week: null, weekOffset: 0, coachDraft: "", secondOpen: false, ck: null, ckEdit: false, snowOpen: false, snow: null,
   garmin: null, garminMsg: "", ha: null,
   trends: null, trendDays: 30, report: null, reportDays: 30, ski: null, skiOpen: false, skiVals: {}, ptForm: null, install: null,
-  bio: null, bioForm: null,
+  bio: null, bioForm: null, questions: null, qSuggest: null, body: null, bodyForm: null, waterHist: null, bodySensors: null, bodyMsg: "",
   voices: null, voice: "lessac", audio: null,
   med: null, medFilter: "all", medShown: 10, medMinutes: 5, medFocus: "", medScript: "", medBusy: false, medError: "",
   lib: { q: "", focus: "", muscle: "", equipment: "", pictures: true, filtered: false, data: null, results: [], offset: 0 },
@@ -229,7 +229,23 @@ function warmupCard(ex) {
       <span><span class="name">${esc(ex.name)}</span>${ex.pt ? ` <span class="badge">PT</span>` : ""}<span class="sub" style="display:block">${esc(ex.dose || "")}</span></span>
     </button>
     ${ex.hold && !on ? `<button type="button" class="btn small" data-act="warmup-timer" data-name="${esc(ex.name)}">▶ Start ${fmtSecs(ex.hold_secs || 60)} timer</button>` : ""}
+    ${/leaky can/i.test(ex.name) && !on ? `<div class="row-actions" style="margin-top:4px">
+      <button type="button" class="btn small" data-act="breathe" data-v="calm">▶ Guided, 4 in / 6 out</button>
+      <button type="button" class="btn small" data-act="breathe" data-v="quicker">▶ 3 in / 5 out</button></div>` : ""}
     ${hasHowTo(ex) ? toggleButton(key) + (state.open.has(key) ? howTo(ex) : "") : ""}
+  </div>`;
+}
+
+// Water toward today's goal, one tap per glass
+function waterCard(p) {
+  const w = p.water;
+  if (!w) return "";
+  const pct = Math.min(100, w.pct || 0);
+  return `<div class="card water" data-card="water">
+    <div class="water-head"><strong>💧 Water</strong><span><strong>${esc(w.total)}</strong> / ${esc(w.goal)} oz</span></div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${esc(w.goal)}" aria-valuenow="${esc(w.total)}" aria-label="Water today"><i style="width:${pct}%"></i></div>
+    <div class="row-actions">${[8, 12, 16, 24].map((oz) => `<button type="button" class="btn small" data-act="water" data-v="${oz}">+${oz}</button>`).join("")}
+      ${w.total ? `<button type="button" class="btn link small muted-link" data-act="water-undo">Undo</button>` : ""}</div>
   </div>`;
 }
 
@@ -308,6 +324,7 @@ function renderToday() {
   if (p.done?.["1"]) return renderTodayDone(p);
   $view.innerHTML = `
     ${checkinCard(p)}
+    ${waterCard(p)}
     ${p.garmin?.level ? `<div class="card season"><strong>${p.garmin.level === "recovery" ? "Garmin says: recovery day" : "Garmin says: go a bit lighter today"}</strong>
       <div class="sub">${esc(p.garmin.reasons.join(", "))}. ${p.garmin.level === "recovery"
         ? "Today is gentle recovery work."
@@ -356,6 +373,7 @@ function atPtCard(p) {
   if (!p.at_pt) return "";
   return `<div class="card season"><strong>🏥 You're at the PT office</strong>
     <div class="sub">Ask your PT: any new exercises, or changes to the ones you do now? Add them here so they show up every day.</div>
+    ${p.questions?.length ? `<div class="sub" style="margin-top:8px"><strong>Your questions:</strong></div>${questionList(p.questions, true)}` : ""}
     <div class="row-actions"><button type="button" class="btn small" data-act="pt-add-go">+ Add a PT exercise</button>
       ${p.bio?.enabled ? `<button type="button" class="btn small" data-act="bio-go">Log biofeedback</button>` : ""}
       <button type="button" class="btn small" data-act="goto" data-v="report">Show my PT report</button></div></div>`;
@@ -397,6 +415,7 @@ function renderTodayDone(p) {
       <p class="sub">${esc(doneSummary(d) || "Saved to History.")}</p>
       ${prList(d.prs)}
       <div class="row-actions"><button type="button" class="btn small" data-act="goto" data-v="history">View in History</button></div></div>
+    ${waterCard(p)}
     ${p.snow_sport ? snowCard(p) : ""}
     ${atPtCard(p)}
     ${bioDueCard(p)}
@@ -753,7 +772,7 @@ async function renderHistory() {
   }
   const { workouts, exercises } = state.history;
   if (!workouts.length) {
-    $view.innerHTML = `${bioSection()}<div class="empty">No completed workouts yet.<br>Press <strong>Complete workout</strong> at the end of Today to save one.</div>`;
+    $view.innerHTML = `${bioSection()}${bodySection()}${waterHistory()}<div class="empty">No completed workouts yet.<br>Press <strong>Complete workout</strong> at the end of Today to save one.</div>`;
     return;
   }
   if (exercises.length && !exercises.includes(state.progress.exercise)) {
@@ -763,6 +782,8 @@ async function renderHistory() {
   $view.innerHTML = `
     ${trendSection()}
     ${bioSection()}
+    ${bodySection()}
+    ${waterHistory()}
     ${exercises.length ? `<h2>Progress</h2>
     <div class="card">
       <select data-act-change="progress" aria-label="Exercise" style="width:100%;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--card-2);padding:0 10px">
@@ -773,6 +794,164 @@ async function renderHistory() {
     <h2>Completed workouts (${workouts.length})</h2>
     ${workouts.map(workoutCard).join("")}
     <button type="button" class="btn small" data-act="report">Make an HTML progress report (AI Coach)</button>`;
+}
+
+// --- Weight, blood pressure and water ----------------------------------------------------------------------------------
+
+// A time-based line chart: series share one axis (same unit). refs = dashed reference lines (e.g. 120/80 for BP).
+function timeChart(rows, series, { min, max, refs = [], unit = "", label = "" } = {}) {
+  if (!rows.length) return "";
+  const W = 340, P = 34, PR = 66, TOP = 10, H = 120;
+  const t0 = rows[0].t, t1 = rows[rows.length - 1].t, span = Math.max(1, t1 - t0);
+  const x = (t) => (rows.length === 1 ? P + (W - P - PR) / 2 : P + ((t - t0) / span) * (W - P - PR));
+  const y = (v) => TOP + (1 - (v - min) / Math.max(1, max - min)) * H;
+  const parts = series.map((s) => {
+    const pts = rows.filter((r) => r[s.key] != null);
+    const d = s.dots ? "" : pts.map((r, i) => `${i ? "L" : "M"}${x(r.t).toFixed(1)},${y(r[s.key]).toFixed(1)}`).join(" ");
+    const dots = s.line ? "" : pts.map((r) => `<circle class="${s.dotCls}" cx="${x(r.t).toFixed(1)}" cy="${y(r[s.key]).toFixed(1)}" r="4"><title>${esc(`${formatDate(r.date)}: ${r[s.key]}${unit}`)}</title></circle>`).join("");
+    const last = pts[pts.length - 1];
+    return { d, dots, last, s };
+  });
+  // direct labels at each series' last point, nudged apart
+  const labels = parts.filter((p) => p.last && p.s.label).map((p) => ({ y: y(p.last[p.s.key]) + 4, p }));
+  labels.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < labels.length; i++) if (labels[i].y - labels[i - 1].y < 12) labels[i].y = labels[i - 1].y + 12;
+  return `<svg viewBox="0 0 ${W} ${TOP + H + 18}" role="img" aria-label="${esc(label)}">
+    ${[min, max].map((v) => `<line class="grid" x1="${P}" x2="${W - PR}" y1="${y(v)}" y2="${y(v)}"/>
+      <text x="${P - 4}" y="${y(v) + 4}" text-anchor="end" class="axis-text">${Math.round(v)}</text>`).join("")}
+    ${refs.map((r) => `<line class="ref" x1="${P}" x2="${W - PR}" y1="${y(r.v)}" y2="${y(r.v)}"/>
+      <text x="${P - 4}" y="${y(r.v) + 4}" text-anchor="end" class="axis-text">${r.v}</text>`).join("")}
+    ${parts.map((p) => (p.d ? `<path class="${p.s.lineCls}" d="${p.d}"/>` : "") + p.dots).join("")}
+    ${labels.map((l) => `<text x="${W - PR + 8}" y="${l.y}" class="axis-text">${esc(l.p.s.label)} ${Math.round(l.p.last[l.p.s.key] * 10) / 10}</text>`).join("")}
+    <text x="${P}" y="${TOP + H + 14}" class="axis-text">${esc(formatDate(rows[0].date))}</text>
+    ${rows.length > 1 ? `<text x="${W - PR}" y="${TOP + H + 14}" text-anchor="end" class="axis-text">${esc(formatDate(rows[rows.length - 1].date))}</text>` : ""}
+  </svg>`;
+}
+
+const tsMs = (ts) => new Date(ts).getTime();
+
+function weightChart(list) {
+  if (!list.length) return "";
+  const rows = list.map((r) => ({ t: tsMs(r.ts), date: r.date, w: r.v1 }));
+  rows.forEach((r) => {   // 7-day average ending at each weigh-in
+    const win = rows.filter((o) => o.t <= r.t && o.t > r.t - 7 * 864e5);
+    r.avg = Math.round((win.reduce((a, o) => a + o.w, 0) / win.length) * 10) / 10;
+  });
+  const vals = rows.map((r) => r.w);
+  const lo = Math.floor(Math.min(...vals) - 2), hi = Math.ceil(Math.max(...vals) + 2);
+  return `<div class="legend"><span><i class="sw-effort" style="height:8px;width:8px;border-radius:50%"></i>Weigh-ins</span><span><i class="sw-a"></i>7-day average</span></div>
+    ${timeChart(rows, [{ key: "w", dots: true, dotCls: "dot-muted" }, { key: "avg", line: true, lineCls: "ln-a", label: "Avg" }],
+      { min: lo, max: hi, unit: " lb", label: "Weight over time, in pounds" })}`;
+}
+
+function bpChart(list) {
+  if (!list.length) return "";
+  const rows = list.map((r) => ({ t: tsMs(r.ts), date: r.date, sys: r.v1, dia: r.v2 }));
+  const hi = Math.max(160, ...rows.map((r) => r.sys + 10));
+  return `<div class="legend"><span><i class="sw-a"></i>Systolic (top)</span><span><i class="sw-b"></i>Diastolic (bottom)</span><span><i class="sw-ref"></i>120 / 80</span></div>
+    ${timeChart(rows, [{ key: "sys", lineCls: "ln-a", dotCls: "dot-a", label: "Sys" }, { key: "dia", lineCls: "ln-b", dotCls: "dot-b", label: "Dia" }],
+      { min: 50, max: Math.ceil(hi / 10) * 10, refs: [{ v: 120 }, { v: 80 }], unit: " mmHg", label: "Blood pressure over time" })}`;
+}
+
+function weightSummary(list) {
+  if (!list.length) return "";
+  const first = list[0], last = list[list.length - 1];
+  const d = Math.round((last.v1 - first.v1) * 10) / 10;
+  return `<p class="sub"><strong>${last.v1} lb</strong> on ${esc(formatDate(last.date))}${list.length > 1 ? ` · ${d > 0 ? "+" : ""}${d} lb since ${esc(formatDate(first.date))}` : ""}</p>`;
+}
+
+function bpSummary(list, category) {
+  if (!list.length) return "";
+  const last = list[list.length - 1];
+  const avg = (k) => Math.round(list.reduce((a, r) => a + r[k], 0) / list.length);
+  return `<p class="sub"><strong>${last.v1}/${last.v2}</strong>${last.v3 ? ` · pulse ${last.v3}` : ""} on ${esc(formatDate(last.date))}
+    ${category ? `· <strong>${esc(category)}</strong>` : ""}${list.length > 1 ? `<br>Average of ${list.length} readings: ${avg("v1")}/${avg("v2")}` : ""}</p>`;
+}
+
+function bodySection() {
+  const b = state.body;
+  if (!b) {
+    api("api/body?days=90").then((r) => { state.body = r; if (state.tab === "history") render(); }).catch(() => {});
+    return "";
+  }
+  const f = state.bodyForm;
+  const linked = b.sensors?.weight_entity || b.sensors?.sys_entity;
+  const form = f === "weight" ? `<div class="composer" style="position:static;padding:0;margin-top:8px">
+      <input id="body-weight" type="number" inputmode="decimal" step="0.1" class="code-input" placeholder="Weight in lb" aria-label="Weight in pounds">
+      <button type="button" class="btn small" style="width:auto" data-act="body-save" data-v="weight">Save</button></div>`
+    : f === "bp" ? `<div class="bp-form" style="margin-top:8px">
+      <input id="bp-sys" type="number" inputmode="numeric" class="code-input" placeholder="Top (sys)" aria-label="Systolic">
+      <input id="bp-dia" type="number" inputmode="numeric" class="code-input" placeholder="Bottom (dia)" aria-label="Diastolic">
+      <input id="bp-pulse" type="number" inputmode="numeric" class="code-input" placeholder="Pulse" aria-label="Pulse">
+      <button type="button" class="btn small" data-act="body-save" data-v="bp">Save</button></div>` : "";
+  const recent = [...b.weight.map((r) => ({ ...r, kind: "weight" })), ...b.bp.map((r) => ({ ...r, kind: "bp" }))]
+    .sort((a, z) => z.ts.localeCompare(a.ts)).slice(0, 20);
+  return `<h2>Weight and blood pressure</h2>
+    <div class="card chart">
+      ${b.weight.length ? `${weightSummary(b.weight)}${weightChart(b.weight)}` : `<p class="sub" style="margin-top:0">No weigh-ins yet.</p>`}
+      ${b.bp.length ? `<div style="margin-top:14px">${bpSummary(b.bp, b.bp_category)}${bpChart(b.bp)}</div>` : ""}
+      ${linked ? `<p class="small muted">New readings from Home Assistant (your scale or BP monitor) come in by themselves every few minutes.</p>`
+        : `<p class="small muted">Link your Withings scale in Settings › Scale and blood pressure, or add readings by hand.</p>`}
+      <div class="row-actions"><button type="button" class="btn small" data-act="body-form" data-v="weight">+ Weight</button>
+        <button type="button" class="btn small" data-act="body-form" data-v="bp">+ Blood pressure</button></div>
+      ${form}
+      ${recent.length ? `<details class="small"><summary>Recent readings</summary><ul class="plain" style="margin-top:8px">${recent.map((r) =>
+        `<li>${esc(formatDate(r.date))} ${esc(r.ts.slice(11, 16))}: ${r.kind === "weight" ? `${r.v1} lb` : `${r.v1}/${r.v2}${r.v3 ? `, pulse ${r.v3}` : ""}`}
+          <span class="muted">${r.source === "ha" ? "(Home Assistant)" : ""}</span>
+          <button type="button" class="btn link small muted-link" data-act="body-del" data-v="${r.id}">Delete</button></li>`).join("")}</ul></details>` : ""}
+    </div>`;
+}
+
+function waterHistory() {
+  const w = state.waterHist;
+  if (!w) {
+    api("api/water").then((r) => { state.waterHist = r; if (state.tab === "history") render(); }).catch(() => {});
+    return "";
+  }
+  if (!w.days.some((d) => d.oz)) return "";
+  const W = 340, P = 30, H = 90, TOP = 8, n = w.days.length, max = Math.max(w.goal, ...w.days.map((d) => d.oz)) * 1.1;
+  const bw = (W - P - 10) / n - 4;
+  const y = (v) => TOP + (1 - v / max) * H;
+  return `<h2>Water</h2><div class="card chart">
+    <div class="legend"><span><i class="sw-a" style="height:8px;width:8px"></i>Water per day (oz)</span><span><i class="sw-ref"></i>Goal ${w.goal} oz</span></div>
+    <svg viewBox="0 0 ${W} ${TOP + H + 18}" role="img" aria-label="Water per day for the last two weeks">
+      <line class="grid" x1="${P}" x2="${W - 10}" y1="${y(0)}" y2="${y(0)}"/>
+      <line class="ref" x1="${P}" x2="${W - 10}" y1="${y(w.goal)}" y2="${y(w.goal)}"/>
+      <text x="${P - 4}" y="${y(w.goal) + 4}" text-anchor="end" class="axis-text">${w.goal}</text>
+      ${w.days.map((d, i) => d.oz ? `<rect class="bar-a" x="${(P + i * (bw + 4) + 2).toFixed(1)}" y="${y(d.oz).toFixed(1)}" width="${bw.toFixed(1)}"
+        height="${(y(0) - y(d.oz)).toFixed(1)}" rx="3"><title>${esc(`${formatDate(d.date)}: ${d.oz} oz`)}</title></rect>` : "").join("")}
+      <text x="${P}" y="${TOP + H + 14}" class="axis-text">${esc(formatDate(w.days[0].date))}</text>
+      <text x="${W - 10}" y="${TOP + H + 14}" text-anchor="end" class="axis-text">Today</text>
+    </svg></div>`;
+}
+
+// --- Questions for the PT: jot them down during the week, tick them off at the visit -------------------------------------
+
+function questionList(list, compact) {
+  if (!list?.length) return compact ? "" : `<p class="sub">No questions yet.</p>`;
+  return `<ul class="questions">${list.map((q) => `<li>
+    <button type="button" class="qtick" data-act="q-asked" data-v="${q.id}" aria-label="Asked">✓</button>
+    <span>${q.source === "ai" ? "✨ " : ""}${esc(q.text)}</span>
+    ${compact ? "" : `<button type="button" class="btn link small muted-link noprint" data-act="q-del" data-v="${q.id}">Remove</button>`}</li>`).join("")}</ul>`;
+}
+
+function questionsSection() {
+  const q = state.questions;
+  if (!q) return `<div class="card muted">Loading questions…</div>`;
+  const s = state.qSuggest;
+  return `<h2>Questions for my PT</h2>
+    <div class="card">
+      <div class="composer noprint" style="position:static;padding:0"><input id="q-new" class="code-input" maxlength="300" placeholder="e.g. Can I add weight to the wall sits?" aria-label="New question">
+        <button type="button" class="btn small" style="width:auto" data-act="q-add">Add</button></div>
+      ${questionList(q.open, false)}
+      <div class="row-actions noprint"><button type="button" class="btn small" data-act="q-suggest" ${s?.busy ? "disabled" : ""}>${s?.busy ? "Thinking…" : "✨ Suggest questions from my data"}</button></div>
+      ${s?.error ? `<div class="small warning noprint" style="margin-top:8px">${esc(s.error)}</div>` : ""}
+      ${s?.items?.length ? `<div class="suggest noprint"><div class="sub">The coach suggests (tap to add):</div>
+        ${s.items.map((x, i) => `<button type="button" class="btn small suggest-item" data-act="q-add-ai" data-i="${i}">+ ${esc(x)}</button>`).join("")}</div>` : ""}
+      ${q.asked.length ? `<details class="small"><summary>Asked (${q.asked.length})</summary><ul class="plain" style="margin-top:8px">${q.asked.map((x) =>
+        `<li><span class="muted">${esc(formatDate(x.asked_on))}:</span> ${esc(x.text)}${x.answer ? `<div><strong>PT:</strong> ${esc(x.answer)}</div>` : ""}
+          <button type="button" class="btn link small muted-link noprint" data-act="q-undo" data-v="${x.id}">Not asked yet</button></li>`).join("")}</ul></details>` : ""}
+    </div>`;
 }
 
 // --- PT visit report: one printable page to show at appointments -----------------------------------------------------
@@ -787,6 +966,7 @@ async function renderReport() {
     state.report = await api(`api/report/pt?days=${days}`);
     if (state.tab !== "report") return;
   }
+  if (!state.questions) state.questions = { open: state.report.questions.open, asked: state.report.questions.asked };
   const r = state.report;
   const t = r.trends;
   const routine = r.routine_days
@@ -801,6 +981,7 @@ async function renderReport() {
     </div>
     <div class="chips noprint" style="margin:10px 0">${[14, 30, 60, 90].map((d) =>
       `<button type="button" class="chip${d === days ? " on" : ""}" data-act="report-days" data-v="${d}">Last ${d} days</button>`).join("")}</div>
+    ${questionsSection()}
     <div class="card stat-grid">
       <div><div class="stat">${r.workouts}<small> / ${r.planned}</small></div><div class="sub">workouts done / training days planned</div></div>
       <div><div class="stat">${r.checkins}</div><div class="sub">morning check-ins</div></div>
@@ -808,7 +989,11 @@ async function renderReport() {
       <div><div class="stat">${t.averages.pf ?? "–"}</div><div class="sub">average pelvic floor</div></div>
       ${r.snow_days ? `<div><div class="stat">${r.snow_days}</div><div class="sub">snow days</div></div>` : ""}
       ${r.second_sessions ? `<div><div class="stat">${r.second_sessions}</div><div class="sub">second sessions</div></div>` : ""}
+      ${r.water.avg ? `<div><div class="stat">${r.water.avg}<small> oz</small></div><div class="sub">water a day (goal ${r.water.goal}, ${r.water.days_logged} days logged)</div></div>` : ""}
     </div>
+    ${r.body.weight.length || r.body.bp.length ? `<h2>Weight and blood pressure</h2>
+    <div class="card chart">${weightSummary(r.body.weight)}${weightChart(r.body.weight)}
+      ${r.body.bp.length ? `<div style="margin-top:14px">${bpSummary(r.body.bp, r.body.bp_category)}${bpChart(r.body.bp)}</div>` : ""}</div>` : ""}
     <h2>Symptoms</h2>
     <div class="card chart">${trendBody(t)}</div>
     ${r.biofeedback.length ? `<h2>Pelvic floor biofeedback</h2>
@@ -830,6 +1015,8 @@ async function renderReport() {
     <div class="card">${r.bothered.length ? `<ul class="plain">${r.bothered.map((b) =>
       `<li><strong>${esc(b.name)}</strong>: marked ${esc(formatDate(b.since))}, ${esc(b.status)}${b.status === "sitting out" ? ` until ${esc(formatDate(b.until))}` : ""}</li>`).join("")}</ul>`
       : `<p class="sub">Nothing marked in this period.</p>`}</div>
+    ${r.questions.asked.length ? `<h2>Questions asked at visits</h2><div class="card"><ul class="plain">${r.questions.asked.map((x) =>
+      `<li><span class="muted">${esc(formatDate(x.asked_on))}:</span> ${esc(x.text)}${x.answer ? `<div><strong>Answer:</strong> ${esc(x.answer)}</div>` : ""}</li>`).join("")}</ul></div>` : ""}
     ${r.notes.length ? `<h2>Notes</h2><div class="card"><ul class="plain">${r.notes.map((x) =>
       `<li><span class="muted">${esc(formatDate(x.date))}:</span> ${esc(x.text)}</li>`).join("")}</ul></div>` : ""}
     <p class="small muted">From the AI Workout Tracker. A personal training log, not a medical record.</p>`;
@@ -938,16 +1125,19 @@ async function startQigong(seconds) {
   return startGuided("api/qigong/session", seconds, "Guided Baduanjin");
 }
 
-// Any guided session (the full Baduanjin, or today's cool-down): one spoken audio file, the picture follows along
-async function startGuided(url, seconds, title) {
+// Any guided session (the full Baduanjin, or today's cool-down): one spoken audio file, the picture follows along.
+// mode "breath" (guided leaky can) shows a breathing circle instead, and onEnd runs when the audio finishes.
+async function startGuided(url, seconds, title, opts = {}) {
   if (!state.voices) {
     try { state.voices = await api("api/voices"); state.voice = state.voices.selected; } catch { /* use the default voice */ }
   }
   clearTimeout(qg.poll);
+  qg.mode = opts.mode || "pictures";
+  qg.onEnd = opts.onEnd || null;
   showQg(`<div class="qg-wait"><h3>${esc(title)}</h3><p id="qg-status" class="sub">Getting the voice ready…</p>
     <button type="button" class="btn small" data-qg="close">Cancel</button></div>`);
   try {
-    const r = await api(url, { method: "POST", body: JSON.stringify({ voice: state.voice || "lessac", seconds }) });
+    const r = await api(url, { method: "POST", body: JSON.stringify({ voice: state.voice || "lessac", seconds, ...(opts.body || {}) }) });
     qg.key = r.key;
     qg.steps = r.steps;
     pollQigong(r);
@@ -971,17 +1161,50 @@ function pollQigong(job) {
 async function playQigong() {
   try { qg.timeline = (await api(`api/tts/${qg.key}/timeline`)).timeline; } catch { qg.timeline = []; }
   qg.current = -1;
-  showQg(`<div class="qg-stage" id="qg-stage"></div>
+  const breath = qg.mode === "breath";
+  showQg(`${breath ? `<div class="breath-stage"><div class="small muted" id="br-round">Getting ready</div>
+      <div class="breath-wrap"><div class="breath-circle" id="br-circle"></div><div class="breath-word" id="br-word"></div></div>
+      <div class="breath-count" id="br-count"></div></div>` : `<div class="qg-stage" id="qg-stage"></div>`}
     <audio id="qg-audio" controls autoplay src="api/tts/${esc(qg.key)}/audio" style="width:100%"></audio>
-    <div class="row-actions" style="justify-content:space-between">
-      <button type="button" class="btn small" data-qg="prev">◀ Back</button>
-      <button type="button" class="btn small" data-qg="next">Next ▶</button>
+    <div class="row-actions" style="justify-content:${breath ? "center" : "space-between"}">
+      ${breath ? "" : `<button type="button" class="btn small" data-qg="prev">◀ Back</button>
+      <button type="button" class="btn small" data-qg="next">Next ▶</button>`}
       <button type="button" class="btn small" data-qg="close">Close</button></div>`);
   const audio = document.getElementById("qg-audio");
-  audio.addEventListener("timeupdate", () => drawQigong(audio.currentTime));
+  if (breath) {
+    const loop = () => { drawBreath(audio); if (!audio.paused && !audio.ended) qg.raf = requestAnimationFrame(loop); };
+    audio.addEventListener("play", loop);
+    audio.addEventListener("seeked", () => drawBreath(audio));
+  } else {
+    audio.addEventListener("timeupdate", () => drawQigong(audio.currentTime));
+  }
   audio.addEventListener("play", async () => { try { qg.lock = await navigator.wakeLock?.request("screen"); } catch { /* not allowed */ } });
-  audio.addEventListener("ended", () => { qg.lock?.release(); toast("Session complete 🙏"); });
-  drawQigong(0);
+  audio.addEventListener("ended", () => {
+    qg.lock?.release();
+    if (qg.onEnd) qg.onEnd(); else toast("Session complete 🙏");
+  });
+  if (breath) drawBreath(audio); else drawQigong(0);
+}
+
+// The circle grows on the in-breath and shrinks on the long out-breath, in step with the voice
+function drawBreath(audio) {
+  const t = audio.currentTime;
+  const i = Math.max(0, qg.timeline.findIndex((s) => t >= s.start && t < s.end));
+  const seg = qg.timeline[i] || { start: 0, end: 1 };
+  const step = qg.steps[i] || {};
+  const f = Math.min(1, Math.max(0, (t - seg.start) / Math.max(0.1, seg.end - seg.start)));
+  const ease = (x) => 0.5 - Math.cos(Math.PI * x) / 2;
+  const scale = step.kind === "in" ? 0.5 + 0.5 * ease(f) : step.kind === "out" ? 1 - 0.5 * ease(f) : 0.5;
+  const circle = document.getElementById("br-circle");
+  if (circle) circle.style.transform = `scale(${scale.toFixed(3)})`;
+  if (i === qg.current) return;
+  qg.current = i;
+  const word = document.getElementById("br-word"), count = document.getElementById("br-count"), round = document.getElementById("br-round");
+  const perRound = Math.max(...qg.steps.map((s) => s.breath || 0)) || 10;
+  const rounds = Math.max(...qg.steps.map((s) => s.round || 0)) || 4;
+  if (word) word.textContent = step.kind === "in" ? "Breathe in" : step.kind === "out" ? "Out, slowly" : step.kind === "rest" ? "Rest" : "";
+  if (count) count.textContent = step.breath ? `Breath ${step.breath} of ${perRound} · ${(step.round - 1) * perRound + step.breath} of ${rounds * perRound}` : "";
+  if (round) round.textContent = step.round ? `Round ${step.round} of ${rounds}` : step.label || "";
 }
 
 function drawQigong(t) {
@@ -1011,6 +1234,7 @@ $qg.addEventListener("click", (e) => {
   const act = b.dataset.qg;
   if (act === "close") {
     clearTimeout(qg.poll);
+    cancelAnimationFrame(qg.raf);
     audio?.pause();
     qg.lock?.release();
     $qg.hidden = true;
@@ -1323,6 +1547,49 @@ function bioSettingsCard(s) {
     </div>`;
 }
 
+function waterSettingsCard(s) {
+  const w = s.water || { goal: 80, nudge: true, time: "14:00" };
+  return `<h2>Water</h2>
+    <div class="card">
+      <label class="sub" for="water-goal">Daily goal (oz). Use what your doctor recommends for your kidney.</label>
+      <input id="water-goal" type="number" min="16" max="300" step="4" class="code-input" style="width:120px" value="${esc(w.goal)}">
+      <label class="toggle" style="margin-top:8px"><input type="checkbox" id="water-nudge" ${w.nudge ? "checked" : ""}> Nudge my phone if I'm under half by</label>
+      <input id="water-time" type="time" class="code-input" style="width:140px" value="${esc(w.time)}" aria-label="Nudge time">
+      <p class="small muted">Uses the phone picked for the morning reminder. Home Assistant also gets <code>sensor.workout_water_today</code>.</p>
+      <div class="row-actions"><button type="button" class="btn small" data-act="water-save">Save</button></div>
+    </div>`;
+}
+
+// Scale and BP monitor through Home Assistant (e.g. its Withings integration): pick the sensors once
+function bodySensorsCard() {
+  const b = state.bodySensors;
+  if (!b) {
+    api("api/body/sensors").then((r) => { state.bodySensors = r; if (state.tab === "settings") renderSettings(); }).catch(() => { state.bodySensors = { available: false }; });
+    return `<h2>Scale and blood pressure</h2><div class="card muted">Checking Home Assistant…</div>`;
+  }
+  if (!b.available) {
+    return `<h2>Scale and blood pressure</h2><div class="card"><p class="sub" style="margin:0">Needs the connection to Home Assistant. You can still add weight and blood pressure by hand in History.</p></div>`;
+  }
+  const o = b.options || {}, c = b.chosen || {};
+  const guess = (list, word) => (list || []).find((x) => x.id.includes(word))?.id || "";
+  const pick = (id, list, sel, empty) => `<select id="${id}" style="width:100%"><option value="">${empty}</option>${(list || []).map((x) =>
+    `<option value="${esc(x.id)}"${x.id === sel ? " selected" : ""}>${esc(x.name)} (${esc(x.state)} ${esc(x.unit || "")})</option>`).join("")}</select>`;
+  const none = !(o.weight?.length || o.bp?.length);
+  return `<h2>Scale and blood pressure</h2>
+    <div class="card">
+      <p class="sub" style="margin:0 0 8px">Readings from your Withings scale and BP monitor come in through Home Assistant's Withings integration.
+        ${none ? `<strong>No scale or BP sensors found yet.</strong> In Home Assistant go to Settings › Devices &amp; services › Add integration › Withings,
+          sign in to Withings there, then come back and reopen this page.` : "Pick the sensors once; new readings are copied in every few minutes and kept here for good."}</p>
+      ${none ? "" : `<label class="sub">Weight</label>${pick("bs-weight", o.weight, c.weight_entity ?? guess(o.weight, "weight"), "Not linked")}
+        <div class="two-col" style="margin-top:8px">
+          <div><label class="sub">Systolic (top)</label>${pick("bs-sys", o.bp, c.sys_entity ?? guess(o.bp, "systolic"), "Not linked")}</div>
+          <div><label class="sub">Diastolic (bottom)</label>${pick("bs-dia", o.bp, c.dia_entity ?? guess(o.bp, "diastolic"), "Not linked")}</div></div>
+        <label class="sub" style="display:block;margin-top:8px">Pulse (optional)</label>${pick("bs-pulse", o.pulse, c.pulse_entity ?? guess(o.pulse, "pulse"), "Not linked")}
+        ${state.bodyMsg ? `<div class="small" style="margin-top:8px;color:var(--accent)">${esc(state.bodyMsg)}</div>` : ""}
+        <div class="row-actions"><button type="button" class="btn small" data-act="sensors-save">Save and copy readings</button></div>`}
+    </div>`;
+}
+
 const isInstalled = () => window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
 
 function installCard() {
@@ -1359,6 +1626,8 @@ async function renderSettings() {
   $view.innerHTML = `
     ${ptSection(s.pt_exercises || [])}
     ${bioSettingsCard(s)}
+    ${waterSettingsCard(s)}
+    ${bodySensorsCard()}
     <h2>Sports</h2>
     <div class="card">
       <p class="sub" style="margin:0 0 10px">What you're training for. Your daily extras and the coach follow this. Everything still goes through your kidney and pelvic-floor safety filter.</p>
@@ -1804,6 +2073,114 @@ const actions = {
       const r = await api("api/ha/ptvisit/test", { method: "POST" });
       toast(r.ok ? "Test sent. Check your phone." : `Couldn't send: ${r.error}`);
     } catch { toast("Pick your phone and save first"); }
+  },
+  async water(el) {
+    el.disabled = true;
+    try {
+      const w = await api("api/water", { method: "POST", body: JSON.stringify({ oz: Number(el.dataset.v) }) });
+      state.plan.water = { goal: w.goal, total: w.total, pct: w.pct };
+      state.waterHist = null;
+      const card = $view.querySelector('[data-card="water"]');
+      if (card) card.outerHTML = waterCard(state.plan); else render();
+      if (w.total >= w.goal && w.total - Number(el.dataset.v) < w.goal) toast("Water goal reached 💧🎉");
+    } catch { toast("Couldn't add it"); el.disabled = false; }
+  },
+  async "water-undo"() {
+    try {
+      const w = await api("api/water/undo", { method: "POST" });
+      state.plan.water = { goal: w.goal, total: w.total, pct: w.pct };
+      const card = $view.querySelector('[data-card="water"]');
+      if (card) card.outerHTML = waterCard(state.plan);
+    } catch { toast("Couldn't undo"); }
+  },
+  async "water-save"() {
+    try {
+      state.settings = await api("api/settings", { method: "PUT", body: JSON.stringify({ water: {
+        goal: Number(document.getElementById("water-goal").value) || 80, nudge: document.getElementById("water-nudge").checked,
+        time: document.getElementById("water-time").value || "14:00" } }) });
+      refreshPlan().catch(() => {});
+      toast("Saved");
+    } catch { toast("Couldn't save"); }
+  },
+  breathe(el) {
+    const name = state.plan?.warmup.find((e) => /leaky can/i.test(e.name))?.name;
+    startGuided("api/breathing/session", 0, "Core canister breathing", {
+      mode: "breath", body: { pace: el.dataset.v },
+      onEnd() {
+        if (name && state.plan) { state.checks[name] = true; if (state.tab === "today") rerenderCard(`w:${name}`); scheduleSave(); }
+        toast("40 breaths done ✓ ticked off");
+      },
+    });
+  },
+  async "q-add"() {
+    const box = document.getElementById("q-new");
+    const text = box?.value.trim();
+    if (!text) return;
+    try { state.questions = await api("api/questions", { method: "POST", body: JSON.stringify({ text }) }); render(); refreshPlan().catch(() => {}); }
+    catch { toast("Couldn't add it"); }
+  },
+  async "q-add-ai"(el) {
+    const s = state.qSuggest;
+    const [text] = s.items.splice(Number(el.dataset.i), 1);
+    try { state.questions = await api("api/questions", { method: "POST", body: JSON.stringify({ text, source: "ai" }) }); }
+    catch { toast("Couldn't add it"); }
+    render();
+    refreshPlan().catch(() => {});
+  },
+  async "q-suggest"() {
+    state.qSuggest = { busy: true };
+    render();
+    try {
+      const r = await api("api/questions/suggest", { method: "POST" });
+      state.qSuggest = { items: r.suggestions || [], error: r.error };
+    } catch { state.qSuggest = { error: "Couldn't reach the coach." }; }
+    if (state.tab === "report") render();
+  },
+  async "q-asked"(el) {
+    const answer = prompt("Asked ✓  What did your PT say? (optional)") ;
+    if (answer === null) return;   // cancelled
+    try {
+      state.questions = await api(`api/questions/${el.dataset.v}/asked`, { method: "POST", body: JSON.stringify({ answer }) });
+      if (state.plan) state.plan.questions = state.questions.open;
+      render();
+    } catch { toast("Couldn't update it"); }
+  },
+  async "q-undo"(el) {
+    try { state.questions = await api(`api/questions/${el.dataset.v}/asked`, { method: "POST", body: JSON.stringify({ undo: true }) }); render(); refreshPlan().catch(() => {}); }
+    catch { toast("Couldn't update it"); }
+  },
+  async "q-del"(el) {
+    try { state.questions = await api(`api/questions/${el.dataset.v}`, { method: "DELETE" }); render(); refreshPlan().catch(() => {}); }
+    catch { toast("Couldn't remove it"); }
+  },
+  "body-form"(el) { state.bodyForm = state.bodyForm === el.dataset.v ? null : el.dataset.v; render();
+    setTimeout(() => document.getElementById(el.dataset.v === "weight" ? "body-weight" : "bp-sys")?.focus(), 50); },
+  async "body-save"(el) {
+    const v = (id) => num(document.getElementById(id)?.value);
+    const body = el.dataset.v === "weight" ? { kind: "weight", weight: v("body-weight") }
+      : { kind: "bp", systolic: v("bp-sys"), diastolic: v("bp-dia"), pulse: v("bp-pulse") };
+    try {
+      state.body = await api("api/body", { method: "POST", body: JSON.stringify(body) });
+      state.bodyForm = null;
+      render();
+      toast("Saved");
+    } catch { toast(el.dataset.v === "weight" ? "Enter your weight in pounds" : "Enter both numbers, like 122 and 78"); }
+  },
+  async "body-del"(el) {
+    if (!confirm("Delete this reading?")) return;
+    try { state.body = await api(`api/body/${el.dataset.v}`, { method: "DELETE" }); render(); } catch { toast("Couldn't delete it"); }
+  },
+  async "sensors-save"(el) {
+    el.disabled = true; el.textContent = "Copying readings…";
+    try {
+      const r = await api("api/body/sensors", { method: "POST", body: JSON.stringify({
+        weight_entity: document.getElementById("bs-weight")?.value || "", sys_entity: document.getElementById("bs-sys")?.value || "",
+        dia_entity: document.getElementById("bs-dia")?.value || "", pulse_entity: document.getElementById("bs-pulse")?.value || "" }) });
+      state.bodySensors = r;
+      state.bodyMsg = r.message;
+      state.body = null;
+    } catch { state.bodyMsg = "Couldn't save."; }
+    renderSettings();
   },
   "bio-new"() { state.bioForm = { date: state.plan?.date || "", values: {}, notes: "" }; render(); },
   "bio-cancel"() { state.bioForm = null; render(); },
@@ -2405,8 +2782,9 @@ function showTab(tab) {
   state.tab = tab;
   const highlight = MORE_TABS.includes(tab) ? "more" : tab;
   document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === highlight));
-  if (tab === "history") { state.history = null; state.trends = null; state.bio = null; }   // always fresh
-  if (tab === "report") state.report = null;
+  if (tab === "history") { state.history = null; state.trends = null; state.bio = null; state.body = null; state.waterHist = null; }   // always fresh
+  if (tab === "report") { state.report = null; state.questions = null; }
+  if (tab === "settings") { state.bodySensors = null; state.bodyMsg = ""; }
   if (tab === "week") state.ski = null;
   render();
   window.scrollTo({ top: 0 });

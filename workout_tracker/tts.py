@@ -137,10 +137,13 @@ def _make_session(job, voice_id, segments):
             w.setframerate(sr)
             for i, seg in enumerate(segments):
                 start = frames / sr
-                for chunk in voice.synthesize(seg["text"], syn_config=cfg):
+                for chunk in voice.synthesize(seg["text"], syn_config=cfg) if seg.get("text") else ():
                     w.writeframes(chunk.audio_int16_bytes)
                     frames += len(chunk.audio_int16_bytes) // 2
-                quiet = int(sr * (seg.get("hold", 0) + 1.5))
+                if "slot" in seg:   # paced breathing: the segment lasts exactly `slot` seconds, words included
+                    quiet = max(0, int(sr * seg["slot"]) - (frames - int(start * sr)))
+                else:
+                    quiet = int(sr * (seg.get("hold", 0) + 1.5))
                 w.writeframes(b"\x00\x00" * quiet)
                 frames += quiet
                 timeline.append({"index": i, "start": round(start, 2), "end": round(frames / sr, 2)})

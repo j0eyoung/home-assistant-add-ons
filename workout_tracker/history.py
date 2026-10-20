@@ -44,6 +44,29 @@ SCHEMA = [
         unit TEXT,               -- mmHg, cmH2O or uV for the pressure readings
         notes TEXT
     )""",
+    """CREATE TABLE IF NOT EXISTS pt_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT,
+        source TEXT,             -- me | ai (suggested by the coach)
+        created TEXT,
+        asked_on TEXT,           -- set when ticked off at the PT visit
+        answer TEXT              -- what the PT said
+    )""",
+    """CREATE TABLE IF NOT EXISTS water_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        ts TEXT,
+        oz REAL
+    )""",
+    """CREATE TABLE IF NOT EXISTS body_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        ts TEXT,                 -- local time of the reading
+        kind TEXT,               -- weight (v1 = lb) | bp (v1 = systolic, v2 = diastolic, v3 = pulse)
+        v1 REAL, v2 REAL, v3 REAL,
+        source TEXT,             -- manual | ha (a Home Assistant sensor, e.g. Withings)
+        UNIQUE (kind, ts, source)
+    )""",
 ]
 
 

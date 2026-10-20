@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0 - Questions for the PT, Guided Leaky Can, Water, Weight and Blood Pressure
+
+### 🌟 Features
+* **Questions for my PT.** Jot questions down during the week (More › PT report). "✨ Suggest questions from my data" has the coach read your symptoms, biofeedback, PT exercises and anything that bothered you, and suggest a few; tap to keep the ones you like. When you arrive at the PT office the reminder says how many you have, and Today's at-PT card lists them so you can tick each off and note what your PT said. Asked questions and answers go in the PT report and the coach sees them.
+* **Guided core canister (leaky can) breathing.** "▶ Guided" on the daily item: your chosen natural voice talks you through 40 breaths in 4 rounds of 10 (4 s in, 6 s out, or a quicker 3/5), with TA and pelvic floor cues, while a circle grows and shrinks with each breath. It ticks itself off when you finish.
+* **Water.** A water card on Today with +8, +12, +16 and +24 oz buttons toward your daily goal (Settings › Water; set what your doctor recommends). A phone nudge at a time you pick if you're under half, `sensor.workout_water_today` in Home Assistant, the last two weeks in History and the daily average in the PT report.
+* **Weight and blood pressure.** Readings from your Withings scale and BP monitor through Home Assistant's Withings integration: add the integration in Home Assistant, then pick the sensors once in Settings › Scale and blood pressure and new readings are copied in every few minutes (and kept here for good). You can also add weight or blood pressure by hand in History. History shows your weight with a 7-day average and your blood pressure against 120/80 with its category; both go in the PT report and the coach sees them.
+
 ## 0.10.2 - PT Office Reminder
 
 ### 🌟 Features

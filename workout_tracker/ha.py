@@ -61,6 +61,19 @@ def _states(domain):
         return []
 
 
+def history(entity_ids, start_iso):
+    """{entity_id: [(timestamp, state)]} for changes since start (the state already set at start is left out,
+    so a reading isn't copied again each time this is asked)."""
+    url = (f"{CORE}/history/period/{urllib.parse.quote(start_iso)}?filter_entity_id={','.join(entity_ids)}"
+           "&minimal_response&no_attributes&skip_initial_state")
+    out = {}
+    for series in _call("GET", url, timeout=30) or []:
+        if series:
+            out[series[0].get("entity_id")] = [(p.get("last_changed") or p.get("last_updated"), p.get("state"))
+                                                for p in series]
+    return out
+
+
 def persons():
     return [{"id": s["entity_id"], "name": s.get("attributes", {}).get("friendly_name") or s["entity_id"],
              "state": s.get("state")} for s in _states("person")]

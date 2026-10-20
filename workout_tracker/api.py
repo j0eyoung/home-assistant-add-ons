@@ -32,13 +32,14 @@ import planner
 import progression
 import readiness
 import tts
+import wellness
 from db import DB_PATH, get_last_log
 import engine as engine_mod
 from engine import WorkoutEngine
 from exercises import CARDIO_IMAGES, GUIDES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "0.10.2"
+VERSION = "0.12.0"
 
 app = FastAPI(title="AI Workout Tracker")
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
@@ -350,10 +351,13 @@ def plan():
     return {
         "garmin": gsig,
         "season": season,
-        # a ski readiness check every two weeks until opening day
         "at_pt": _pt_here["inside"],
+        "questions": wellness.questions(DB_PATH)["open"],
+        "water": {k: v for k, v in wellness.water_status(DB_PATH, datetime.date.fromisoformat(today)).items()
+                  if k in ("goal", "total", "pct")},
         "bio": {k: v for k, v in insights.bio_status(DB_PATH, datetime.date.fromisoformat(today)).items()
                 if k in ("due", "last", "next", "enabled")},
+        # a ski readiness check every two weeks until opening day
         "ski_due": bool(season and season.get("days", 0) > 0 and insights.ski_status(DB_PATH, datetime.date.fromisoformat(today))["due"]),
         "phase": phase,
         "coach_changes": len(planedit.overrides_for(today)),
@@ -507,9 +511,161 @@ def snooze_biofeedback(s: Snooze):
 def pt_visit_report(days: int = 30):
     """Everything to show the PT at a visit, for the last 14 to 90 days."""
     today = datetime.date.fromisoformat(history.local_today())
-    warmups = engine_mod.DAILY_WARMUP +[p["name"] for p in pt_exercises() if p.get("section") != "strength"]
-    return insights.pt_report(DB_PATH, max(7, min(days, 90)), today, selected_sports(), list(dict.fromkeys(warmups)),
-                              lambda n: bool(how_to(n).get("hold")))
+    days = max(7, min(days, 90))
+    warmups = engine_mod.DAILY_WARMUP + [p["name"] for p in pt_exercises() if p.get("section") != "strength"]
+    r = insights.pt_report(DB_PATH, days, today, selected_sports(), list(dict.fromkeys(warmups)),
+                           lambda n: bool(how_to(n).get("hold")))
+    water = [d for d in wellness.water_days(DB_PATH, days, today) if d["oz"]]
+    q = wellness.questions(DB_PATH)
+    r.update(body=wellness.body_status(DB_PATH, today, days),
+             water={"days_logged": len(water), "avg": round(sum(d["oz"] for d in water) / len(water)) if water else None,
+                    "goal": wellness.water_settings()["goal"]},
+             questions={"open": q["open"], "asked": [x for x in q["asked"] if x["asked_on"] >= r["from"]]})
+    return r
+
+
+# --- Questions for the PT ------------------------------------------------------------------------------------------
+
+@app.get("/api/questions")
+def pt_questions():
+    return wellness.questions(DB_PATH)
+
+
+class Question(BaseModel):
+    text: str
+    source: str = "me"
+
+
+@app.post("/api/questions")
+def add_pt_question(q: Question):
+    if not wellness.add_question(DB_PATH, q.text, q.source):
+        raise HTTPException(400, "Type a question.")
+    return wellness.questions(DB_PATH)
+
+
+class Asked(BaseModel):
+    answer: str = ""
+    undo: bool = False
+
+
+@app.post("/api/questions/{qid}/asked")
+def question_asked(qid: int, a: Asked):
+    wellness.mark_asked(DB_PATH, qid, a.answer, a.undo)
+    return wellness.questions(DB_PATH)
+
+
+@app.delete("/api/questions/{qid}")
+def delete_pt_question(qid: int):
+    wellness.delete_question(DB_PATH, qid)
+    return wellness.questions(DB_PATH)
+
+
+@app.post("/api/questions/suggest")
+def suggest_pt_questions():
+    """The coach reads Joe's recent data and suggests questions; nothing is saved until he adds them."""
+    q = wellness.questions(DB_PATH)
+    today = datetime.date.fromisoformat(history.local_today())
+    t = insights.trends(DB_PATH, 30, today, selected_sports())
+    lines = ["Questions he already has: " + ("; ".join(x["text"] for x in q["open"]) or "none"),
+             "Questions he has already asked: " + ("; ".join(x["text"] for x in q["asked"][:10]) or "none"),
+             "His PT exercises now: " + ("; ".join(f"{p['name']} ({p['dose']})" for p in pt_exercises()) or "none added"),
+             "Exercises he marked as bothering him: " + ("; ".join(f"{n} (since {p['since']})" for n, p in
+                                                                    (library.load_settings().get("paused") or {}).items()) or "none"),
+             "Patterns in his kidney and pelvic floor scores: " + " ".join(t["notes"])]
+    items, error = coach.pt_questions("\n".join(lines))
+    return {"suggestions": [s for s in items if s.lower() not in {x["text"].lower() for x in q["open"]}], "error": error}
+
+
+# --- Water ---------------------------------------------------------------------------------------------------------
+
+def _water_sensor():
+    if ha.available():
+        st = wellness.water_status(DB_PATH, datetime.date.fromisoformat(history.local_today()))
+        ha.set_state("sensor.workout_water_today", st["total"], {
+            "friendly_name": "Water today", "icon": "mdi:cup-water", "unit_of_measurement": "fl. oz",
+            "goal": st["goal"], "percent": st["pct"]})
+
+
+@app.get("/api/water")
+def water():
+    return wellness.water_status(DB_PATH, datetime.date.fromisoformat(history.local_today()))
+
+
+class Water(BaseModel):
+    oz: float
+
+
+@app.post("/api/water")
+def add_water(w: Water):
+    if not 0 < w.oz <= 100:
+        raise HTTPException(400, "Between 1 and 100 oz.")
+    wellness.add_water(DB_PATH, w.oz)
+    threading.Thread(target=lambda: _quietly(_water_sensor), daemon=True).start()
+    return water()
+
+
+@app.post("/api/water/undo")
+def undo_water():
+    wellness.undo_water(DB_PATH)
+    threading.Thread(target=lambda: _quietly(_water_sensor), daemon=True).start()
+    return water()
+
+
+# --- Weight and blood pressure -------------------------------------------------------------------------------------
+
+@app.get("/api/body")
+def body(days: int = 90):
+    return wellness.body_status(DB_PATH, datetime.date.fromisoformat(history.local_today()), max(7, min(days, 730)))
+
+
+class Reading(BaseModel):
+    kind: str                       # weight | bp
+    weight: float | None = None     # lb
+    systolic: float | None = None
+    diastolic: float | None = None
+    pulse: float | None = None
+
+
+@app.post("/api/body")
+def add_body_reading(r: Reading):
+    if r.kind == "weight" and r.weight and 50 <= r.weight <= 600:
+        wellness.add_reading(DB_PATH, "weight", round(r.weight, 1))
+    elif r.kind == "bp" and r.systolic and r.diastolic and 60 <= r.systolic <= 260 and 30 <= r.diastolic <= 160:
+        wellness.add_reading(DB_PATH, "bp", r.systolic, r.diastolic, r.pulse)
+    else:
+        raise HTTPException(400, "Check the numbers.")
+    return body()
+
+
+@app.delete("/api/body/{rid}")
+def delete_body_reading(rid: int):
+    wellness.delete_reading(DB_PATH, rid)
+    return body()
+
+
+@app.get("/api/body/sensors")
+def body_sensors():
+    return {"available": ha.available(), "options": wellness.sensor_options() if ha.available() else {},
+            "chosen": library.load_settings().get("body") or {}}
+
+
+class BodySensors(BaseModel):
+    weight_entity: str = ""
+    sys_entity: str = ""
+    dia_entity: str = ""
+    pulse_entity: str = ""
+
+
+@app.post("/api/body/sensors")
+def save_body_sensors(b: BodySensors):
+    old = library.load_settings().get("body") or {}
+    chosen = {k: v.strip() for k, v in b.model_dump().items() if not v or v.startswith("sensor.")}
+    library.save_settings({"body": {**old, **chosen, "last_sync": ""}})
+    try:
+        added = wellness.sync_from_ha(DB_PATH, full=True)
+    except Exception as e:
+        return {**body_sensors(), "message": f"Saved, but couldn't read the history yet ({type(e).__name__})."}
+    return {**body_sensors(), "message": f"Saved. Copied {added} reading{'s' if added != 1 else ''} from Home Assistant."}
 
 
 @app.get("/api/skitests")
@@ -954,9 +1110,27 @@ def _pt_message():
     msg = "Ask your PT if there are any new exercises, or changes to the ones you do. Add them in Settings › From your PT."
     if names:
         msg += " You're doing now: " + ", ".join(names[:6]) + ("…" if len(names) > 6 else "") + "."
+    open_q = wellness.questions(DB_PATH)["open"]
+    if open_q:
+        msg += f" You have {len(open_q)} question{'s' if len(open_q) != 1 else ''} to ask: open the app to see them."
     if insights.bio_settings()["enabled"]:
         msg += " Biofeedback today? Log the readings after."
     return msg
+
+
+def _maybe_water_nudge():
+    """Once a day at the chosen time: a nudge if you're under half your water goal."""
+    w = wellness.water_settings()
+    service = (library.load_settings().get("reminder") or {}).get("service")
+    now = history.local_now()
+    today = now.date().isoformat()
+    if not (w["nudge"] and service and ha.available()) or w["sent"] == today or now.strftime("%H:%M") < w["time"]:
+        return
+    st = wellness.water_status(DB_PATH, now.date())
+    if st["total"] < st["goal"] / 2:
+        ha.notify(service, "Time for some water 💧",
+                  f"You're at {st['total']:g} of {st['goal']} oz today. A glass now keeps your kidney happy.")
+    library.save_settings({"water": {**(library.load_settings().get("water") or {}), "sent": today}})
 
 
 def _maybe_pt_visit():
@@ -985,7 +1159,10 @@ def _start_ha_loop():
             _quietly(_maybe_pt_visit)          # every minute, so the PT reminder comes soon after you arrive
             if tick % 5 == 0:
                 _quietly(ha_refresh)
+                _quietly(_water_sensor)
                 _quietly(_maybe_remind)
+                _quietly(_maybe_water_nudge)
+                _quietly(lambda: wellness.sync_from_ha(DB_PATH))   # new scale / BP readings (e.g. Withings)
             tick += 1
             time.sleep(60)
     threading.Thread(target=loop, daemon=True).start()
@@ -1234,6 +1411,19 @@ def guided_cooldown(g: GuidedRequest):
     return {**tts.public(job), "steps": steps}
 
 
+class BreathingRequest(BaseModel):
+    voice: str = tts.DEFAULT_VOICE
+    pace: str = "calm"          # calm = 4 in / 6 out, quicker = 3 in / 5 out
+
+
+@app.post("/api/breathing/session")
+def breathing_session(b: BreathingRequest):
+    """Guided core canister (leaky can) breathing: 40 paced breaths, counted by your chosen voice."""
+    segments, steps = wellness.breathing_session(b.pace)
+    job = tts.start_session(b.voice, segments)
+    return {**tts.public(job), "steps": steps}
+
+
 @app.get("/api/tts/{key}/timeline")
 def audio_timeline(key: str):
     t = tts.timeline(key)
@@ -1269,7 +1459,8 @@ def get_settings():
             "gear_notes": library.load_settings().get("gear_notes", library.DEFAULT_GEAR_NOTES),
             "garmin_adjust": bool(library.load_settings().get("garmin_adjust", False)),
             "pt_exercises": pt_exercises(),
-            "biofeedback": insights.bio_settings(), "bio_units": insights.BIO_UNITS}
+            "biofeedback": insights.bio_settings(), "bio_units": insights.BIO_UNITS,
+            "water": wellness.water_settings()}
 
 
 def _clean_pt(items):
@@ -1305,11 +1496,21 @@ class Settings(BaseModel):
     season_start: str | None = None
     pt_exercises: list[dict] | None = None
     biofeedback: dict | None = None      # {"enabled", "unit", "every_days"}
+    water: dict | None = None            # {"goal", "nudge", "time"}
 
 
 @app.put("/api/settings")
 def put_settings(s: Settings):
     patch = {}
+    if s.water is not None:
+        old = library.load_settings().get("water") or {}
+        try:
+            goal = max(16, min(int(s.water.get("goal", old.get("goal", 80))), 300))
+        except (TypeError, ValueError):
+            goal = 80
+        t = str(s.water.get("time", old.get("time", "14:00")))
+        patch["water"] = {**old, "goal": goal, "nudge": bool(s.water.get("nudge", old.get("nudge", True))),
+                          "time": t if re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", t) else "14:00"}
     if s.biofeedback is not None:
         old = library.load_settings().get("biofeedback") or {}
         b = s.biofeedback

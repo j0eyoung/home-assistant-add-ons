@@ -75,6 +75,9 @@ def training_data(days=21):
               or _table(conn, "SELECT date, resting_hr, latest_activity_type, duration_secs, avg_hr, max_hr FROM garmin_metrics "
                               "ORDER BY id DESC LIMIT 14"))  # older databases have no hrv/sleep columns
     bio = _table(conn, "SELECT date, data, unit, notes FROM biofeedback ORDER BY date DESC LIMIT 6")
+    body = _table(conn, "SELECT ts, kind, v1, v2, v3 FROM body_metrics WHERE date >= ? ORDER BY ts DESC LIMIT 30", (since,))
+    water = _table(conn, "SELECT date, SUM(oz) AS oz FROM water_log WHERE date >= ? GROUP BY date ORDER BY date DESC", (since,))
+    asked = _table(conn, "SELECT asked_on, text, answer FROM pt_questions WHERE asked_on IS NOT NULL ORDER BY asked_on DESC LIMIT 10")
     conn.close()
 
     def section(title, rows, empty):
@@ -91,7 +94,34 @@ def training_data(days=21):
                 "resting tone, peak = max squeeze, hold = endurance seconds, relax = seconds to return to rest, quick = "
                 "quick flicks in 10 s, rest_end = resting tone after down-training). His floor is hypertonic, so falling "
                 "resting tone and faster relaxing are the main signs of progress", bio, "none logged yet."),
+        section("Weight and blood pressure (kind weight: v1 = lb; kind bp: v1 = systolic, v2 = diastolic, v3 = pulse)",
+                body, "none logged."),
+        section("Water drunk per day (oz)", water, "not tracked."),
+        section("Questions Joe asked his PT, with the answers", asked, "none yet."),
     ])
+
+
+def pt_questions(context):
+    """3 to 5 questions for Joe to ask at his next PT visit, from his data. Returns (list of strings, error)."""
+    prompt = (
+        "You help Joe get ready for his next physical therapy visit (pelvic floor PT and rehab after a left kidney "
+        "pyeloplasty with adhesions; his pelvic floor is hypertonic and his deep core is weak). From the data below, "
+        "suggest 3 to 5 short, specific questions for him to ask his PT: symptoms that changed, exercises that bothered "
+        "him, what his biofeedback readings mean and what to work on next, when and how to progress his PT exercises, and "
+        "anything in his ski and snowboard prep that touches his kidney or pelvic floor. Write them in his voice "
+        "('Should I...', 'Is it OK to...'), each under 25 words, grounded in the numbers below. Do not repeat a question he "
+        "already has or has already asked. You cannot run commands or open files. "
+        "Output only a JSON array of strings, nothing else.\n\n" + context + "\n\n" + training_data(days=30))
+    reply, error = _run(prompt, timeout=240)
+    if error:
+        return [], error
+    start, end = reply.find("["), reply.rfind("]")
+    try:
+        items = json.loads(reply[start:end + 1]) if start >= 0 < end else []
+    except ValueError:
+        items = []
+    items = [" ".join(str(q).split())[:300] for q in items if str(q).strip()][:5]
+    return items, None if items else "The coach didn't return any questions. Try again."
 
 
 # Sign-in happens inside the app (same flow as the Trading Terminal): `claude auth login --claudeai`

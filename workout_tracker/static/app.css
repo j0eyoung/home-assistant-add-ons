@@ -293,6 +293,34 @@ ul.plain li { margin-bottom: 6px; }
 ol.steps { margin: 6px 0; padding-left: 22px; }
 ol.steps li { margin-bottom: 8px; }
 
+/* Water */
+.water-head { display: flex; justify-content: space-between; align-items: baseline; }
+.bar { height: 10px; border-radius: 999px; background: var(--card-2); overflow: hidden; margin-top: 8px; }
+.bar i { display: block; height: 100%; background: var(--s-kidney); border-radius: 999px; }
+.chart .bar-a { fill: var(--s-kidney); }
+.chart .ref { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.chart .dot-muted { fill: var(--muted); opacity: 0.8; }
+.legend .sw-ref { background: none; border-top: 2px dashed var(--muted); height: 0; }
+.bp-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 6px; }
+.bp-form .code-input { min-width: 0; padding: 0 8px; }
+
+/* Guided breathing */
+.breath-stage { text-align: center; display: grid; gap: 10px; padding-top: 6vh; }
+.breath-wrap { position: relative; width: 260px; height: 260px; margin: 0 auto; display: grid; place-items: center; }
+.breath-circle { position: absolute; inset: 0; border-radius: 50%; transform: scale(0.5); will-change: transform;
+  background: radial-gradient(circle, color-mix(in srgb, var(--s-kidney) 55%, transparent), color-mix(in srgb, var(--s-kidney) 20%, transparent));
+  border: 2px solid var(--s-kidney); }
+.breath-word { position: relative; font-size: 1.4rem; font-weight: 700; }
+.breath-count { font-size: 1rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Questions for the PT */
+.questions { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.questions li { display: grid; grid-template-columns: 36px 1fr auto; gap: 8px; align-items: center; font-size: 0.95rem; }
+.qtick { width: 34px; height: 34px; border-radius: 9px; border: 2px solid var(--muted); background: none; color: transparent; font-weight: 800; cursor: pointer; }
+.qtick:hover { color: var(--muted); }
+.suggest { display: grid; gap: 6px; margin-top: 10px; }
+.suggest-item { height: auto; min-height: 36px; padding: 8px 12px; text-align: left; white-space: normal; }
+
 /* Ski readiness and PT exercise forms */
 .ski-form { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
 .ski-test { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); }
