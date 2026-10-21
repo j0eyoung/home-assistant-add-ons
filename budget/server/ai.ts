@@ -1,6 +1,6 @@
 import { askClaude, available } from './claude.ts'
 import { applyBuiltinRules } from './classify.ts'
-import { SCHEMA_DOC, db, runReadOnly } from './db.ts'
+import { SCHEMA_DOC, db, meta, runReadOnly } from './db.ts'
 
 export const aiAvailable = available
 
@@ -14,9 +14,22 @@ function parseJson(text: string): any {
 
 type PendingRow = { id: string; name: string; merchant: string | null; amount: number; account: string; account_type: string }
 
-// Labels transactions that only have the default category. Built-in keyword
-// rules go first; Claude sees description, amount and account for the rest.
+// Labels transactions that only have the default category. A failure is
+// remembered (meta 'ai_error') so the app can show it until a run works;
+// not being signed in to Claude isn't an error here, the status check reports it.
 export async function categorizeWithAi(maxTransactions = 200): Promise<number> {
+  try {
+    const n = await categorize(maxTransactions)
+    meta.delete('ai_error')
+    return n
+  } catch (err: any) {
+    meta.set('ai_error', JSON.stringify({ at: new Date().toISOString(), message: err.message }))
+    throw err
+  }
+}
+
+// Built-in keyword rules go first; Claude sees description, amount and account for the rest.
+async function categorize(maxTransactions: number): Promise<number> {
   const builtin = applyBuiltinRules()
   if (!(await available())) return builtin
   const categories = db.prepare('SELECT id, name FROM categories').all() as { id: number; name: string }[]

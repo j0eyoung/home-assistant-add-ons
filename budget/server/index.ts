@@ -52,8 +52,26 @@ async function syncAndCategorize() {
   return { ...result, categorized }
 }
 
+// Transactions still waiting for a category (only the default 'Other' applied) are
+// categorized as soon as Claude is connected: this status check, which the app
+// makes on every page load, starts a run in the background (at most one per 30
+// minutes, so a failing Claude isn't hammered) and reports what's wrong.
+let lastAutoCategorize = 0
 app.get('/api/status', async (_req, res) => {
-  res.json({ connected: isConnected(), lastSync: meta.get('last_sync'), aiConfigured: await aiAvailable(), health: syncHealth() })
+  const ai = await aiAvailable()
+  const health = syncHealth()
+  const waiting = (db.prepare(`SELECT COUNT(*) AS n FROM transactions WHERE category_source = 'none'`).get() as { n: number }).n
+  const failure = JSON.parse(meta.get('ai_error') || 'null') as { message: string } | null
+  if (waiting && !ai) {
+    health.issues.push(`Claude isn't connected, so ${waiting} transaction${waiting === 1 ? ' is' : 's are'} still waiting for a category. Connect Claude in the Accounts tab.`)
+  } else if (waiting && failure) {
+    health.issues.push(`AI categorization failed: ${failure.message}`)
+  }
+  if (waiting && ai && Date.now() - lastAutoCategorize > 30 * 60 * 1000) {
+    lastAutoCategorize = Date.now()
+    categorizeWithAi(2000).catch((err) => console.error('Categorizing waiting transactions failed:', err.message))
+  }
+  res.json({ connected: isConnected(), lastSync: meta.get('last_sync'), aiConfigured: ai, health, waiting })
 })
 
 // Claude Code sign-in, driven from the Accounts tab.
@@ -89,6 +107,7 @@ app.post('/api/sync', async (_req, res) => {
 
 // force=true re-labels everything the AI or default chose; user and rule picks stay.
 app.post('/api/categorize', async (req, res) => {
+  if (!(await aiAvailable())) throw new Error("Claude isn't connected. Connect it in the Accounts tab first.")
   if (req.body?.force) db.prepare(`UPDATE transactions SET category_source = 'none' WHERE category_source = 'ai'`).run()
   res.json({ categorized: await categorizeWithAi(2000) })
 })
