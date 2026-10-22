@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.2 - Withings Connection Check, Pounds in the Sensor List
+
+### 🌟 Features
+* **See whether your Withings link is working.** Settings › Scale and blood pressure now shows "✓ Connected", when the last weigh-in and the last blood pressure reading were copied in, and when the add-on last checked Home Assistant. If it says "Linked, waiting for a reading", step on the scale or take a reading.
+
+### 🔧 Improvements
+* The weight sensor list shows pounds, not kilograms, and leaves out "Weight goal" and other target sensors so one can't be picked as your weight by mistake.
+
 ## 0.12.1 - Enter Sends, Coach Chat Syncs Between Devices
 
 ### 🌟 Features

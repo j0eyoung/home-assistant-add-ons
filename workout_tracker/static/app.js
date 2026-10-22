@@ -1620,6 +1620,11 @@ function bodySensorsCard() {
   const pick = (id, list, sel, empty) => `<select id="${id}" style="width:100%"><option value="">${empty}</option>${(list || []).map((x) =>
     `<option value="${esc(x.id)}"${x.id === sel ? " selected" : ""}>${esc(x.name)} (${esc(x.state)} ${esc(x.unit || "")})</option>`).join("")}</select>`;
   const none = !(o.weight?.length || o.bp?.length);
+  const st = b.status || {};
+  const when = (ts) => { if (!ts) return "none yet"; const d = new Date(ts); return `${formatDate(ts.slice(0, 10))}, ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`; };
+  const linkedNow = c.weight_entity || c.sys_entity;
+  const statusLine = !linkedNow ? "" : `<div class="small" style="margin:8px 0 0"><strong>${st.weight || st.bp ? "✓ Connected" : "⏳ Linked, waiting for a reading"}</strong>
+      · last weigh-in copied: ${esc(when(st.weight))} · last blood pressure: ${esc(when(st.bp))}${st.last_check ? ` · checked ${esc(when(st.last_check))}` : ""}</div>`;
   return `<h2>Scale and blood pressure</h2>
     <div class="card">
       <p class="sub" style="margin:0 0 8px">Readings from your Withings scale and BP monitor come in through Home Assistant's Withings integration.
@@ -1630,6 +1635,7 @@ function bodySensorsCard() {
           <div><label class="sub">Systolic (top)</label>${pick("bs-sys", o.bp, c.sys_entity ?? guess(o.bp, "systolic"), "Not linked")}</div>
           <div><label class="sub">Diastolic (bottom)</label>${pick("bs-dia", o.bp, c.dia_entity ?? guess(o.bp, "diastolic"), "Not linked")}</div></div>
         <label class="sub" style="display:block;margin-top:8px">Pulse (optional)</label>${pick("bs-pulse", o.pulse, c.pulse_entity ?? guess(o.pulse, "pulse"), "Not linked")}
+        ${statusLine}
         ${state.bodyMsg ? `<div class="small" style="margin-top:8px;color:var(--accent)">${esc(state.bodyMsg)}</div>` : ""}
         <div class="row-actions"><button type="button" class="btn small" data-act="sensors-save">Save and copy readings</button></div>`}
     </div>`;

@@ -40,7 +40,7 @@ from engine import WorkoutEngine
 from exercises import CARDIO_IMAGES, GUIDES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "0.12.1"
+VERSION = "0.12.2"
 
 app = FastAPI(title="AI Workout Tracker")
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
@@ -647,7 +647,7 @@ def delete_body_reading(rid: int):
 @app.get("/api/body/sensors")
 def body_sensors():
     return {"available": ha.available(), "options": wellness.sensor_options() if ha.available() else {},
-            "chosen": library.load_settings().get("body") or {}}
+            "chosen": library.load_settings().get("body") or {}, "status": wellness.connection_status(DB_PATH)}
 
 
 class BodySensors(BaseModel):

@@ -225,13 +225,29 @@ def sensor_options():
         a = s.get("attributes") or {}
         eid, unit = s["entity_id"], (a.get("unit_of_measurement") or "").lower()
         item = {"id": eid, "name": a.get("friendly_name") or eid, "state": s.get("state"), "unit": a.get("unit_of_measurement")}
+        if any(w in eid or w in (a.get("friendly_name") or "").lower() for w in ("goal", "target")):
+            continue          # a weight goal isn't a weigh-in (and may be set in kg)
         if a.get("device_class") == "weight" or unit in ("kg", "lb", "lbs") and "weight" in eid:
+            if _num(s.get("state")) is not None and unit in ("kg", "g"):   # show pounds, like everywhere else in the app
+                item["state"], item["unit"] = _lb(_num(s["state"]), unit), "lb"
             weight.append(item)
         elif unit == "mmhg":
             bp.append(item)
         elif unit in ("bpm", "beats/min") and any(w in eid for w in ("pulse", "heart")):
             pulse.append(item)
     return {"weight": weight, "bp": bp, "pulse": pulse}
+
+
+def connection_status(db_path):
+    """When the last readings from Home Assistant arrived, so Settings can show whether the link is working."""
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = dict(conn.execute("SELECT kind, MAX(ts) FROM body_metrics WHERE source = 'ha' GROUP BY kind").fetchall())
+    except sqlite3.OperationalError:
+        rows = {}
+    conn.close()
+    cfg = library.load_settings().get("body") or {}
+    return {"weight": rows.get("weight"), "bp": rows.get("bp"), "last_check": cfg.get("last_sync") or None}
 
 
 def sync_from_ha(db_path, full=False):
