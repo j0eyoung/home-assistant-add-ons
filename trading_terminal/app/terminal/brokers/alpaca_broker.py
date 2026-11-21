@@ -63,10 +63,33 @@ class AlpacaBroker(Broker):
         a = self.client.get_account()
         return {
             "equity": _f(a.equity),
+            "last_equity": _f(a.last_equity),  # equity at the last close, for today's change
             "cash": _f(a.cash),
             "buying_power": _f(a.buying_power),
             "currency": a.currency,
         }
+
+    def market_clock(self) -> dict:
+        """Alpaca's market clock plus today's regular session (it knows holidays and early closes).
+        Times are ISO strings with their offset; `today` is None when the market doesn't open today."""
+        import pandas as pd
+        from alpaca.trading.requests import GetCalendarRequest
+
+        ny = "America/New_York"
+        c = self.client.get_clock()
+        day = pd.Timestamp(c.timestamp).tz_convert(ny).date()
+        cal = self.client.get_calendar(GetCalendarRequest(start=day, end=day))
+
+        def ts(v):  # the calendar's times are New York wall-clock times without a zone
+            t = pd.Timestamp(v)
+            return (t.tz_localize(ny) if t.tzinfo is None else t.tz_convert(ny)).isoformat()
+
+        def hhmm(d, v, default):  # extended-hours bounds come as "0400" / "2000"
+            v = v if v and len(str(v)) == 4 else default
+            return ts(f"{d} {str(v)[:2]}:{str(v)[2:]}")
+        today = next(({"open": ts(d.open), "close": ts(d.close), "pre": hhmm(d.date, d.session_open, "0400"),
+                       "post": hhmm(d.date, d.session_close, "2000")} for d in cal if d.date == day), None)
+        return {"is_open": bool(c.is_open), "next_open": ts(c.next_open), "next_close": ts(c.next_close), "today": today}
 
     def positions(self) -> list[dict]:
         return [

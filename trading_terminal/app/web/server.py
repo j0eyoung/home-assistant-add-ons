@@ -38,7 +38,7 @@ from terminal import (alerts, backtest, cache, collector, config, data, exits, g
 from terminal import indicators as ind  # noqa: E402
 from terminal.brokers import OrderRequest, connect_all  # noqa: E402
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 STATIC = Path(__file__).resolve().parent / "static"
 NY, LOCAL_TZ = "America/New_York", "America/Denver"
 SLOW = 1.0
@@ -575,7 +575,9 @@ def portfolio_api(p, b, pp):
     name = p.get("broker") if p.get("broker") in bs else next(iter(bs))
     rng = p.get("range", "1D")
     out = {"brokers": list(bs), "broker": name, "errors": errors, "mode": config.MODE_LABEL, "range": rng}
-    out["account"] = account(name)
+    out["account"] = a = account(name)
+    if a.get("last_equity") and a.get("equity") is not None:  # Alpaca: today's change, closed trades included
+        out["day"] = {"pl": a["equity"] - a["last_equity"], "pct": (a["equity"] / a["last_equity"] - 1) * 100}
     pos = positions(name)
     syms = [x["symbol"] for x in pos if not OrderRequest(x["symbol"], "buy", 1).is_option]
     qs = quotes(syms) if syms else {}
@@ -616,11 +618,84 @@ def spy_alongside(hist: pd.Series, rng: str) -> list | None:
     return [None if pd.isna(v) else round(float(v), 2) for v in scaled]
 
 
+def held(name: str, symbol: str) -> dict | None:
+    """The open position in `symbol` on that broker, or None."""
+    symbol = (symbol or "").strip().upper()
+    return next((x for x in positions(name) if x.get("symbol") == symbol and x.get("qty")), None) if symbol else None
+
+
 def account_api(p, b, pp):
-    """Equity and buying power plus the trading plan's limits, for sizing a trade on the order ticket."""
+    """Equity and buying power plus the trading plan's limits, for sizing a trade on the order ticket, and the
+    position already held in the ticket's symbol (s)."""
     name = p.get("broker")
     plan = profile.load()
-    return {"account": account(name), "plan": {k: plan.get(k) for k in ("risk_per_trade", "max_position", "account_size")}}
+    out = {"account": account(name), "plan": {k: plan.get(k) for k in ("risk_per_trade", "max_position", "account_size")}}
+    if sym_of(p):
+        pos = held(name, sym_of(p))
+        out["position"] = {k: pos.get(k) for k in ("qty", "avg_cost", "market_value", "unrealized_pl")} if pos else None
+    return out
+
+
+# ---------- market session ----------
+def _now() -> pd.Timestamp:
+    return pd.Timestamp.now(tz=NY)
+
+
+def _weekday_hours(now: pd.Timestamp) -> dict:
+    """Regular US hours on weekdays, for when Alpaca's clock can't be asked (no holidays or early closes)."""
+    day = lambda d, hm: pd.Timestamp(f"{d.date()} {hm}", tz=NY)
+    today = {"open": day(now, "09:30"), "close": day(now, "16:00"), "pre": day(now, "04:00"),
+             "post": day(now, "20:00")} if now.weekday() < 5 else None
+    d = now.normalize()
+    while d.weekday() >= 5 or day(d, "09:30") <= now:
+        d += pd.Timedelta(days=1)
+    nxt = day(d, "09:30")
+    close = today["close"] if today and now < today["close"] else day(d, "16:00")
+    return {"today": today, "next_open": nxt, "next_close": close}
+
+
+def _alpaca_clock() -> dict | None:
+    al = next((b for b in brokers()[0].values() if hasattr(b, "market_clock")), None)
+    if not al:
+        return None
+    raw = memo("clock", 600, al.market_clock, stale=False)
+    if min(pd.Timestamp(raw["next_open"]), pd.Timestamp(raw["next_close"])) <= _now():
+        forget("clock")  # fetched before an open or close that has now passed: ask again for the next ones
+        raw = memo("clock", 600, al.market_clock, stale=False)
+    t = lambda v: pd.Timestamp(v).tz_convert(NY)
+    today = {k: t(v) for k, v in raw["today"].items()} if raw.get("today") else None
+    return {"today": today, "next_open": t(raw["next_open"]), "next_close": t(raw["next_close"])}
+
+
+def market_api(p, b, pp):
+    """Where the US stock market's day is (pre-market, open, after hours or closed) and the next open and
+    close, as epoch ms for the page's countdown. Alpaca's clock and calendar know holidays and early closes;
+    without Alpaca it falls back to weekday hours."""
+    now = _now()
+    src = "alpaca"
+    try:
+        c = _alpaca_clock()
+    except Exception as e:
+        log(f"[web] market clock: {e}")
+        c = None
+    if not c:
+        c, src = _weekday_hours(now), "hours"
+    td = c["today"]
+    state = "closed"
+    if td:
+        state = ("pre" if td["pre"] <= now < td["open"] else "open" if td["open"] <= now < td["close"]
+                 else "after" if td["close"] <= now < td["post"] else "closed")
+    nxt_close = td["close"] if state in ("pre", "open") or (td and now < td["open"]) else c["next_close"]
+    # When the state next changes, so the page asks again then (pre-market starts at 4:00 New York)
+    if td and now < td["pre"]:
+        changes = td["pre"]
+    elif state in ("pre", "open", "after"):
+        changes = {"pre": td["open"], "open": td["close"], "after": td["post"]}[state]
+    else:
+        changes = c["next_open"].normalize() + pd.Timedelta(hours=4)
+    ms1 = lambda ts: int(ts.timestamp() * 1000)
+    return {"state": state, "next_open": ms1(c["next_open"]), "next_close": ms1(nxt_close), "changes_at": ms1(changes),
+            "early_close": bool(td and td["close"].hour < 16), "source": src, "now": ms1(now)}
 
 
 def allocation_api(p, b, pp):
@@ -722,11 +797,24 @@ def order_preview_api(p, b, pp):
     warnings = []
     plan = profile.load()
     try:
-        eq = account(name)["equity"]
+        acct = account(name)
+        eq, bp = acct["equity"], acct.get("buying_power")
         if value and eq and plan.get("max_position") and value > eq * plan["max_position"] / 100:
             warnings.append(f"More than your {plan['max_position']:g}% max position size (My trading plan).")
+        if req.side == "buy" and value and bp is not None and value > bp:
+            warnings.append(f"More than your buying power (${bp:,.2f}).")
     except Exception:
         pass
+    if req.side == "sell" and not req.is_option:
+        try:
+            have = (held(name, req.symbol) or {}).get("qty") or 0
+            if have <= 0:
+                warnings.append(f"You don't hold {req.symbol}, so this sells it short." if not have else
+                                f"You're already short {abs(have):g} {req.symbol}; this adds to the short.")
+            elif req.qty > have:
+                warnings.append(f"You hold {have:g}: selling {req.qty:g} also opens a short of {req.qty - have:g}.")
+        except Exception:
+            pass
     if config.LIVE:
         warnings.append("LIVE account: this uses real money.")
     return {"describe": req.describe() + _after_text(after), "value": value, "warnings": warnings,
@@ -1502,7 +1590,7 @@ ROUTES = {
     "plan": plan_api, "brief": brief_api, "claude": claude_api, "data": data_api,
     "orders/preview": order_preview_api, "orders/submit": order_submit_api, "orders/cancel": order_cancel_api,
     "brokers/reconnect": reconnect_api, "journal/update": journal_update_api, "pin": pin_api, "prefs": prefs_api,
-    "exits": exits_api,
+    "exits": exits_api, "market": market_api,
 }
 
 @contextlib.asynccontextmanager

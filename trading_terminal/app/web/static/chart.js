@@ -83,7 +83,16 @@
       const n = this.n;
       if (!n) { this.lg.textContent = "No data for this range"; return; }
       const axes = cfg.axes !== false;
-      const right = axes ? (W < 500 ? 46 : 58) : 0, bottom = axes ? 18 : 0, top = cfg.legend === false ? 4 : 20;
+      const fmt = cfg.yfmt || defFmt;
+      g.font = "10.5px 'IBM Plex Mono', monospace";
+      g.textBaseline = "middle";
+      const candle = cfg.kind === "candle" && cfg.o;
+      const ov = cfg.overlays || [];
+      const [lo, hi] = range([candle ? cfg.h : cfg.c, candle ? cfg.l : null, ...ov.map(o => o.v),
+                              cfg.baseline != null ? [cfg.baseline] : null]);
+      // The price gutter is as wide as its widest label, so a value like $100,000 isn't clipped at the edge
+      const widest = axes ? Math.max(...[lo, hi, ...cfg.c.filter(v => v != null).slice(-1)].map(v => g.measureText(fmt(v)).width)) : 0;
+      const right = axes ? Math.max(W < 500 ? 46 : 58, Math.ceil(widest) + 10) : 0, bottom = axes ? 18 : 0, top = cfg.legend === false ? 4 : 20;
       const left = 0, plotW = W - right - left;
       const step = plotW / n;
       const panes = cfg.panes || [];
@@ -92,15 +101,8 @@
       const mainH = H - top - bottom - volH - paneH * panes.length - (panes.length + (volH ? 1 : 0)) * 6;
       this.L = { left, step, plotW };
       const X = i => left + (i + 0.5) * step;
-      const fmt = cfg.yfmt || defFmt;
-      g.font = "10.5px 'IBM Plex Mono', monospace";
-      g.textBaseline = "middle";
 
       // ---- main pane ----
-      const candle = cfg.kind === "candle" && cfg.o;
-      const ov = cfg.overlays || [];
-      const [lo, hi] = range([candle ? cfg.h : cfg.c, candle ? cfg.l : null, ...ov.map(o => o.v),
-                              cfg.baseline != null ? [cfg.baseline] : null]);
       const y0 = top, y1 = top + mainH;
       const Y = v => y1 - (v - lo) / (hi - lo) * (y1 - y0);
       this.grid(g, lo, hi, y0, y1, Y, W, right, axes, fmt);

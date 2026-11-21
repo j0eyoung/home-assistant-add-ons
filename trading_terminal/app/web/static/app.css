@@ -1,7 +1,7 @@
 /* Trading Terminal: Bloomberg-style dark panels on a computer, one panel at a time with bottom tabs on a phone. */
 :root {
   --bg: #000; --panel: #0a0b0d; --panel2: #111316; --line: #1f2328; --line2: #2b3036;
-  --text: #e6e6e6; --dim: #a7adb5; --muted: #6f767f;
+  --text: #e6e6e6; --dim: #a7adb5; --muted: #7c838c;
   --amber: #ffa62b; --acc: #e2711d; --blue: #5aa9ff; --up: #2fd36b; --dn: #ff4f4f; --warn: #ffcc4d;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -22,6 +22,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .up { color: var(--up) !important; } .dn { color: var(--dn) !important; } .dim { color: var(--dim); } .muted { color: var(--muted); }
 .amber { color: var(--amber); } .warn { color: var(--warn); }
 [hidden] { display: none !important; }
+a:focus-visible, button:focus-visible, summary:focus-visible, select:focus-visible, .seg button:focus-visible, #rail a:focus-visible,
+tr.go:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
 
 /* ---------- top bar ---------- */
 #top { grid-area: top; display: flex; align-items: center; gap: 14px; padding: 0 14px; background: #050505;
@@ -41,10 +46,16 @@ button, input, select, textarea { font: inherit; color: inherit; }
 #suggest div { display: flex; gap: 12px; padding: 7px 10px; cursor: pointer; align-items: baseline; }
 #suggest div.on, #suggest div:hover { background: #1b1f24; }
 #suggest b { font: 600 12.5px var(--mono); color: var(--amber); min-width: 58px; }
-#suggest span { color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#suggest span { color: var(--dim); overflow-wrap: break-word; min-width: 0; }
 #suggest small { margin-left: auto; color: var(--muted); font-size: 11px; }
 .mode { font: 700 11px var(--mono); letter-spacing: .1em; padding: 4px 8px; border-radius: 2px; }
 .mode.paper { color: #000; background: var(--up); } .mode.live { color: #fff; background: var(--dn); }
+.mkt { display: inline-flex; align-items: center; gap: 6px; font: 500 11px var(--mono); color: var(--dim); white-space: nowrap;
+       padding: 3px 8px; border: 1px solid var(--line2); border-radius: 2px; }
+.mkt b { font-weight: 700; letter-spacing: .08em; color: var(--text); }
+.mkt.open { border-color: #1f5133; } .mkt.open b { color: var(--up); }
+.mkt.ext { border-color: #5a4614; } .mkt.ext b { color: var(--warn); }
+.mkt .dot { margin-right: 0; }
 .clock { margin-left: auto; font: 500 11.5px var(--mono); color: var(--dim); white-space: nowrap; }
 .clock b { color: var(--text); font-weight: 600; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; background: var(--muted); }
@@ -54,7 +65,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
 #rail { grid-area: rail; overflow-y: auto; border-right: 1px solid var(--line); background: #040405; padding: 6px 0 20px; }
 #rail h6 { margin: 14px 12px 4px; font: 600 10px var(--mono); letter-spacing: .14em; color: var(--muted); }
 #rail a { display: flex; gap: 9px; align-items: baseline; padding: 5px 12px; color: var(--dim); text-decoration: none;
-          border-left: 2px solid transparent; white-space: nowrap; }
+          border-left: 2px solid transparent; }
+#rail a b { flex: none; }
 #rail a b { font: 600 11.5px var(--mono); color: var(--amber); min-width: 38px; }
 #rail a:hover { background: #101215; color: var(--text); }
 #rail a.on { background: #15110b; border-left-color: var(--acc); color: #fff; }
@@ -94,7 +106,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
        background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--acc); border-radius: 3px; }
 .sec .id { min-width: 0; }
 .sec .id b { font: 600 15px var(--mono); color: var(--amber); letter-spacing: .04em; }
-.sec .id span { display: block; color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
+.sec .id span { display: block; color: var(--dim); font-size: 12px; max-width: 340px; overflow-wrap: break-word; }
 .sec .px { font: 600 24px var(--mono); }
 .sec .chg { font: 500 14px var(--mono); }
 .sec .kv { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
@@ -164,8 +176,8 @@ table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .kvg span { color: var(--muted); } .kvg b { font: 500 12.5px var(--mono); text-align: right; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .tile { background: var(--panel2); border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; min-width: 0; }
-.tile span { display: block; color: var(--muted); font-size: 11px; letter-spacing: .03em; }
-.tile b { display: block; font: 600 17px var(--mono); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile > span { display: block; color: var(--muted); font-size: 11px; letter-spacing: .03em; }
+.tile b { display: block; font: 600 17px var(--mono); margin-top: 2px; overflow-wrap: break-word; }
 .tile small { color: var(--dim); font: 11px var(--mono); }
 .big { font: 600 30px var(--mono); line-height: 1.1; }
 .about { color: var(--dim); line-height: 1.6; }
@@ -178,7 +190,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
                  display: flex; gap: 12px; flex-wrap: wrap; z-index: 2; text-shadow: 0 0 4px #000; }
 .chart .legend i { font-style: normal; }
 .bars .b { display: grid; grid-template-columns: minmax(70px, 160px) 1fr 74px; gap: 8px; align-items: center; margin: 5px 0; }
-.bars .b span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+.bars .b span { color: var(--dim); overflow-wrap: break-word; min-width: 0; }
 .bars .tr { height: 9px; background: #15181c; border-radius: 1px; overflow: hidden; }
 .bars .fl { height: 100%; background: var(--amber); }
 .bars .b em { font: normal 12px var(--mono); text-align: right; }
@@ -199,12 +211,12 @@ table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .card { background: var(--panel2); border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; cursor: pointer; min-width: 0; }
 .card:hover { border-color: var(--amber); }
 .card b { font: 600 13px var(--mono); color: var(--amber); }
-.card div { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card div { color: var(--muted); font-size: 11px; overflow-wrap: break-word; }
 .card .p { font: 500 14px var(--mono); color: var(--text); margin-top: 4px; }
 .pred { background: var(--panel2); border: 1px solid var(--line); border-radius: 3px; padding: 10px; }
 .pred a { color: var(--text); font-weight: 600; }
 .pred .o { display: grid; grid-template-columns: minmax(90px, 1.3fr) 2fr 44px; gap: 8px; align-items: center; margin-top: 5px; font-size: 12px; }
-.pred .o span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+.pred .o span { color: var(--dim); overflow-wrap: break-word; min-width: 0; }
 .pred .o .tr { height: 8px; background: #15181c; } .pred .o .fl { height: 100%; background: #5c6168; } .pred .o .fl.top { background: var(--up); }
 .pred .o em { font: normal 12px var(--mono); text-align: right; }
 .list .it { padding: 8px 10px; border-bottom: 1px solid #15181c; }
@@ -220,6 +232,12 @@ table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .row.nw > .in.num { flex: 1; }
 .ticket .two .in.unit { width: auto; flex: 0 0 auto; min-width: 52px; }
 .in.pin { letter-spacing: .3em; }
+.ticket .hold { display: flex; justify-content: space-between; align-items: center; gap: 6px 12px; flex-wrap: wrap; font-size: 12px; min-height: 22px; }
+.ticket .hold:empty { display: none; }
+.ticket .hold b { font-family: var(--mono); font-weight: 600; }
+.ticket .hold .btn { margin-left: 6px; }
+.ticket .est b { font-weight: 600; color: var(--text); }
+#t-warn .warn { font-size: 12px; margin-top: 2px; }
 .ticket .est { display: flex; justify-content: space-between; border-top: 1px solid var(--line2); padding-top: 8px; font: 600 13px var(--mono); }
 .confirm { border: 1px solid var(--amber); background: #120d05; padding: 10px; border-radius: 3px; display: flex; flex-direction: column; gap: 8px; }
 .confirm .d { font: 600 13px var(--mono); }
@@ -243,6 +261,16 @@ table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .chat form { display: flex; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 .chat textarea { flex: 1; resize: none; height: 44px; max-height: 160px; }
 .examples { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
+
+/* ---------- dialog ---------- */
+.modal { position: fixed; inset: 0; z-index: 200; background: #000b; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dlg { width: min(440px, 100%); background: var(--panel); border: 1px solid var(--line2); border-top: 2px solid var(--amber); border-radius: 3px;
+       box-shadow: 0 18px 48px #000; padding: 14px; display: flex; flex-direction: column; gap: 10px; animation: tin .15s; }
+.dlg h3 { margin: 0; font: 600 12px var(--mono); letter-spacing: .1em; color: var(--amber); text-transform: uppercase; }
+.dlg p { margin: 0; color: var(--dim); line-height: 1.5; }
+.dlg .in { width: 100%; }
+.dlg textarea { resize: vertical; }
+.dlg .acts { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* ---------- toasts ---------- */
 #toasts { position: fixed; right: 14px; bottom: 14px; z-index: 100; display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
@@ -293,7 +321,8 @@ table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   .sec { gap: 10px; padding: 8px 10px; margin-top: 2px; } .sec .px { font-size: 22px; } .sec .acts { margin-left: 0; width: 100%; }
   .sec .acts .btn { flex: 1; padding: 7px; }
   .sec .kv { width: 100%; }
-  .btn { min-height: 32px; } .seg button { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+  .btn { min-height: 32px; } .btn.sm { min-height: 32px; padding: 4px 10px; font-size: 12px; } .seg button { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+  .mkt { padding: 3px 6px; font-size: 10px; flex: none; } .mkt span { display: none; }
   input.in, select.in { min-height: 36px; font-size: 16px; }
   .t { font-size: 13px; } .t td { padding: 7px 6px; }
   .hide-sm { display: none !important; }

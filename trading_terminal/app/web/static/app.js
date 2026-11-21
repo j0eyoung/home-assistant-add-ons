@@ -7,6 +7,7 @@
   const num = v => v != null && v !== "" && isFinite(v);
   const f2 = (v, d = 2) => num(v) ? Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) : "–";
   const money = (v, d = 2) => num(v) ? (v < 0 ? "-$" : "$") + f2(Math.abs(v), d) : "–";
+  const plm = (v, d = 2) => num(v) && v > 0 ? "+" + money(v, d) : money(v, d);  // profit/loss: sign as well as colour
   const pct = (v, d = 2) => num(v) ? (v > 0 ? "+" : "") + f2(v, d) + "%" : "–";
   const sgn = v => num(v) ? (v > 0 ? "up" : v < 0 ? "dn" : "") : "";
   const big = v => num(v) ? window.bigNum(v) : "–";
@@ -50,6 +51,33 @@
     return j;
   }
   const post = (path, body) => api(path, null, body || {});
+  // In-page dialog in place of prompt()/confirm(), which the Home Assistant app doesn't always show.
+  // Resolves to the typed text (input/area), true (a plain OK), or null when cancelled.
+  function ask({ title: head, text = "", input = null, area = false, ok = "OK", danger = false }) {
+    return new Promise(res => {
+      const d = document.createElement("div"), prev = document.activeElement;
+      d.className = "modal";
+      d.innerHTML = `<form class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-h"><h3 id="dlg-h">${esc(head)}</h3>${text ? `<p>${esc(text)}</p>` : ""}
+        ${input == null ? "" : area ? `<textarea class="in" rows="4">${esc(input)}</textarea>` : `<input class="in" value="${esc(input)}" autocomplete="off">`}
+        <div class="acts"><button type="button" class="btn" data-no>Cancel</button><button class="btn ${danger ? "sell" : "pri"}">${esc(ok)}</button></div></form>`;
+      const fld = $("input, textarea", d), f = $("form", d);
+      const done = v => { d.remove(); document.removeEventListener("keydown", key, true); if (prev && prev.focus) prev.focus(); res(v); };
+      const key = e => {
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(null); }
+        else if (e.key === "Tab") {  // keep Tab inside the dialog
+          const all = $$("input, textarea, button", d), i = all.indexOf(document.activeElement);
+          e.preventDefault(); all[(i + (e.shiftKey ? -1 : 1) + all.length) % all.length].focus();
+        }
+      };
+      document.addEventListener("keydown", key, true);
+      d.onmousedown = e => { if (e.target === d) done(null); };
+      $("[data-no]", d).onclick = () => done(null);
+      f.onsubmit = e => { e.preventDefault(); done(fld ? fld.value : true); };
+      if (area) fld.onkeydown = e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) f.requestSubmit(); };
+      document.body.append(d);
+      if (fld) { fld.focus(); if (!area) fld.select(); } else $("button:not([data-no])", d).focus();
+    });
+  }
   function toast(text, kind = "", ms = 7000) {
     const d = document.createElement("div");
     d.className = "toast " + kind; d.textContent = text; d.title = "Click to close";
@@ -71,7 +99,8 @@
     if (typeof v === "number") {
       if (/pct|percent|chg|change|from_high|growth|yield|margin|rate$/i.test(k)) return `<span class="${sgn(v)}">${pct(v)}</span>`;
       if (/cap|volume|revenue|value|market|assets|cash|debt|shares/i.test(k) && Math.abs(v) >= 1e5) return big(v);
-      if (/^(pl|unrealized|realized|day_pl|amount|total|profit)/i.test(k) || /_pl$/i.test(k)) return `<span class="${sgn(v)}">${money(v)}</span>`;
+      if (/^(pl|unrealized|realized|day_pl|total|profit)/i.test(k) || /_pl$/i.test(k)) return `<span class="${sgn(v)}">${plm(v)}</span>`;
+      if (/^amount/i.test(k)) return `<span class="${sgn(v)}">${money(v)}</span>`;
       return Number.isInteger(v) && Math.abs(v) >= 1000 ? v.toLocaleString() : f2(v, Number.isInteger(v) ? 0 : (Math.abs(v) < 1 ? 4 : 2));
     }
     if (/^https?:/.test(v)) return `<a href="${esc(v)}" target="_blank" rel="noopener">open</a>`;
@@ -83,7 +112,7 @@
     if (!rows || !rows.length) return note(opt.empty || "Nothing to show.");
     if (!cols) cols = Object.keys(rows[0]).filter(k => rows[0][k] == null || typeof rows[0][k] !== "object").slice(0, opt.max || 14);
     cols = cols.map(c => typeof c === "string" ? { k: c, h: title(c) } : { h: title(c.k), ...c });
-    const head = cols.map((c, i) => `<th class="sort" data-i="${i}">${esc(c.h)}</th>`).join("");
+    const head = cols.map((c, i) => `<th class="sort${c.cls ? " " + c.cls : ""}" data-i="${i}">${esc(c.h)}</th>`).join("");  // same class as the cells, so hidden columns hide their heading too
     const body = rows.map(r => `<tr${r.symbol && !opt.nogo ? ` class="go" data-go="${esc(r.symbol)}"` : ""}>${cols.map(c => `<td${c.cls ? ` class="${c.cls}"` : ""} data-v="${esc(c.f ? "" : r[c.k] ?? "")}">${c.f ? c.f(r) : fmtCell(c.k, r[c.k])}</td>`).join("")}</tr>`).join("");
     return `<div class="tw ${opt.tall ? "tall" : ""}"><table class="t ${opt.compact ? "compact" : ""}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
@@ -149,10 +178,11 @@
   function buildNav() {
     const F = S.boot.functions;
     $("#rail").innerHTML = Object.entries(F).map(([g, items]) => `<h6>${g.toUpperCase()}</h6>` + Object.entries(items).map(([k, n]) =>
-      `<a href="#/${k}${STOCK.has(k) && S.sym ? "/" + S.sym : ""}" class="${k === S.fn ? "on" : ""}"><b>${k}</b><span>${esc(n)}</span></a>`).join("")).join("");
+      `<a href="#/${k}${STOCK.has(k) && S.sym ? "/" + S.sym : ""}" class="${k === S.fn ? "on" : ""}"${k === S.fn ? ' aria-current="page"' : ""}><b>${k}</b><span>${esc(n)}</span></a>`).join("")).join("");
     const cur = FN_GROUP[S.fn] || "Home";
-    const tabs = [["Home", "PORT"], ["Stock", S.sym ? "DES" : "DES"], ["Market", "WEI"], ["Trade", "ORD"], ["AI", "AI"]];
-    $("#tabs").innerHTML = tabs.map(([l, k]) => `<a href="#/${k}${STOCK.has(k) && S.sym ? "/" + S.sym : ""}" class="${(l === cur && !(l === "Home" && S.fn === "ORD")) || (l === "Trade" && S.fn === "ORD") ? "on" : ""}"><svg viewBox="0 0 24 24"><path d="${ICONS[l]}"/></svg>${l}</a>`).join("");
+    const tabs = [["Home", "PORT"], ["Stock", "DES"], ["Market", "WEI"], ["Trade", "ORD"], ["AI", "AI"]];
+    $("#tabs").innerHTML = tabs.map(([l, k]) => { const on = (l === cur && !(l === "Home" && S.fn === "ORD")) || (l === "Trade" && S.fn === "ORD");
+      return `<a href="#/${k}${STOCK.has(k) && S.sym ? "/" + S.sym : ""}" class="${on ? "on" : ""}"${on ? ' aria-current="page"' : ""}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[l]}"/></svg>${l}</a>`; }).join("");
   }
   async function secHeader(token) {
     try {
@@ -206,16 +236,46 @@
     liveStop(); live.key = key;
     if (!syms.length) return;
     const es = live.es = new EventSource("api/live?s=" + encodeURIComponent(key));
-    es.onopen = () => { live.on = true; live.fails = 0; };
+    es.onopen = () => { live.on = true; live.fails = 0; paintMarket(); };
     es.onmessage = e => {
       const d = JSON.parse(e.data);
       for (const [s, q] of Object.entries(d.quotes)) S.quotes[s] = { ...(S.quotes[s] || {}), ...q };
       $$(".q[data-s]").forEach(el => d.quotes[el.dataset.s] && paintQuote(el));
-      $("#mode").title = d.stream === "live" ? "Prices: live stream" : "Prices: every few seconds";
+      if (live.stream !== d.stream) { live.stream = d.stream; paintMarket(); }
     };
-    es.onerror = () => { live.on = false; if (es.readyState === 2) { live.fails++; live.es = null; } };
+    es.onerror = () => { live.on = false; if (es.readyState === 2) { live.fails++; live.es = null; } paintMarket(); };
   }
   function liveStop() { if (live.es) { live.es.close(); live.es = null; } live.on = false; }
+
+  // ---------- market session (top bar) ----------
+  // Pre-market, open, after hours or closed, with a countdown to the next open or close (New York times;
+  // holidays and early closes come from Alpaca's calendar). The dot says how prices are arriving.
+  const MK = { s: null, skew: 0, busy: false };
+  const dur = ms => { const m = Math.max(1, Math.ceil(ms / 60000)), h = Math.floor(m / 60), d = Math.floor(h / 24);
+    return d >= 1 ? `${d}d ${h % 24}h` : h ? `${h}h ${m % 60}m` : `${m}m`; };
+  const nyAt = ms => new Date(ms).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" }) + " ET";
+  async function loadMarket() {
+    if (MK.busy) return; MK.busy = true;
+    try { const s = await api("market"); MK.s = s; MK.skew = s.now - Date.now(); } catch (e) { }
+    MK.busy = false; paintMarket();
+  }
+  function paintMarket() {
+    const s = MK.s, el = $("#mkt"); if (!s || !el) return;
+    const now = Date.now() + MK.skew;
+    if (now >= s.changes_at + 1000 && !MK.busy && now - (MK.tried || 0) > 30000) { MK.tried = now; loadMarket(); }  // the session moved on
+    const till = t => t - now;
+    const [label, detail, cls] = {
+      open: ["OPEN", `closes in ${dur(till(s.next_close))}${s.early_close ? " (early close)" : ""}`, "open"],
+      pre: ["PRE-MARKET", `opens in ${dur(till(s.next_open))}`, "ext"],
+      after: ["AFTER HOURS", `next open ${till(s.next_open) < 864e5 ? "in " + dur(till(s.next_open)) : nyAt(s.next_open)}`, "ext"],
+      closed: ["CLOSED", `opens ${till(s.next_open) < 864e5 ? "in " + dur(till(s.next_open)) : nyAt(s.next_open)}`, "shut"],
+    }[s.state] || ["", "", ""];
+    const feed = s.state === "closed" ? ["", "Market closed: prices are from the last session"]
+      : live.on && live.stream === "live" ? ["on", "Prices: live stream"] : ["half", "Prices: every few seconds"];
+    el.className = "mkt " + cls; el.hidden = false;
+    el.title = `${feed[1]}. Regular hours 9:30 to 16:00 ET${s.source === "hours" ? " (holidays not known without Alpaca)" : ""}.`;
+    el.innerHTML = `<i class="dot ${feed[0]}"></i><b>${label}</b><span>${detail}</span>`;
+  }
   function paintQuote(el) {
     const q = S.quotes[el.dataset.s]; if (!q) return;
     const f = el.dataset.f; let txt, cls = "";
@@ -319,7 +379,7 @@
   const HOT = { d: "DES", g: "GP", n: "N", f: "FA", a: "ANR", e: "ERN", o: "OMON", p: "PORT", w: "MON", m: "WEI", i: "AI" };
   const keyList = () => `<div class="kvg">${KEYS.map(([k, n]) => `<div><span>${esc(n)}</span><b>${esc(k)}</b></div>`).join("")}</div>`;
   document.addEventListener("keydown", e => {
-    if (e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || $(".modal")) return;
     const k = e.key;
     if (k === "/" || k === "`") { e.preventDefault(); cmd.focus(); cmd.select(); return; }
     if (k === "[" || k === "]") {
@@ -352,15 +412,20 @@
       if (!p.brokers.length) { el.innerHTML = note((S.boot.pending ? "Connecting to your broker… " : "No broker connected. ") + Object.values(p.errors || {}).map(esc).join(" "), S.boot.pending ? "note box" : "err"); return; }
       cur = S.broker = p.broker;
       const a = p.account || {}, pos = p.positions || [];
-      const dayPl = pos.reduce((t, x) => t + (x.day_pl || 0), 0), unreal = pos.reduce((t, x) => t + (x.unrealized_pl || 0), 0);
+      const unreal = pos.reduce((t, x) => t + (x.unrealized_pl || 0), 0);
+      const cost = pos.reduce((t, x) => t + Math.abs((x.avg_cost || 0) * (x.qty || 0)), 0);
+      // Today's change: from the account (Alpaca: equity vs the last close, so closed trades count), else the positions' moves
+      const day = p.day || { pl: pos.reduce((t, x) => t + (x.day_pl || 0), 0), pct: null };
+      const signed = (v, f = plm) => `<span class="${sgn(v)}">${f(v)}</span>`;
       const errs = Object.entries(p.errors || {}).map(([k, v]) => `<div class="note warn">${esc(k)}: ${esc(v)}</div>`).join("");
       el.innerHTML = errs + `<div class="grid g2"><div class="col">
-        ${panel("Account " + p.mode, tiles([["Equity", money(a.equity)], ["Cash", money(a.cash)], ["Buying power", money(a.buying_power)], ["Day P/L", `<span class="${sgn(dayPl)}">${money(dayPl)}</span>`], ["Open P/L", `<span class="${sgn(unreal)}">${money(unreal)}</span>`]]).replace('class="tiles"', 'class="tiles pb"'),
+        ${panel("Account " + p.mode, tiles([["Equity", money(a.equity)], ["Today", signed(day.pl), day.pct != null ? signed(day.pct, pct) : ""],
+          ["Open P/L", signed(unreal), cost ? signed(unreal / cost * 100, pct) + " on cost" : ""], ["Cash", money(a.cash)], ["Buying power", money(a.buying_power)]]).replace('class="tiles"', 'class="tiles pb"'),
           p.brokers.length > 1 ? seg(p.brokers, cur, "br") : "")}
         ${panel("Equity vs S&P 500", `<div class="pb"><div id="eq" class="chart"></div><div class="cap" id="eq-vs" style="padding-left:0"></div></div>`, seg(["1D", "1W", "1M", "3M", "1Y", "ALL"], range, "rg"))}
-        ${panel("Positions", table(pos.map(x => ({ ...x })), [{ k: "symbol", h: "Symbol", f: r => symLink(r.symbol) }, "qty", { k: "avg_cost", h: "Avg cost", f: r => px(r.avg_cost) },
-          { k: "last", h: "Last", f: r => /^[A-Z.\-]{1,6}$/.test(r.symbol) ? qspan(r.symbol) : "–" }, { k: "market_value", h: "Value", f: r => money(r.market_value) },
-          { k: "day_pl", h: "Day P/L", f: r => `<span class="${sgn(r.day_pl)}">${money(r.day_pl)}</span>` }, { k: "unrealized_pl", h: "Open P/L", f: r => `<span class="${sgn(r.unrealized_pl)}">${money(r.unrealized_pl)}</span>` }], { empty: "No open positions." }), "", "")}
+        ${panel("Positions", table(pos.map(x => ({ ...x })), [{ k: "symbol", h: "Symbol", f: r => symLink(r.symbol) }, "qty", { k: "avg_cost", h: "Avg cost", cls: "hide-sm", f: r => px(r.avg_cost) },
+          { k: "last", h: "Last", f: r => /^[A-Z.\-]{1,6}$/.test(r.symbol) ? qspan(r.symbol) : "–" }, { k: "market_value", h: "Value", cls: "hide-sm", f: r => money(r.market_value) },
+          { k: "day_pl", h: "Day P/L", f: r => signed(r.day_pl) }, { k: "unrealized_pl", h: "Open P/L", f: r => signed(r.unrealized_pl) }], { empty: "No open positions. Buy from a stock's page or the Trade screen." }), "", "")}
         </div><div class="col">${pos.length ? panel("Open P/L by position", `<div class="pb bars">${plBars(pos.map(x => [x.symbol, x.unrealized_pl]))}</div>`) : ""}
         ${panel("Allocation", `<div id="alloc" class="pb bars"><div class="loading">Loading</div></div>`)}
         <div id="bytag"></div>
@@ -394,7 +459,7 @@
   function plBars(rows) {
     rows = rows.filter(([, v]) => num(v)).sort((a, b) => b[1] - a[1]);
     const mx = Math.max(...rows.map(([, v]) => Math.abs(v)), 1);
-    return rows.map(([n, v]) => `<div class="b"><span>${esc(n)}</span><div class="tr"><div class="fl" style="width:${Math.abs(v) / mx * 100}%;background:${v >= 0 ? "var(--up)" : "var(--dn)"}"></div></div><em class="${sgn(v)}">${money(v, 0)}</em></div>`).join("") || note("Nothing yet.");
+    return rows.map(([n, v]) => `<div class="b"><span>${esc(n)}</span><div class="tr"><div class="fl" style="width:${Math.abs(v) / mx * 100}%;background:${v >= 0 ? "var(--up)" : "var(--dn)"}"></div></div><em class="${sgn(v)}">${plm(v, 0)}</em></div>`).join("") || note("Nothing yet.");
   }
 
   // Trade ticket
@@ -404,6 +469,7 @@
     el.innerHTML = `<div class="grid g2"><div class="col">${panel("Order ticket " + S.boot.mode, `<form class="pb ticket" id="tk" autocomplete="off">
       <div class="two"><label class="f">Symbol<input class="in num" id="t-sym" value="${esc(t.symbol)}" style="text-transform:uppercase"></label>
       <label class="f">Account<select class="in" id="t-br">${brokers.map(b => `<option ${b === t.broker ? "selected" : ""}>${esc(b)}</option>`).join("")}</select></label></div>
+      <div class="hold" id="t-pos" aria-live="polite"></div>
       <div class="side"><button type="button" class="b ${t.side === "buy" ? "on" : ""}" data-side="buy">BUY</button><button type="button" class="s ${t.side === "sell" ? "on" : ""}" data-side="sell">SELL</button></div>
       <div class="two"><label class="f">Quantity<input class="in num" id="t-qty" type="number" min="0" step="any" value="${t.qty}"></label>
       <label class="f">Order type<select class="in" id="t-type">${[["market", "market"], ["limit", "limit"], ["stop", "stop"], ["trailing", "trailing stop"]].map(([v, l]) => `<option value="${v}" ${v === t.type ? "selected" : ""}>${l}</option>`).join("")}</select></label></div>
@@ -416,27 +482,56 @@
         <div class="two"><label class="f" title="Placed by the app as soon as the order fills; follows the price up (or down for a short) and sells if it turns back by this much">Or a trailing stop once filled<span class="row nw"><input class="in num" id="t-xt" type="number" min="0" step="any" placeholder="e.g. 5"><select class="in unit" id="t-xu"><option>%</option><option>$</option></select></span></label></div>
         <div class="muted">Take profit and stop loss go in with the order, and when one fills the other is canceled. A trailing stop replaces both.</div></details>
       <label class="f">Note for journal<input class="in" id="t-note" maxlength="200"></label>
-      <div class="est"><span>Last <span id="t-last" class="dim">–</span></span><span id="t-est"></span></div>
+      <div class="est"><span id="t-q" class="dim">–</span><span id="t-est"></span><span class="q" id="t-live" hidden></span></div><div id="t-warn" aria-live="polite"></div>
       <button class="btn pri wide" id="t-prev">Review order</button><div id="t-out"></div></form>`)}</div>
       <div class="col">${panel("Orders", `<div id="ol"><div class="loading">Loading</div></div>`)}<div id="xl"></div></div></div>`;
     const g = id => $("#" + id, el);
+    const symNow = () => g("t-sym").value.trim().toUpperCase();
+    // What's already held in this symbol and the buying power, so the ticket can warn before the review step
+    // (the server checks again on Review order).
+    let acct = null;
+    const heldQty = () => (acct && acct.position && acct.position.qty) || 0;
+    const paintHold = () => {
+      const s = symNow(), pos = acct && acct.position, bp = acct && acct.account && acct.account.buying_power, box = g("t-pos");
+      if (!s || !acct) { box.innerHTML = ""; return; }
+      const q = pos ? pos.qty : 0, short = q < 0;
+      const left = !pos ? `<span class="dim">No ${esc(s)} position</span>`
+        : `${short ? "Short" : "You hold"} <b>${f2(Math.abs(q), Number.isInteger(q) ? 0 : 4)}</b> @ ${px(pos.avg_cost)} · open P/L <span class="${sgn(pos.unrealized_pl)}">${plm(pos.unrealized_pl)}</span>
+          <button type="button" class="btn sm" id="t-all">${short ? "Buy to cover" : "Sell"} all ${f2(Math.abs(q), Number.isInteger(q) ? 0 : 4)}</button>`;
+      box.innerHTML = `<span>${left}</span>${bp != null ? `<span class="dim">Buying power <b>${money(bp, 0)}</b></span>` : ""}`;
+      if (g("t-all")) g("t-all").onclick = () => { setSide(short ? "buy" : "sell"); g("t-qty").value = Math.abs(q); upd(); };
+    };
     const upd = () => { const ty = g("t-type").value, trail = ty === "trailing"; g("px-l").style.display = ty === "market" ? "none" : "";
       g("px-n").textContent = trail ? "Trail by" : "Price"; g("t-tu").style.display = trail ? "" : "none";
-      const q = S.quotes[g("t-sym").value.trim().toUpperCase()];
-      g("t-last").textContent = q ? px(q.last) : "–"; const unit = (!trail && +g("t-px").value) || (q && q.last); g("t-est").textContent = unit ? "Est. " + money(unit * (+g("t-qty").value || 0)) : ""; };
-    $$("[data-side]", el).forEach(b => b.onclick = () => { t.side = b.dataset.side; $$("[data-side]", el).forEach(x => x.classList.toggle("on", x === b)); });
+      const s = symNow(), q = S.quotes[s], qty = +g("t-qty").value || 0;
+      // Bid and ask while the market trades (a market buy pays about the ask, a sell gets about the bid); last price otherwise
+      const ba = q && num(q.bid) && num(q.ask) && q.bid > 0 && q.ask >= q.bid && !(MK.s && MK.s.state === "closed");
+      g("t-q").innerHTML = !q ? "–" : ba ? `Bid <b>${px(q.bid)}</b> · Ask <b>${px(q.ask)}</b>` : `Last <b>${px(q.last)}</b>`;
+      const unit = (!trail && +g("t-px").value) || (q && (ba ? (t.side === "buy" ? q.ask : q.bid) : q.last)), est = unit ? unit * qty : null;
+      g("t-est").textContent = est ? "Est. " + money(est) : "";
+      const w = [], have = heldQty(), opt = /\d{6}[CP]\d{8}$/.test(s), bp = acct && acct.account && acct.account.buying_power;
+      if (acct && !opt && t.side === "sell" && qty > Math.max(have, 0))
+        w.push(have > 0 ? `You hold ${have}: selling ${qty} also opens a short of ${+(qty - have).toFixed(4)}.` : have < 0 ? `You're already short ${-have}; this adds to the short.` : `You don't hold ${s}, so this sells it short.`);
+      if (t.side === "buy" && est && bp != null && est > bp) w.push(`More than your buying power (${money(bp, 0)}).`);
+      g("t-warn").innerHTML = w.map(x => `<div class="warn">⚠ ${esc(x)}</div>`).join(""); };
+    const setSide = side => { t.side = side; $$("[data-side]", el).forEach(x => x.classList.toggle("on", x.dataset.side === side)); };
+    $$("[data-side]", el).forEach(b => b.onclick = () => { setSide(b.dataset.side); upd(); });
     ["t-type", "t-qty", "t-px"].forEach(i => g(i).oninput = upd);
-    g("t-sym").onchange = async () => { const s = g("t-sym").value.trim().toUpperCase(); if (!s) return; try { Object.assign(S.quotes, (await api("quotes", { s })).quotes); } catch (e) { } upd(); };
-    g("t-sym").onchange(); upd();
     // Position sizing: shares = risk / (entry - stop), capped by the plan's max position size.
-    let acct = null;
-    const loadAcct = async () => { try { acct = await api("account", { broker: g("t-br").value }); } catch (e) { acct = null; }
+    let acctSeq = 0;
+    const loadAcct = async () => { const seq = ++acctSeq;
+      let a = null; try { a = await api("account", { broker: g("t-br").value, s: symNow() }); } catch (e) { }
+      if (seq !== acctSeq || !ok()) return; acct = a;
       const pl = acct && acct.plan, eqv = acct && acct.account && acct.account.equity;
       if (pl && eqv && pl.risk_per_trade && !g("sz-risk").value) g("sz-risk").value = Math.round(eqv * pl.risk_per_trade / 100);
-      g("sz-out").textContent = pl && pl.risk_per_trade ? `Plan: risk ${pl.risk_per_trade}% of ${money(eqv, 0)}` : "Set a risk % in My trading plan (PLAN) to prefill this."; };
+      g("sz-out").textContent = pl && pl.risk_per_trade ? `Plan: risk ${pl.risk_per_trade}% of ${money(eqv, 0)}` : "Set a risk % in My trading plan (PLAN) to prefill this.";
+      paintHold(); upd(); };
+    g("t-sym").onchange = async () => { const s = symNow(), lv = g("t-live"); if (s) lv.dataset.s = s; else delete lv.dataset.s; liveSync();  // live bid/ask for this symbol
+      if (!s) { acct && (acct.position = null); paintHold(); return; } loadAcct();
+      try { Object.assign(S.quotes, (await api("quotes", { s })).quotes); } catch (e) { } upd(); };
     g("t-br").onchange = () => { g("sz-risk").value = ""; loadAcct(); };
     g("sz-d").ontoggle = () => setPref("ord.size", g("sz-d").open);
-    loadAcct();
+    g("t-sym").onchange(); upd(); every(upd, 1500);
     g("sz-go").onclick = () => {
       const s = g("t-sym").value.trim().toUpperCase(), q = S.quotes[s] || {};
       const entry = ["limit", "stop"].includes(g("t-type").value) && +g("t-px").value ? +g("t-px").value : q.last;
@@ -507,7 +602,7 @@
   const CURVE_COLORS = ["#5aa9ff", "#3ddc97", "#c58cff", "#ff7ab6", "#ffd84d", "#7ee0e0"];
   SCREENS.JRNL = async ({ el, chart }) => {
     const j = await api("journal"), s = j.summary || {};
-    const mon = v => `<span class="${sgn(v)}">${money(v)}</span>`;
+    const mon = v => `<span class="${sgn(v)}">${plm(v)}</span>`;
     const stats = s.trades ? tiles([["Closed trades", f2(s.trades, 0)], ["Win rate", f2(s.win_rate, 1) + "%"], ["Total P/L", mon(s.total)], ["Avg win", mon(s.avg_win)], ["Avg loss", mon(s.avg_loss)],
       ["Profit factor", s.profit_factor == null ? "–" : f2(s.profit_factor, 2)], ["Per trade", mon(s.expectancy)], ["Avg result", rMult(s.avg_r)], ["Short-term", mon(s.short_term)], ["Long-term", mon(s.long_term)]]) : note("No closed trades yet.");
     const tagCols = ["tag", "trades", { k: "win_rate", h: "Win rate", f: r => f2(r.win_rate, 0) + "%" }, { k: "avg_win", h: "Avg win", f: r => mon(r.avg_win) }, { k: "avg_loss", h: "Avg loss", f: r => mon(r.avg_loss) },
@@ -520,8 +615,15 @@
       ${panel("Entries", table(j.entries, [{ k: "time", h: "When", f: r => esc(new Date(r.time * 1000).toLocaleString()) }, { k: "symbol", h: "Symbol", f: r => symLink(r.symbol) }, "side", "qty", { k: "price", h: "Price", f: r => px(r.price) },
         { k: "tags", h: "Tags", cls: "l", f: r => (r.tags || []).map(t => `<span class="chip">${esc(t)}</span>`).join("") }, { k: "note", h: "Note", cls: "l s" }, { k: "review", h: "Review", cls: "l s", f: r => esc(r.review || "") },
         { k: "x", h: "", f: r => `<button class="btn sm" data-rv="${esc(r.id)}">Review</button> <button class="btn sm" data-del="${esc(r.id)}">Delete</button>` }], { nogo: true, empty: "Orders you place here are logged automatically." }))}</div>`;
-    $$("[data-rv]", el).forEach(b => b.onclick = async () => { const t = prompt("How did this trade go? What would you do differently?"); if (t == null) return; await post("journal/update", { id: b.dataset.rv, review: t }); render(); });
-    $$("[data-del]", el).forEach(b => b.onclick = async () => { if (confirm("Delete this journal entry?")) { await post("journal/update", { id: b.dataset.del, delete: true }); render(); } });
+    const entry = id => j.entries.find(x => String(x.id) === id) || {};
+    $$("[data-rv]", el).forEach(b => b.onclick = async () => {
+      const e = entry(b.dataset.rv);
+      const t = await ask({ title: `Review: ${e.side || ""} ${e.symbol || ""}`.trim(), text: "How did this trade go? What would you do differently?", input: e.review || "", area: true, ok: "Save review" });
+      if (t == null) return; try { await post("journal/update", { id: b.dataset.rv, review: t }); render(); } catch (x) { toast(x.message, "bad"); } });
+    $$("[data-del]", el).forEach(b => b.onclick = async () => {
+      const e = entry(b.dataset.del);
+      if (!await ask({ title: "Remove this journal entry?", text: `${e.side || ""} ${e.qty ?? ""} ${e.symbol || ""}: the entry and its review leave the journal. Your broker's records don't change.`.trim(), ok: "Remove", danger: true })) return;
+      try { await post("journal/update", { id: b.dataset.del, delete: true }); render(); } catch (x) { toast(x.message, "bad"); } });
     if (!cv) return;
     // Cumulative closed P/L: the chosen setup in amber, the others (or everything) as thin lines for comparison.
     let c = null;
@@ -544,7 +646,7 @@
     const g = await api("gains");
     const closed = Array.isArray(g.closed) ? g.closed : [];
     const tot = closed.reduce((t, r) => t + (r.pl || 0), 0), dv = (g.dividends || []).reduce((t, r) => t + (r.amount || 0), 0);
-    el.innerHTML = Object.entries(g.errors || {}).map(([k, v]) => `<div class="note warn">${esc(k)}: ${esc(v)}</div>`).join("") + `<div class="grid">${panel("Totals", `<div class="pb">${tiles([["Realized P/L", `<span class="${sgn(tot)}">${money(tot)}</span>`], ["Dividends received", money(dv)], ["Closed trades", closed.length]])}</div>`)}
+    el.innerHTML = Object.entries(g.errors || {}).map(([k, v]) => `<div class="note warn">${esc(k)}: ${esc(v)}</div>`).join("") + `<div class="grid">${panel("Totals", `<div class="pb">${tiles([["Realized P/L", `<span class="${sgn(tot)}">${plm(tot)}</span>`], ["Dividends received", money(dv)], ["Closed trades", closed.length]])}</div>`)}
       ${panel("Closed trades", table(closed, null, { tall: true, empty: "No closed trades yet." }))}
       ${panel("Dividends received", table(g.dividends || [], null, { nogo: true, empty: "No dividends yet." }))}
       ${panel("Upcoming dividends on what you hold", table(g.upcoming || [], null, { empty: "None of your holdings pay a dividend." }))}</div>`;
@@ -747,7 +849,7 @@
       w = w || await post("watchlists", {}); if (!ok()) return;
       const act = w.active, syms = w.lists[act] || [];
       let q = {}; try { q = (await api("quotes", { s: syms.join(","), spark: 1 })).quotes; Object.assign(S.quotes, q); } catch (e) { }
-      el.innerHTML = `<div class="grid">${panel("Lists", `<div class="pb row">${seg(w.names, act, "ls")}<button class="btn sm" id="l-new">New</button><button class="btn sm" id="l-ren">Rename</button><button class="btn sm" id="l-del">Delete</button></div>`)}
+      el.innerHTML = `<div class="grid">${panel("Lists", `<div class="pb row">${seg(w.names, act, "ls")}<button class="btn sm" id="l-new">New</button><button class="btn sm" id="l-ren">Rename</button><button class="btn sm" id="l-del" ${w.names.length > 1 ? "" : 'disabled title="Keep at least one list"'}>Delete</button></div>`)}
         ${panel(act, `<form class="pb row" id="af"><input class="in num" id="w-s" placeholder="Add tickers (e.g. NVDA MSFT)" size="30" style="text-transform:uppercase"><button class="btn pri">Add</button></form>` +
           table(syms.map(s => ({ symbol: s, ...(q[s] || {}) })), [{ k: "symbol", h: "Symbol", f: r => symLink(r.symbol) }, { k: "spark", h: "", cls: "spark hide-sm", f: r => window.spark(r.spark, r.prev_close) }, { k: "last", h: "Last", f: r => qspan(r.symbol) }, { k: "chg", h: "Chg", f: r => qspan(r.symbol, "chg") },
             { k: "volume", h: "Volume", cls: "hide-sm", f: r => big(r.volume) }, { k: "x", h: "", f: r => `<button class="btn sm" data-up="${esc(r.symbol)}">↑</button> <button class="btn sm" data-dn="${esc(r.symbol)}">↓</button> <button class="btn sm" data-rm="${esc(r.symbol)}">✕</button>` }], { empty: "This list is empty." }))}</div>`;
@@ -757,9 +859,9 @@
       $$("[data-rm]", el).forEach(b => b.onclick = () => act2({ action: "remove", symbol: b.dataset.rm }));
       $$("[data-up]", el).forEach(b => b.onclick = () => act2({ action: "move", symbol: b.dataset.up, step: -1 }));
       $$("[data-dn]", el).forEach(b => b.onclick = () => act2({ action: "move", symbol: b.dataset.dn, step: 1 }));
-      $("#l-new").onclick = () => { const n = prompt("Name for the new list"); if (n) act2({ action: "create", name: n }); };
-      $("#l-ren").onclick = () => { const n = prompt("New name", act); if (n) act2({ action: "rename", old: act, name: n }); };
-      $("#l-del").onclick = () => { if (w.names.length > 1 && confirm(`Delete "${act}"?`)) act2({ action: "delete", name: act }); };
+      $("#l-new").onclick = async () => { const n = await ask({ title: "New watchlist", input: "", ok: "Create" }); if (n && n.trim()) act2({ action: "create", name: n.trim() }); };
+      $("#l-ren").onclick = async () => { const n = await ask({ title: `Rename "${act}"`, input: act, ok: "Rename" }); if (n && n.trim() && n.trim() !== act) act2({ action: "rename", old: act, name: n.trim() }); };
+      $("#l-del").onclick = async () => { if (w.names.length > 1 && await ask({ title: `Remove the list "${act}"?`, text: `Its ${syms.length} ticker${syms.length === 1 ? "" : "s"} go with it.`, ok: "Remove", danger: true })) act2({ action: "delete", name: act }); };
       bindTables(el); pollQuotes();
     };
     await draw();
@@ -970,7 +1072,8 @@
       <li><b>A function code</b> opens that screen: <code>PORT</code>, <code>WEI</code>, <code>IDEA</code>, <code>AI</code></li></ul>
       <p>On a phone, use the bottom tabs and the row of chips under the top bar. Click any column heading in a table to sort it. Prices on screen update every few seconds.</p>
       <h3>Keyboard shortcuts</h3>${keyList()}
-      <p class="dim">Each screen remembers its settings (chart range and indicators, statement, screen, idea list) in this browser, and the box at the top lists your recent tickers when it's empty.</p>
+      <p class="dim">Each screen remembers its settings (chart range and indicators, statement, screen, idea list). They're kept by the add-on, so your phone and computer match. The box at the top lists your recent tickers when it's empty.</p>
+      <p class="dim">The badge next to PAPER/LIVE shows where the market's day is (pre-market from 4:00, open 9:30 to 16:00, after hours to 20:00, New York time) and counts down to the next open or close. Its dot is green when prices arrive live, amber when they're refreshed every few seconds.</p>
       <h3>Functions</h3>${Object.entries(S.boot.functions).map(([g, items]) => `<p><b>${g}</b>: ${Object.entries(items).map(([k, n]) => `<a href="#/${k}"><code>${k}</code></a> ${esc(n)}`).join(" · ")}</p>`).join("")}
       <p class="dim">Version ${esc(S.boot.version)}. This tool shows data and places orders you confirm; it does not give investment advice.</p></div>`);
   };
@@ -979,6 +1082,7 @@
   function clock() {
     const d = new Date(), t = z => d.toLocaleTimeString("en-US", { timeZone: z, hour: "2-digit", minute: "2-digit", hour12: false });
     $("#clock").innerHTML = `NY <b>${t("America/New_York")}</b> · LON <b>${t("Europe/London")}</b> · TYO <b>${t("Asia/Tokyo")}</b>`;
+    paintMarket();
   }
   async function events() {
     let since = 0;
@@ -1016,13 +1120,15 @@
     const m = $("#mode"); m.textContent = S.boot.mode; m.className = "mode " + (S.boot.live ? "live" : "paper");
     S.broker = S.boot.brokers[0] || null;
     if (!S.boot.pending) Object.entries(S.boot.broker_errors || {}).forEach(([k, v]) => toast(`${k}: ${v}`, "bad"));
+    if (matchMedia("(max-width: 760px)").matches) cmd.placeholder = "Ticker or function";  // the long hint doesn't fit a phone
     clock(); setInterval(clock, 30000);
     window.addEventListener("hashchange", render);
     if (!location.hash) location.hash = pref("last", "#/PORT"); else render();
-    sideWatch(); events(); bootFollowUp();
+    sideWatch(); events(); bootFollowUp(); loadMarket();
     setInterval(() => { if (!live.on) pollQuotes(); }, 5000);  // backup when the live stream can't connect
     setInterval(() => !document.hidden && sideWatch(), 120000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) { pollQuotes(); liveSync(true); syncPrefs().then(paintRecent); } else liveStop(); });
+    setInterval(() => !document.hidden && loadMarket(), 600000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { pollQuotes(); liveSync(true); syncPrefs().then(paintRecent); loadMarket(); } else liveStop(); });
   }
   start();
 })();

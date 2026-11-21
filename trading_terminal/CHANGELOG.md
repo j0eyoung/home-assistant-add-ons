@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.0 - Market Clock, a Ticket That Knows Your Position
+
+### 🌟 Features
+* **Market clock in the top bar.** Next to PAPER/LIVE a badge says whether the market is in pre-market, open, after hours or closed, and counts down to the next open or close ("OPEN · closes in 2h 14m", "CLOSED · opens Mon 9:30 AM ET"). It knows market holidays and early closes from Alpaca's calendar. Its dot is green when prices arrive live, amber when they're refreshed every few seconds, and grey while the market is closed. On a phone it shows just the state.
+* **The order ticket shows what you already hold.** Under the symbol: how many shares you hold, your average cost and open P/L, a **Sell all** (or **Buy to cover**) button that fills in the quantity, and your buying power.
+* **Warnings before you review an order.** The ticket warns straight away if a sell is more than you hold (and would open a short position), if you don't hold the stock at all, or if a buy costs more than your buying power. The same warnings appear again in the review box.
+* **Today's change from your account.** The Portfolio's "Today" tile now shows your account's change since the last close, in dollars and percent, so trades you closed today count too (Alpaca). Open P/L also shows the percent on what you paid.
+
+### 🔧 Improvements
+* The ticket shows the bid and ask while the market trades, and the estimate uses the price you'd likely get (the ask for a buy, the bid for a sell).
+* Renaming, creating and removing watchlists, writing a trade review and removing a journal entry now use the app's own dialog box instead of the browser's pop-up, which the Home Assistant app doesn't always show. Delete is greyed out when you have only one watchlist.
+* Profit and loss figures carry a + or - sign as well as their colour.
+* Nothing is cut off any more: long company names, menu names (such as "Gains & dividends"), idea and prediction labels wrap instead of ending in "…", and chart price labels like $100,000 fit.
+* On a phone: the small buttons (move up/down, remove, cancel) are bigger to tap, the Positions table drops the Avg cost and Value columns to fit, and the command box hint is shorter.
+* Easier to read and use with a keyboard: dim grey text has more contrast, there's a visible outline on whatever has keyboard focus, and flashing prices and animations stop when your device asks for reduced motion.
+* Help explains the market clock, and no longer says settings are kept per browser.
+
+### 🐞 Fixes
+* On a phone the Watchlists table headings sat one column to the left of their numbers.
+* The Day P/L and Open P/L figures on the Portfolio showed in small grey text instead of large green or red.
+
 ## 0.4.0 - 2026-10-19
 - **Trade PIN.** Live orders ask for a 4 to 8 digit PIN before they're sent, even when you're already signed in to Home Assistant. You create it with your first live order, or under My trading plan, where you can change it, turn it off, or ask for it on paper orders too. Five wrong tries lock orders for 15 minutes. Forgot it? Turn on `reset_trade_pin`, restart the add-on, then turn it off again.
 - **Settings shared across devices.** Chart ranges, indicators, recent tickers, the last screen and the other saved choices are now kept by the add-on, so your phone and PC match (they were stored separately in each browser).
