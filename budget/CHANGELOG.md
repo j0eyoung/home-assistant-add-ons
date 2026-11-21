@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.0 - Review New Charges, Better on Your Phone
+
+### 🌟 Features
+* **To review** (Transactions tab): charges from the last 60 days whose category is the AI's guess, one card each. Tap **Looks right**, pick another category, split it or add a receipt. **All look right** clears the rest at once. The Transactions tab and the dashboard show how many are waiting.
+* **Fix it once.** After you change a category, the app asks "Always put this merchant in that category?" right under the charge, and says how many other charges it would move. No more OK/Cancel pop-ups.
+* **Change several at once.** Tick transactions (in the queue or the full list) and move them all to a category from the bar at the bottom of the screen.
+* **Claude learns from your fixes.** When it categorizes new charges, it now sees how you've categorized each merchant before.
+
+### 🔧 Improvements
+* **Built for the phone.** The tabs scroll sideways in one row, the dashboard shows two numbers per row, and transactions are stacked rows with a ⋯ button for note, split, receipt and recurring. Buttons are bigger on touch screens, and tapping a field no longer zooms the page on iPhone.
+* Safe to spend is now the first thing on the dashboard, and headline numbers are in whole dollars.
+* Spending by category lists what you've spent on this month; categories with nothing yet are behind **Show**.
+* Notes and "mark as recurring" open right under the transaction instead of in a pop-up, and how often is picked from a list instead of typed.
+* Text in tables wraps instead of being cut off with "…". The Plan's payoff list stacks on a phone.
+* Cash flow shows the last six months on a phone so the labels fit.
+* "Re-run AI categories" leaves alone the AI picks you've confirmed.
+
 ## 0.5.7 - Tells You When Claude Isn't Connected
 
 ### 🔧 Improvements

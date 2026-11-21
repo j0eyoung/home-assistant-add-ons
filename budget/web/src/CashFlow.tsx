@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react'
-import { api, dollars, monthLabel, thisMonth } from './api.ts'
+import { api, dollars, monthLabel, thisMonth, useNarrow } from './api.ts'
 
 type Month = { month: string; income: number; spending: number; net: number; debtPayments: number; debtEnd: number | null }
 
 // Income vs spending per month as paired bars, with the month's net under
 // each pair. Every bar has a hover tooltip; the net row doubles as the table view.
 export function CashFlow({ onError }: { onError: (message: string) => void }) {
-  const [months, setMonths] = useState<Month[]>([])
+  const [all, setAll] = useState<Month[]>([])
   const [hover, setHover] = useState<{ m: Month; series: 'income' | 'spending' } | null>(null)
+  // A phone has room for six months with readable labels.
+  const narrow = useNarrow()
 
   useEffect(() => {
-    api<Month[]>('cashflow?months=12').then(setMonths).catch((e) => onError(e.message))
+    api<Month[]>('cashflow?months=12').then(setAll).catch((e) => onError(e.message))
   }, [onError])
 
+  const months = narrow ? all.slice(-6) : all
   if (!months.length) return null
   const max = Math.max(1, ...months.flatMap((m) => [m.income, m.spending]))
   const current = thisMonth()

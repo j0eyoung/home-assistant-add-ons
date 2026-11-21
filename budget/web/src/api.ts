@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 // Paths are relative (no leading slash) so requests stay inside the
 // Home Assistant ingress prefix the page is served from.
 export async function api<T = any>(path: string, method = 'GET', body?: unknown): Promise<T> {
@@ -28,6 +30,18 @@ export function addMonths(month: string, n: number): string {
 export const monthLabel = (month: string, withYear = true) =>
   new Date(`${month}-01T00:00:00Z`).toLocaleString('en-US', { month: 'short', year: withYear ? 'numeric' : undefined, timeZone: 'UTC' })
 
+// True on phone-width screens, kept current as the window resizes.
+export function useNarrow(query = '(max-width: 640px)') {
+  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const m = window.matchMedia(query)
+    const update = () => setNarrow(m.matches)
+    m.addEventListener('change', update)
+    return () => m.removeEventListener('change', update)
+  }, [query])
+  return narrow
+}
+
 // Per-viewer UI preferences; storage can be unavailable (private window), so never rely on it.
 export const pref = {
   get: (key: string, fallback: string) => {
@@ -53,6 +67,8 @@ export type Status = {
   lastSync: string | null
   aiConfigured: boolean
   health?: { issues: string[]; lastBackup: string | null }
+  // Transactions in the review queue (see NEEDS_REVIEW in server/db.ts).
+  toReview?: number
 }
 export type Split = { id: number; transaction_id: string; amount: number; category_id: number }
 export type Transaction = {
@@ -64,6 +80,7 @@ export type Transaction = {
   pending: number
   category_id: number | null
   category_source: string
+  reviewed: number
   notes: string | null
   account_name: string | null
   splits: Split[]

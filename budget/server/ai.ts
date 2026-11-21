@@ -39,6 +39,15 @@ async function categorize(maxTransactions: number): Promise<number> {
       FROM transactions t JOIN accounts a ON a.id = t.account_id WHERE t.category_source = 'none' ORDER BY t.date DESC LIMIT ?`)
     .all(maxTransactions) as PendingRow[]
   const update = db.prepare(`UPDATE transactions SET category_id = COALESCE(?, category_id), category_source = 'ai' WHERE id = ?`)
+  // The user's own choices (set by hand, or AI picks confirmed in the review
+  // queue), newest per merchant, so the AI learns from corrections.
+  const examples = (db.prepare(`
+    SELECT COALESCE(t.merchant, t.name) AS description, c.name AS category, MAX(t.date) AS last
+    FROM transactions t JOIN categories c ON c.id = t.category_id
+    WHERE (t.category_source = 'user' OR (t.category_source = 'ai' AND t.reviewed = 1))
+      AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
+    GROUP BY lower(COALESCE(t.merchant, t.name)) ORDER BY last DESC LIMIT 80`).all() as { description: string; category: string }[])
+    .map((e) => `${e.description} => ${e.category}`)
 
   let done = 0
   for (let i = 0; i < rows.length; i += 100) {
@@ -54,7 +63,7 @@ Rules:
 - Dividends, reinvestments, and core/money-market sweeps inside investment or HSA accounts are "Investment Activity".
 - Debit card purchases from an HSA are normal spending (usually "Health").
 - Court, probation, monitoring, county government and attorney payments are "Legal".
-Reply with only a JSON array of {"i": <index>, "category": "<one allowed category>"}, one entry per transaction, no other text.
+${examples.length ? `How this user has categorized merchants before (follow these when a description is the same merchant):\n${examples.join('\n')}\n` : ''}Reply with only a JSON array of {"i": <index>, "category": "<one allowed category>"}, one entry per transaction, no other text.
 
 ${JSON.stringify(batch.map((t, idx) => ({ i: idx, description: t.merchant || t.name, raw: t.name, amount: t.amount, account: `${t.account} (${t.account_type})` })))}`
     const result = parseJson(await askClaude(prompt)) as { i: number; category: string }[]

@@ -14,11 +14,12 @@ export type Proposal = {
 
 // Splits one bank line (e.g. a Costco trip) into parts with their own
 // categories. The last part always takes whatever is left, so parts add up.
-export function SplitEditor({ t, categories, proposal, onDone, onError }: {
+export function SplitEditor({ t, categories, proposal, onDone, onCancel, onError }: {
   t: Transaction
   categories: Category[]
   proposal?: Proposal
   onDone: () => void
+  onCancel?: () => void
   onError: (message: string) => void
 }) {
   const sign = t.amount < 0 ? -1 : 1
@@ -87,7 +88,7 @@ export function SplitEditor({ t, categories, proposal, onDone, onError }: {
       <div className="toolbar">
         <button onClick={() => setParts([...parts.slice(0, -1), { category_id: '', amount: '' }, parts.at(-1)!])}>Add part</button>
         <button onClick={submit} disabled={!valid || busy}>Save split</button>
-        <button onClick={onDone} disabled={busy}>Cancel</button>
+        <button onClick={onCancel ?? onDone} disabled={busy}>Cancel</button>
         {t.splits.length > 0 && <button className="link" onClick={() => save([])} disabled={busy}>Remove split</button>}
       </div>
     </div>

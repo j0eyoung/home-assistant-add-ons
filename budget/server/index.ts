@@ -6,7 +6,7 @@ import { safeToSpend, safeToSpendBrief } from './allowance.ts'
 import { briefingData, cachedBriefing, generateBriefing } from './briefing.ts'
 import { authStatus, loginState, logout, sendLoginCode, startLogin } from './claude.ts'
 import { config } from './config.ts'
-import { backupDb, categoryIdByName, db, listBackups, meta, restoreBackup, runReadOnly } from './db.ts'
+import { NEEDS_REVIEW, backupDb, categoryIdByName, db, listBackups, meta, restoreBackup, runReadOnly } from './db.ts'
 import { debtSummary } from './debts.ts'
 import { syncHealth } from './health.ts'
 import { importPlan, planBrief, planDebtOrder, planReport, resetPlan, savePlan } from './plan.ts'
@@ -71,8 +71,10 @@ app.get('/api/status', async (_req, res) => {
     lastAutoCategorize = Date.now()
     categorizeWithAi(2000).catch((err) => console.error('Categorizing waiting transactions failed:', err.message))
   }
-  res.json({ connected: isConnected(), lastSync: meta.get('last_sync'), aiConfigured: ai, health, waiting })
+  res.json({ connected: isConnected(), lastSync: meta.get('last_sync'), aiConfigured: ai, health, waiting, toReview: toReview() })
 })
+
+const toReview = () => (db.prepare(`SELECT COUNT(*) AS n FROM transactions t WHERE ${NEEDS_REVIEW}`).get() as { n: number }).n
 
 // Claude Code sign-in, driven from the Accounts tab.
 app.get('/api/claude/status', async (_req, res) => {
@@ -105,10 +107,11 @@ app.post('/api/sync', async (_req, res) => {
   res.json(await syncAndCategorize())
 })
 
-// force=true re-labels everything the AI or default chose; user and rule picks stay.
+// force=true re-labels everything the AI or default chose; user and rule picks
+// stay, and so do AI picks the user confirmed in the review queue.
 app.post('/api/categorize', async (req, res) => {
   if (!(await aiAvailable())) throw new Error("Claude isn't connected. Connect it in the Accounts tab first.")
-  if (req.body?.force) db.prepare(`UPDATE transactions SET category_source = 'none' WHERE category_source = 'ai'`).run()
+  if (req.body?.force) db.prepare(`UPDATE transactions SET category_source = 'none' WHERE category_source = 'ai' AND reviewed = 0`).run()
   res.json({ categorized: await categorizeWithAi(2000) })
 })
 
@@ -251,10 +254,13 @@ app.patch('/api/categories/:id', (req, res) => {
   res.json({ ok: true })
 })
 
+// review=1 returns the "To review" queue (any month); otherwise month,
+// category, account and q filter.
 app.get('/api/transactions', (req, res) => {
   const where: string[] = []
   const params: (string | number)[] = []
-  if (req.query.month) { where.push('substr(t.date, 1, 7) = ?'); params.push(String(req.query.month)) }
+  if (req.query.review) where.push(NEEDS_REVIEW)
+  else if (req.query.month) { where.push('substr(t.date, 1, 7) = ?'); params.push(String(req.query.month)) }
   if (req.query.category) {
     where.push('(t.category_id = ? OR EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id AND s.category_id = ?))')
     params.push(Number(req.query.category), Number(req.query.category))
@@ -265,7 +271,7 @@ app.get('/api/transactions', (req, res) => {
     params.push(`%${req.query.q}%`, `%${req.query.q}%`, `%${req.query.q}%`)
   }
   const rows = db.prepare(`
-    SELECT t.id, t.date, t.name, t.merchant, t.amount, t.pending, t.category_id, t.category_source, t.notes, a.name AS account_name
+    SELECT t.id, t.date, t.name, t.merchant, t.amount, t.pending, t.category_id, t.category_source, t.reviewed, t.notes, a.name AS account_name
     FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY t.date DESC, t.id LIMIT 1000`).all(...params) as any[]
@@ -277,23 +283,61 @@ app.get('/api/transactions', (req, res) => {
   res.json(rows.map((r) => ({ ...r, splits: splits.get(r.id) ?? [] })))
 })
 
+// The merchant's other transactions a merchant rule would move to a category:
+// not set by hand, not split, and in a different category. Params: pattern, id, category.
+const SAME_MERCHANT = `lower(COALESCE(merchant, name)) = ? AND id != ? AND category_source != 'user' AND category_id IS NOT ?
+  AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = transactions.id)`
+
+// Body: notes, reviewed, category_id, and remember (also save a merchant rule
+// and move the merchant's other transactions). Setting a category marks the
+// transaction reviewed. Without remember, `others` counts what a rule would
+// move, for the "always?" offer.
 app.patch('/api/transactions/:id', (req, res) => {
   const id = req.params.id
+  const t = db.prepare('SELECT lower(COALESCE(merchant, name)) AS pattern FROM transactions WHERE id = ?').get(id) as { pattern: string } | undefined
+  if (!t) return res.status(404).json({ error: 'No such transaction' })
   if ('notes' in req.body) db.prepare('UPDATE transactions SET notes = ? WHERE id = ?').run(String(req.body.notes ?? '').trim() || null, id)
+  if ('reviewed' in req.body) db.prepare('UPDATE transactions SET reviewed = ? WHERE id = ?').run(req.body.reviewed ? 1 : 0, id)
   let alsoUpdated = 0
+  let others = 0
   if (req.body.category_id != null) {
     const categoryId = Number(req.body.category_id)
-    db.prepare(`UPDATE transactions SET category_id = ?, category_source = 'user' WHERE id = ?`).run(categoryId, id)
+    db.prepare(`UPDATE transactions SET category_id = ?, category_source = 'user', reviewed = 1 WHERE id = ?`).run(categoryId, id)
     if (req.body.remember) {
-      const t = db.prepare('SELECT COALESCE(merchant, name) AS label FROM transactions WHERE id = ?').get(id) as { label: string }
-      const pattern = t.label.toLowerCase()
-      db.prepare('INSERT OR REPLACE INTO rules (pattern, category_id) VALUES (?, ?)').run(pattern, categoryId)
-      alsoUpdated = Number(db.prepare(`
-        UPDATE transactions SET category_id = ?, category_source = 'rule'
-        WHERE lower(COALESCE(merchant, name)) = ? AND category_source != 'user'`).run(categoryId, pattern).changes)
+      db.prepare('INSERT OR REPLACE INTO rules (pattern, category_id) VALUES (?, ?)').run(t.pattern, categoryId)
+      alsoUpdated = Number(db.prepare(`UPDATE transactions SET category_id = ?, category_source = 'rule', reviewed = 1 WHERE ${SAME_MERCHANT}`)
+        .run(categoryId, t.pattern, id, categoryId).changes)
+    } else {
+      others = (db.prepare(`SELECT COUNT(*) AS n FROM transactions WHERE ${SAME_MERCHANT}`).get(t.pattern, id, categoryId) as { n: number }).n
     }
   }
-  res.json({ ok: true, alsoUpdated })
+  res.json({ ok: true, alsoUpdated, others })
+})
+
+// Several transactions at once (review queue, Transactions table). Body: ids,
+// and category_id (set by hand; split transactions are left alone) or reviewed.
+app.post('/api/transactions/bulk', (req, res) => {
+  const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).map(String).slice(0, 2000)
+  const categoryId = req.body.category_id != null ? Number(req.body.category_id) : null
+  if (categoryId != null && !db.prepare('SELECT 1 FROM categories WHERE id = ?').get(categoryId)) {
+    return res.status(400).json({ error: 'No such category' })
+  }
+  const setCategory = db.prepare(`UPDATE transactions SET category_id = ?, category_source = 'user', reviewed = 1
+    WHERE id = ? AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = transactions.id)`)
+  const setReviewed = db.prepare('UPDATE transactions SET reviewed = ? WHERE id = ?')
+  let changed = 0
+  db.exec('BEGIN')
+  try {
+    for (const id of ids) {
+      if (categoryId != null) changed += Number(setCategory.run(categoryId, id).changes)
+      else if ('reviewed' in req.body) changed += Number(setReviewed.run(req.body.reviewed ? 1 : 0, id).changes)
+    }
+    db.exec('COMMIT')
+  } catch (err) {
+    db.exec('ROLLBACK')
+    throw err
+  }
+  res.json({ ok: true, changed })
 })
 
 // Replace a transaction's split parts; an empty list removes the split.
@@ -317,7 +361,7 @@ app.put('/api/transactions/:id/splits', (req, res) => {
   db.prepare('DELETE FROM splits WHERE transaction_id = ?').run(id)
   const insert = db.prepare('INSERT INTO splits (transaction_id, amount, category_id) VALUES (?, ?, ?)')
   for (const p of parts) insert.run(id, p.amount, p.category_id)
-  if (parts.length) db.prepare(`UPDATE transactions SET category_source = 'user' WHERE id = ?`).run(id)
+  if (parts.length) db.prepare(`UPDATE transactions SET category_source = 'user', reviewed = 1 WHERE id = ?`).run(id)
   db.exec('COMMIT')
   res.json({ ok: true })
 })
@@ -522,6 +566,7 @@ app.get('/api/summary', (_req, res) => {
     briefing: cachedBriefing()?.text ?? null,
     plan: planBrief(),
     safeToSpend: safeToSpendBrief(),
+    toReview: toReview(),
   })
 })
 

@@ -1,6 +1,6 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { addMonths, api, dollars, money, monthLabel, thisMonth } from './api.ts'
-import type { BudgetRow, Category, Status, Transaction } from './api.ts'
+import type { BudgetRow, Status } from './api.ts'
 import { Backups } from './Backups.tsx'
 import { Card } from './Card.tsx'
 import { CashFlow } from './CashFlow.tsx'
@@ -9,11 +9,7 @@ import { DebtPage } from './Debt.tsx'
 import { PlanPage, PlanStrip } from './Plan.tsx'
 import { RecurringPage } from './Recurring.tsx'
 import { SafeToSpend } from './SafeToSpend.tsx'
-import { photoToJpeg } from './photo.ts'
-import { SplitEditor } from './SplitEditor.tsx'
-import type { Proposal } from './SplitEditor.tsx'
-
-const CADENCES = ['weekly', 'every 2 weeks', 'twice a month', 'monthly', 'quarterly', 'yearly']
+import { Transactions } from './Transactions.tsx'
 
 const TABS = ['Dashboard', 'Transactions', 'Budget', 'Recurring', 'Debt', 'Plan', 'Accounts', 'Ask'] as const
 type Tab = (typeof TABS)[number]
@@ -23,12 +19,21 @@ export function App() {
   const [month, setMonth] = useState(thisMonth())
   const [status, setStatus] = useState<Status | null>(null)
   const [error, setError] = useState('')
+  const activeTab = useRef<HTMLButtonElement>(null)
 
   const loadStatus = useCallback(() => {
     api<Status>('status').then(setStatus).catch((e) => setError(e.message))
   }, [])
   useEffect(loadStatus, [loadStatus])
+  const setReviewCount = useCallback((n: number) => setStatus((s) => (s ? { ...s, toReview: n } : s)), [])
+  // On a phone the tabs scroll sideways; keep the current one in view. (Block
+  // body: newer browsers return a promise from scrollIntoView, which React
+  // would take for a cleanup function.)
+  useEffect(() => {
+    activeTab.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [tab])
 
+  const toReview = status?.toReview ?? 0
   const issues = status?.health?.issues ?? []
   return (
     <div className="app">
@@ -36,10 +41,12 @@ export function App() {
         <h1><img className="logo" src="./icon.svg" alt="" />Budget</h1>
         <nav>
           {TABS.map((t) => (
-            <button key={t} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>{t}</button>
+            <button key={t} ref={t === tab ? activeTab : undefined} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
+              {t}{t === 'Transactions' && toReview > 0 && <span className="count" aria-label={`${toReview} to review`}>{toReview}</span>}
+            </button>
           ))}
         </nav>
-        <input type="month" value={month} onChange={(e) => setMonth(e.target.value || thisMonth())} />
+        <input type="month" value={month} aria-label="Month" onChange={(e) => setMonth(e.target.value || thisMonth())} />
       </header>
       {error && <p className="error" onClick={() => setError('')}>{error}</p>}
       {status && !status.connected && tab !== 'Accounts' && (
@@ -52,8 +59,12 @@ export function App() {
         </div>
       )}
       <main>
-        {tab === 'Dashboard' && <Dashboard month={month} status={status} onError={setError} onOpenPlan={() => setTab('Plan')} />}
-        {tab === 'Transactions' && <Transactions month={month} onError={setError} />}
+        {tab === 'Dashboard' && (
+          <Dashboard month={month} status={status} onError={setError} onOpenPlan={() => setTab('Plan')} onOpenReview={() => setTab('Transactions')} />
+        )}
+        {tab === 'Transactions' && (
+          <Transactions month={month} toReview={toReview} startInReview={toReview > 0} onError={setError} onReviewCount={setReviewCount} />
+        )}
         {tab === 'Budget' && <Budget month={month} onError={setError} />}
         {tab === 'Recurring' && <RecurringPage onError={setError} />}
         {tab === 'Debt' && <DebtPage onError={setError} />}
@@ -68,12 +79,18 @@ export function App() {
 type PageProps = { onError: (message: string) => void }
 type Tracked = { id: number; name: string; total: number; since: string; thisMonth: number }
 
-function Dashboard({ month, status, onError, onOpenPlan }: PageProps & { month: string; status: Status | null; onOpenPlan: () => void }) {
+function Dashboard({ month, status, onError, onOpenPlan, onOpenReview }: PageProps & {
+  month: string
+  status: Status | null
+  onOpenPlan: () => void
+  onOpenReview: () => void
+}) {
   const [rows, setRows] = useState<BudgetRow[]>([])
   const [worth, setWorth] = useState<{ date: string; assets: number; debts: number }[]>([])
   const [tracked, setTracked] = useState<Tracked[]>([])
   const [insight, setInsight] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [allCategories, setAllCategories] = useState(false)
 
   useEffect(() => {
     api<BudgetRow[]>(`budget?month=${month}`).then(setRows).catch((e) => onError(e.message))
@@ -100,30 +117,49 @@ function Dashboard({ month, status, onError, onOpenPlan }: PageProps & { month: 
     setBusy(false)
   }
 
+  const toReview = status?.toReview ?? 0
+  const current = month === thisMonth()
+  // Categories with spending this month first; budgeted or last-month-only ones behind "Show".
+  const withSpending = expenses.filter((r) => r.spent > 0).sort((a, b) => b.spent - a.spent)
+  const quiet = expenses.filter((r) => r.spent <= 0 && (r.budget > 0 || r.prev > 0)).sort((a, b) => b.budget + b.prev - (a.budget + a.prev))
+
   return (
     <>
-      {month === thisMonth() && <Today status={status} onError={onError} />}
-      {month === thisMonth() && <SafeToSpend onError={onError} onOpenPlan={onOpenPlan} />}
-      {month === thisMonth() && <PlanStrip onError={onError} onOpen={onOpenPlan} />}
+      {current && <SafeToSpend onError={onError} onOpenPlan={onOpenPlan} />}
+      {toReview > 0 && (
+        <button className="nudge" onClick={onOpenReview}>
+          <span>
+            <strong>{toReview} {toReview === 1 ? 'charge' : 'charges'} to check</strong>
+            <span className="muted"> · their categories are a guess</span>
+          </span>
+          <span className="nudge-go">Review →</span>
+        </button>
+      )}
+      {current && <Today status={status} onError={onError} />}
+      {current && <PlanStrip onError={onError} onOpen={onOpenPlan} />}
       <div className="cards">
-        <Card label="Spent" value={money(spent)} sub={`${budgeted ? `of ${money(budgeted)} budgeted · ` : ''}${dollars(prevSpent)} last month`} />
-        <Card label="Income" value={money(income)} sub={`${money(income - spent)} net`} />
-        <Card label="Pre-tax savings" value={money(saved)} sub="401k, HSA, investment activity" />
-        <Card label="Net worth" value={latest ? money(latest.assets - latest.debts) : '—'} sub={latest ? `${money(latest.debts)} owed` : 'connect an account'} />
+        <Card label="Spent" value={dollars(spent)} sub={`${budgeted ? `of ${dollars(budgeted)} budgeted · ` : ''}${dollars(prevSpent)} last month`} />
+        <Card label="Income" value={dollars(income)} sub={`${dollars(income - spent)} net`} />
+        <Card label="Pre-tax savings" value={dollars(saved)} sub="401k, HSA, investment activity" />
+        <Card label="Net worth" value={latest ? dollars(latest.assets - latest.debts) : '—'} sub={latest ? `${dollars(latest.debts)} owed` : 'connect an account'} />
         {tracked.map((t) => {
           const months = Math.max(1, monthsBetween(t.since.slice(0, 7), thisMonth()) + 1)
           return (
-            <Card key={t.id} label={`${t.name} (to date)`} value={money(t.total)}
-              sub={`${money(t.thisMonth)} in ${monthLabel(month, false)} · ${dollars(t.total / months)}/mo since ${monthLabel(t.since.slice(0, 7))}`} />
+            <Card key={t.id} label={`${t.name} (to date)`} value={dollars(t.total)}
+              sub={`${dollars(t.thisMonth)} in ${monthLabel(month, false)} · ${dollars(t.total / months)}/mo since ${monthLabel(t.since.slice(0, 7))}`} />
           )
         })}
       </div>
       <section>
         <h2>Spending by category <span className="muted">vs {monthLabel(addMonths(month, -1), false)}</span></h2>
-        {expenses.filter((r) => r.spent > 0 || r.budget > 0 || r.prev > 0).sort((a, b) => b.spent - a.spent).map((r) => (
-          <CategoryBar key={r.id} row={r} />
-        ))}
-        {!expenses.some((r) => r.spent > 0 || r.budget > 0) && <p className="muted">No spending recorded for this month.</p>}
+        {withSpending.map((r) => <CategoryBar key={r.id} row={r} />)}
+        {allCategories && quiet.map((r) => <CategoryBar key={r.id} row={r} />)}
+        {quiet.length > 0 && (
+          <button className="link left" onClick={() => setAllCategories(!allCategories)}>
+            {allCategories ? 'Hide categories with no spending' : `Show ${quiet.length} with no spending yet`}
+          </button>
+        )}
+        {!withSpending.length && <p className="muted">No spending recorded for this month.</p>}
       </section>
       <CashFlow onError={onError} />
       {worth.length > 1 && (
@@ -213,198 +249,6 @@ function Sparkline({ values }: { values: number[] }) {
     <svg className="sparkline" viewBox="0 0 100 40" preserveAspectRatio="none">
       <polyline points={points} fill="none" vectorEffect="non-scaling-stroke" />
     </svg>
-  )
-}
-
-function Transactions({ month, onError }: PageProps & { month: string }) {
-  const [rows, setRows] = useState<Transaction[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
-  const [q, setQ] = useState('')
-  const [category, setCategory] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [splitting, setSplitting] = useState<string | null>(null)
-  const [proposal, setProposal] = useState<Proposal | undefined>()
-  const [reading, setReading] = useState<string | null>(null)
-  const receiptInput = useRef<HTMLInputElement>(null)
-  const receiptFor = useRef<Transaction | null>(null)
-
-  const load = useCallback(() => {
-    const params = new URLSearchParams({ month })
-    if (q) params.set('q', q)
-    if (category) params.set('category', category)
-    api<Transaction[]>(`transactions?${params}`).then(setRows).catch((e) => onError(e.message))
-  }, [month, q, category, onError])
-
-  useEffect(load, [load])
-  useEffect(() => {
-    api<Category[]>('categories').then(setCategories).catch((e) => onError(e.message))
-  }, [onError])
-  const categoryName = (id: number | null) => categories.find((c) => c.id === id)?.name ?? '—'
-
-  const recategorizeAll = async () => {
-    setBusy(true)
-    try {
-      await api('categorize', 'POST', { force: true })
-      load()
-    } catch (e: any) {
-      onError(e.message)
-    }
-    setBusy(false)
-  }
-
-  const recategorize = async (t: Transaction, categoryId: number) => {
-    const label = t.merchant || t.name
-    const remember = window.confirm(`Always put "${label}" in this category?\n\nOK = this and all matching transactions (adds a merchant rule)\nCancel = just this one (for merchants like Costco that differ each trip)`)
-    try {
-      await api(`transactions/${encodeURIComponent(t.id)}`, 'PATCH', { category_id: categoryId, remember })
-      load()
-    } catch (e: any) {
-      onError(e.message)
-    }
-  }
-
-  const openSplit = (t: Transaction, p?: Proposal) => {
-    setProposal(p)
-    setSplitting(splitting === t.id && !p ? null : t.id)
-  }
-
-  // Receipt photo: Claude groups the items into categories. One category just
-  // recategorizes; several open the split editor prefilled for confirmation.
-  const pickReceipt = (t: Transaction) => {
-    receiptFor.current = t
-    receiptInput.current?.click()
-  }
-  const readReceipt = async (file: File | undefined) => {
-    const t = receiptFor.current
-    if (receiptInput.current) receiptInput.current.value = ''
-    if (!file || !t) return
-    setReading(t.id)
-    try {
-      const image = await photoToJpeg(file)
-      const r = await api(`transactions/${encodeURIComponent(t.id)}/receipt`, 'POST', { image: image.data, media_type: image.mediaType })
-      const warning = r.mismatch ? `The receipt total (${money(r.receiptTotal)}) doesn't match the charge (${money(t.amount)}); amounts were scaled to the charge. Check it's the right receipt.` : undefined
-      if (r.parts.length === 1) {
-        if (window.confirm(`${r.summary}\n\nPut this ${money(t.amount)} charge in ${r.parts[0].category}?${warning ? `\n\n${warning}` : ''}`)) {
-          await api(`transactions/${encodeURIComponent(t.id)}`, 'PATCH', { category_id: r.parts[0].category_id, ...(t.notes ? {} : { notes: r.summary }) })
-          load()
-        }
-      } else {
-        openSplit(t, { parts: r.parts, summary: r.summary, warning })
-      }
-    } catch (e: any) {
-      onError(e.message)
-    }
-    setReading(null)
-  }
-
-  const markRecurring = async (t: Transaction) => {
-    const label = t.merchant || t.name
-    const answer = window.prompt(`How often does ${label} charge?\n${CADENCES.join(', ')}`, 'monthly')
-    if (answer == null) return
-    const cadence = answer.trim().toLowerCase()
-    if (!CADENCES.includes(cadence)) return onError(`"${answer}" isn't one of: ${CADENCES.join(', ')}`)
-    try {
-      await api('recurring', 'PUT', { label, status: 'yes', cadence })
-    } catch (e: any) {
-      onError(e.message)
-    }
-  }
-
-  const editNote = async (t: Transaction) => {
-    const notes = window.prompt(`Note for ${t.merchant || t.name} (${money(-t.amount)})`, t.notes ?? '')
-    if (notes == null) return
-    try {
-      await api(`transactions/${encodeURIComponent(t.id)}`, 'PATCH', { notes })
-      load()
-    } catch (e: any) {
-      onError(e.message)
-    }
-  }
-
-  return (
-    <section>
-      <div className="toolbar">
-        <input placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select value={category} onChange={(e) => setCategory(e.target.value)}>
-          <option value="">All categories</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        <span className="muted">{rows.length} transactions</span>
-        <button onClick={recategorizeAll} disabled={busy}>{busy ? 'Categorizing…' : 'Re-run AI categories'}</button>
-        {/* capture opens the camera on phones; on desktop it's a normal file picker */}
-        <input ref={receiptInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => readReceipt(e.target.files?.[0])} />
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr><th className="date">Date</th><th>Description</th><th className="account">Account</th><th className="category">Category</th><th className="num">Amount</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((t) => {
-              const splitTotal = t.splits.reduce((s, p) => s + p.amount, 0)
-              return (
-                <Fragment key={t.id}>
-                  <tr className={t.pending ? 'pending' : ''}>
-                    <td className="date">{t.date}</td>
-                    <td>
-                      <div className="desc">
-                        <span className="desc-text" title={t.name}>{t.merchant || t.name}{t.pending ? ' (pending)' : ''}</span>
-                        <span className={`row-actions ${reading === t.id ? 'busy' : ''}`}>
-                          {reading === t.id ? (
-                            <span className="muted">reading receipt…</span>
-                          ) : (
-                            <>
-                              <button className="mini" onClick={() => editNote(t)}>{t.notes ? 'edit note' : 'note'}</button>
-                              {!t.pending && <button className="mini" onClick={() => openSplit(t)}>split</button>}
-                              {!t.pending && t.amount > 0 && <button className="mini" onClick={() => pickReceipt(t)}>receipt</button>}
-                              {t.amount > 0 && <button className="mini" onClick={() => markRecurring(t)}>recurring</button>}
-                            </>
-                          )}
-                        </span>
-                      </div>
-                      {t.notes && <div className="note" title={t.notes}>{t.notes}</div>}
-                    </td>
-                    <td className="account muted" title={t.account_name ?? ''}>{t.account_name}</td>
-                    <td className="category">
-                      {t.splits.length ? (
-                        <button className="mini split-label" onClick={() => openSplit(t)}>
-                          Split into {t.splits.length}{Math.abs(splitTotal - t.amount) > 0.005 ? ' ⚠' : ''}
-                        </button>
-                      ) : (
-                        <>
-                          <select value={t.category_id ?? ''} onChange={(e) => recategorize(t, Number(e.target.value))}>
-                            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                          <span className="tag">{t.category_source}</span>
-                        </>
-                      )}
-                    </td>
-                    <td className={`num ${t.amount < 0 ? 'inflow' : ''}`}>{money(-t.amount)}</td>
-                  </tr>
-                  {t.splits.map((s) => (
-                    <tr className="split-row" key={`${t.id}-${s.id}`}>
-                      <td className="date" />
-                      <td className="muted">↳ part</td>
-                      <td className="account" />
-                      <td className="category">{categoryName(s.category_id)}</td>
-                      <td className="num muted">{money(-s.amount)}</td>
-                    </tr>
-                  ))}
-                  {splitting === t.id && (
-                    <tr className="split-edit-row">
-                      <td colSpan={5}>
-                        <SplitEditor key={proposal ? proposal.summary : 'manual'} t={t} categories={categories} proposal={proposal} onError={onError}
-                          onDone={() => { setSplitting(null); setProposal(undefined); load() }} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
   )
 }
 

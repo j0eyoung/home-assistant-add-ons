@@ -153,6 +153,17 @@ addColumn('accounts', 'promo_apr', 'REAL')
 addColumn('accounts', 'promo_end', 'TEXT')
 // Tracked categories get their own running-total card on the dashboard.
 const trackAdded = addColumn('categories', 'track', 'INTEGER NOT NULL DEFAULT 0')
+// 1 once the user has looked at a transaction's category (confirmed it,
+// changed it or split it). See NEEDS_REVIEW.
+addColumn('transactions', 'reviewed', 'INTEGER NOT NULL DEFAULT 0')
+
+// The Transactions tab's "To review" queue: posted transactions from the last
+// REVIEW_DAYS whose category is a guess (the AI's, or only the default 'Other')
+// and that the user hasn't looked at. Rule and user categories never need it.
+// The window keeps old history (imports, restored backups) out of the queue.
+export const REVIEW_DAYS = 60
+export const NEEDS_REVIEW = `t.reviewed = 0 AND t.pending = 0 AND t.category_source IN ('ai', 'none')
+  AND t.date >= date('now', '-${REVIEW_DAYS} days')`
 
 // Every total (budget, cash flow, insights, recurring) reads this view, so
 // a split transaction counts once per part and never as its parent.

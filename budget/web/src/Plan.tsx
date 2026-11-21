@@ -295,11 +295,11 @@ function GoalTable({ goals, projection, report, onTarget }: {
                   </div>
                 </td>
                 <td className="num">{money(g.now)}</td>
-                <td className="when">
+                <td className="when" data-label="Target date">
                   <input type="month" value={g.by ?? ''} onChange={(e) => onTarget(g.id, e.target.value || null)} aria-label={`Target date for ${g.name}`} />
                   {g.deadline && g.deadline !== g.by && <div className="muted">promo: by {monthLabel(g.deadline)}</div>}
                 </td>
-                <td className="when">{g.status === 'done' ? 'done' : when(reached)}</td>
+                <td className="when" data-label={debt ? 'Paid off' : 'Reached'}>{g.status === 'done' ? 'done' : when(reached)}</td>
                 <td className="status-col">
                   <span className={`status ${t.tone}`}>{t.label}</span>
                   {g.limit != null && <div className="muted">OK up to {dollars(g.limit)}/mo</div>}

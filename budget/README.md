@@ -17,7 +17,8 @@ Coming from an older Budget install (the separate `budget` repo): the database d
 
 - **Safe to spend this week** (top of the dashboard): the plan's monthly spending limit minus your regular bills (mortgage, utilities, insurance, subscriptions), as a weekly amount, with what's left this week and per day. Bills and loan payments don't count against it; gas, groceries and other day-to-day spending do.
 - **Dashboard**: today's check ("anything to flag?"), spend vs budget with last-month comparison, tracked categories with running totals, monthly cash flow, net worth.
-- **Transactions**: AI categories, merchant rules, notes, and splits (one Costco trip into groceries + pharmacy). **receipt** takes a photo of the receipt; Claude groups the items by category and the split editor opens prefilled for you to confirm. The photo isn't stored.
+- **Transactions**: AI categories, merchant rules, notes, and splits (one Costco trip into groceries + pharmacy). **receipt** takes a photo of the receipt; Claude groups the items by category and the split editor opens prefilled for you to confirm. The photo isn't stored. Tick several transactions to move them to a category at once.
+- **To review** (Transactions tab, with a count on the tab and the dashboard): charges from the last 60 days whose category is the AI's guess. Mark each as right, or change it; a change offers to become a rule for that merchant ("Always put Starbucks in Dining?"), with a count of the other charges it would move. Claude sees your past choices when it categorizes new charges.
 - **Budget**: monthly targets, 3-month averages, one-click fill from averages.
 - **Recurring**: detected bills and subscriptions, monthly total, price increases, ones that may have stopped. Change how often, mark one as not recurring (with undo), or add a missed one with **recurring** on its transaction.
 - **Debt**: current payoff pace per account, promo rates (e.g. 0% until a date), and avalanche vs snowball vs your plan's order with extra payments. Warns when an order wouldn't clear a promo balance in time.
@@ -39,7 +40,7 @@ Coming from an older Budget install (the separate `budget` repo): the database d
 
 Send `Authorization: Bearer <api_token>` (not needed through ingress).
 
-- `GET /api/summary`: net worth, this month's spend vs budget, over-budget categories, balances, recent charges, bills due in the next 7 days, connection issues, today's briefing text, the plan (debt-free date, next milestones, the card being paid off, warnings), and this week's safe-to-spend.
+- `GET /api/summary`: net worth, this month's spend vs budget, over-budget categories, balances, recent charges, bills due in the next 7 days, connection issues, today's briefing text, the plan (debt-free date, next milestones, the card being paid off, warnings), this week's safe-to-spend, and `toReview` (charges waiting in the review queue).
 - `GET /api/briefing?generate=1`: today's "anything to flag?" text (generated through Claude if it hasn't been yet today) plus the data behind it.
 
 ## Development

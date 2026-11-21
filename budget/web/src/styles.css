@@ -84,19 +84,15 @@ section .item { background: transparent; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .grow { flex: 1; min-width: 200px; }
 .table-wrap { overflow-x: auto; }
-/* Fixed layout: columns share the available width and long text truncates,
-   so the table never needs a horizontal scrollbar on desktop. */
-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-th.date, td.date { width: 96px; }
-th.account, td.account { width: 24%; }
-th.category, td.category { width: 230px; }
-th.num, td.num { width: 110px; }
-td.category select { max-width: calc(100% - 44px); }
+/* Columns size to their content and text wraps at spaces; nothing is cut off.
+   Dates, amounts and other short values stay on one line. */
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); overflow-wrap: break-word; }
+td.date, td.num { white-space: nowrap; }
+td.category { white-space: nowrap; }
+th.sel, td.sel { width: 28px; padding-right: 0; }
 @media (max-width: 800px) {
-  th.account, td.account, .tag { display: none; }
-  th.category, td.category { width: 150px; }
-  td.category select { max-width: 100%; }
+  th.acct, td.acct { display: none; }
 }
 th { color: var(--muted); font-size: 13px; font-weight: 500; }
 tfoot td { font-weight: 600; border-bottom: none; }
@@ -145,28 +141,87 @@ label.map { font-size: 13px; color: var(--muted); }
 .cf-bar { width: 100%; min-height: 1px; border-radius: 4px 4px 0 0; }
 .cf-hit:hover .cf-bar { filter: brightness(1.15); }
 .cf-label { text-align: center; font-size: 12px; color: var(--muted); margin-top: 4px; }
-.cf-net { text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cf-net { text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cf-net.pos { color: var(--good); }
 .cf-net.neg { color: var(--bad); }
 .cf-tip { margin: 8px 0 0; min-height: 1.45em; font-size: 13px; }
 
 /* Transactions: notes, splits */
-.desc { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.desc-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.row-actions { display: flex; gap: 4px; flex: none; }
-/* With a mouse, row actions appear on hover so descriptions keep their width;
-   on touch screens they're always shown. */
+.desc { display: flex; align-items: center; gap: 8px; min-width: 0; position: relative; }
+.desc-text { flex: 1; min-width: 0; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 4px; flex: none; }
+.tx-meta { display: none; }
+button.more { display: none; }
+/* With a mouse, row actions appear on hover, over the end of the description,
+   so descriptions keep their width. On touch screens the ⋯ button shows them. */
 @media (hover: hover) {
-  .row-actions { display: none; }
+  .row-actions { display: none; position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: var(--surface); padding-left: 6px; }
   tr:hover .row-actions, .row-actions.busy { display: flex; }
+}
+@media (hover: none) {
+  button.more { display: inline-block; }
+  .tx-table .row-actions { display: none; }
+  .tx-table tr.focused .row-actions, .tx-table .row-actions.busy { display: flex; }
+  .tx-table tr.focused .desc { flex-wrap: wrap; }
+  .app button.mini { padding: 5px 10px; font-size: 13px; border-color: var(--border); }
+  /* 16px stops iOS zooming the page when a field gets focus. */
+  input, select, textarea { font-size: 16px; }
 }
 button.mini { padding: 0 6px; font-size: 11px; color: var(--muted); border-color: transparent; background: transparent; }
 button.mini:hover { border-color: var(--border); color: var(--text); }
 button.split-label { font-size: 13px; color: var(--text); border-color: var(--border); padding: 3px 8px; }
-.note { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.note { font-size: 12px; color: var(--muted); }
 tr.split-row td { border-bottom-style: dashed; padding-top: 3px; padding-bottom: 3px; font-size: 13px; }
-tr.split-edit-row td { white-space: normal; overflow: visible; background: var(--bg); }
+tr.panel-row td { background: var(--bg); }
+tr.selected td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tag.guess { color: var(--accent); }
 .split-editor { padding: 6px 0; }
+
+/* Transactions: mode switch, bulk bar, inline panels, review queue */
+.count {
+  display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 10px;
+  background: var(--accent); color: var(--surface); font-size: 12px; font-weight: 600; text-align: center; line-height: 18px;
+}
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 2px; gap: 2px; background: var(--bg); }
+.segmented button { border-color: transparent; background: transparent; border-radius: 6px; white-space: nowrap; }
+.segmented button.active { background: var(--surface); border-color: var(--border); font-weight: 600; }
+/* Floats over the page so nothing jumps when it goes away. */
+.toast {
+  position: fixed; z-index: 5; left: 50%; bottom: 20px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px);
+  margin: 0; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--good); background: var(--surface); color: var(--text);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); cursor: pointer;
+}
+.bulk-bar {
+  position: sticky; bottom: 8px; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px 12px; margin-top: 12px; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+}
+.panel { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 0; }
+.panel > span:first-child { flex: 1 1 260px; }
+.panel-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.review-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px; }
+.review-head p { margin: 0; flex: 1 1 320px; }
+.empty { margin: 8px 0; color: var(--good); }
+.review-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+.review-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.review-card.wide { grid-column: 1 / -1; }
+.review-card.selected { border-color: var(--accent); }
+.rc-top { display: flex; align-items: flex-start; gap: 10px; }
+.rc-top input[type='checkbox'] { margin-top: 4px; }
+.rc-what { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.rc-merchant { font-weight: 600; }
+.rc-amount { font-weight: 600; white-space: nowrap; }
+.rc-cat { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rc-cat select { flex: 1 1 150px; min-width: 0; max-width: 260px; }
+.right-end { margin-left: auto; }
+.rc-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* Dashboard: link to the review queue */
+button.nudge {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; text-align: left;
+  padding: 12px 16px; margin-bottom: 16px; border-radius: 10px; border-color: var(--accent);
+}
+.nudge-go { color: var(--accent); font-weight: 600; white-space: nowrap; }
 .split-editor .toolbar { margin: 8px 0 0; }
 .split-rest { min-width: 110px; display: inline-block; }
 
@@ -259,10 +314,71 @@ table.form-table { table-layout: auto; width: auto; max-width: 100%; }
 .allowance-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px 24px; }
 .allowance-cols h3 { margin-top: 6px; }
 .line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 3px 0; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
-.line > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.line > span:first-child { min-width: 0; overflow-wrap: break-word; }
+.line > span:last-child { white-space: nowrap; }
 
 .insight { white-space: pre-wrap; margin: 0 0 12px; }
 .qa { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
 .question { font-weight: 600; margin-bottom: 4px; }
 code.inline { display: inline; font-size: 12px; margin: 0; overflow-wrap: anywhere; }
 code { display: block; white-space: pre-wrap; font-size: 12px; margin-top: 6px; }
+
+/* Phones (the Home Assistant app): one row of sideways-scrolling tabs under
+   the title and month, two cards per row, transactions as stacked rows. */
+@media (max-width: 640px) {
+  .app { padding: 10px; }
+  header { gap: 8px; margin-bottom: 12px; }
+  header input[type='month'] { order: 2; margin-left: auto; }
+  nav {
+    order: 3; flex: 1 0 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    margin: 0 -10px; padding: 0 10px; scroll-padding-inline: 10px;
+  }
+  nav::-webkit-scrollbar { display: none; }
+  nav button { flex: none; white-space: nowrap; }
+  section, .card, .item { padding: 12px; margin-bottom: 12px; }
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .cards .card { margin-bottom: 0; }
+  .big { font-size: 21px; }
+  .hero-number { font-size: 30px; }
+  .allowance-main .hero-number { font-size: 30px; }
+
+  /* Tables: smaller type and padding so most fit without sideways scrolling. */
+  table { font-size: 14px; }
+  th, td { padding: 6px 4px; }
+  input.amount { width: 78px; }
+  input.small { width: 62px; }
+  /* Payoff goals: one stacked block per goal; the hidden headers move into labels. */
+  .plan-table thead { display: none; }
+  .plan-table, .plan-table tbody { display: block; }
+  .plan-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .plan-table td { display: block; width: auto; padding: 0; border: none; }
+  .plan-table td.when::before { content: attr(data-label); display: block; font-size: 12px; color: var(--muted); }
+  .plan-table td.when:nth-child(4) { text-align: right; }
+  .plan-table td.status-col { grid-column: 1 / -1; width: auto; }
+  .plan-table td.when { width: auto; }
+  .plan-table td.when input { width: auto; max-width: 100%; }
+  .debt-table th.promo, .debt-table td.promo { width: auto; }
+
+  .segmented { flex: 1 0 100%; }
+  .segmented button { flex: 1; }
+  .review-list { grid-template-columns: minmax(0, 1fr); }
+
+  .tx-table thead { display: none; }
+  .tx-table, .tx-table tbody { display: block; }
+  .tx-table tr {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'sel desc amt' 'sel cat cat';
+    column-gap: 10px; padding: 10px 2px; border-bottom: 1px solid var(--border);
+  }
+  .tx-table td { display: block; border: none; padding: 0; }
+  .tx-table td.date, .tx-table td.acct { display: none; }
+  .tx-table td.sel { grid-area: sel; width: auto; }
+  .tx-table td.desc-cell { grid-area: desc; }
+  .tx-table td.num { grid-area: amt; font-weight: 600; }
+  .tx-table td.category { grid-area: cat; margin-top: 6px; white-space: normal; }
+  .tx-table td.category select { max-width: 100%; }
+  .tx-meta { display: block; }
+  .tx-table tr.split-row { display: flex; gap: 10px; padding: 3px 2px 3px 32px; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .tx-table tr.split-row td.sel { display: none; }
+  .tx-table tr.split-row td.category { margin: 0 0 0 auto; }
+  .tx-table tr.panel-row { display: block; padding: 0 2px 8px 32px; }
+}
