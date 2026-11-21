@@ -364,6 +364,11 @@ EXTRA_PHOTOS = {
     "sukhasana": ("lululemon athletica", "CC BY 2.0", "https://commons.wikimedia.org/wiki/File:Cross-legged_sitting,_female.jpg"),
     "upavistha-konasana": ("LYUbdevanshi77", "CC0", "https://commons.wikimedia.org/wiki/File:Devanshi_Ugrasan.jpg"),
     "wrist-release": ("BruceBlaus", "CC BY-SA 4.0", "https://commons.wikimedia.org/wiki/File:Exercise_Wrist_Flexor_Stretch.png"),
+    "virasana": ("Kennguru", "CC BY 3.0", "https://commons.wikimedia.org/wiki/File:Virasana_Yoga-Asana_Nina-Mel.jpg"),
+    "alternate-nostril": ("Thamizhpparithi Maari", "CC BY-SA 3.0", "https://commons.wikimedia.org/wiki/File:A_style_of_nadi_suddhi_1.JPG"),
+    "table-top": ("Mary O'Neill", "public domain", "https://commons.wikimedia.org/wiki/File:Yoga_at_Your_Park_-_Bidalasana.jpg"),
+    "diaphragmatic-breathing": ("André R. Maciel", "CC BY-SA 4.0", "https://commons.wikimedia.org/wiki/File:Umbigo_do_tao_yin.jpg"),
+    "urdhva-hastasana": ("Mr. Yoga", "CC BY-SA 4.0", "https://commons.wikimedia.org/wiki/File:Mr-yoga-upward_salute_1.jpg"),
 }
 
 

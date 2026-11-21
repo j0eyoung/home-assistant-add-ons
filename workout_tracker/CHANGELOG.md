@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.1 - More Yoga Pictures
+
+### 🔧 Improvements
+* **Five more poses have a picture:** hero pose, alternate-nostril breathing, tabletop, belly breathing and mountain with arms up. They're free-licence photos from Wikimedia Commons, with the photographer's credit under each one. The other poses that are still text-only had no suitable free photo.
+
 ## 0.13.0 - Smarter Weight Steps, 4-Week Plans from the Coach
 
 ### 🌟 Features
