@@ -247,6 +247,11 @@ def stats():
     return season.stats()
 
 
+@app.get("/api/recap")
+def recap():
+    return season.recap()
+
+
 @app.get("/api/days")
 def days():
     return season.list_days()

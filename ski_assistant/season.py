@@ -78,6 +78,16 @@ def stats():
             "last_season": _totals(last_all), "ski_progress": ski}
 
 
+def recap():
+    """Data for the season recap animation: this season so far, last season to the same date, days per resort."""
+    s = stats()
+    start = season_start()
+    year = int(start[:4])
+    return {"season": f"{year}/{str(year + 1)[2:]}", "as_of": util.today().isoformat(),
+            "this": s["this_season"], "last": s["last_season_to_date"], "has_last": s["last_season"]["days"] > 0,
+            "resorts": pass_summary(start)["per_resort"]}
+
+
 # Gear upkeep
 def add_service(date, equipment, kind):
     return db.x("INSERT INTO service(date, equipment, kind) VALUES (?,?,?)", (date, equipment, kind))

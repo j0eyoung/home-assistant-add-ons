@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0 - Season Recap, Clearer Charts
+
+### 🌟 Features
+* **Season recap.** A "Season recap" button on the Season log tab plays a 15-second animation of your season so far: days on snow (board and skis), vertical and how many times up Everest that is, top speed, the resorts you rode, and how you compare with last season by the same date. "Save video" saves it as a phone-shaped video to share. Tested in Chrome; not yet tried in the Home Assistant phone app.
+
+### 🔧 Improvements
+* **Snow charts are easier to read.** Weekends are shaded, the three biggest snow days on a resort page show their inches, and in dark mode days 11-15 are a clearly darker blue than days 1-10.
+* **Easier with a keyboard or screen reader.** Resort rows in the forecast are proper links, status messages are read out, form fields are labelled, and the page has a heading. The radar doesn't start moving by itself when your device is set to reduce motion.
+* When a resort's forecast hasn't loaded, it says Open-Meteo didn't answer and that it tries again in a minute.
+* An empty season log says how to add days instead of showing an empty table.
+
 ## 0.6.0 - Best Bet, Phone Tab Bar, Instant Forecast
 
 ### 🌟 Features

@@ -16,7 +16,18 @@ const hm = n => n >= 60 ? `${Math.floor(n / 60)}h${String(n % 60).padStart(2, '0
 const isoPlus = n => { const d = new Date(today + 'T12:00'); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA'); };
 const dayName = (iso, long) => iso === today ? 'Today' : iso === isoPlus(1) ? 'Tomorrow'
   : new Date(iso + 'T12:00').toLocaleDateString('en-US', { weekday: long ? 'long' : 'short' });
-const monthDay = iso => new Date(iso + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+// Index ranges of Saturdays and Sundays, for the shaded weekend bands behind the snow bars
+const weekendBands = dates => {
+  const out = [];
+  dates.forEach((iso, i) => {
+    const w = new Date(iso + 'T12:00').getDay();
+    if (w !== 0 && w !== 6) return;
+    const last = out[out.length - 1];
+    if (last && last[1] === i - 1) last[1] = i; else out.push([i, i]);
+  });
+  return out;
+};
+const monthDay = iso =>new Date(iso + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 // "2:15pm", with the day in front when it isn't today
 const clock = s => { const d = new Date(s * 1000), t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase();
   return d.toLocaleDateString('en-CA') === today ? t : `${DOW[d.getDay()]} ${t}`; };
@@ -83,7 +94,7 @@ async function loadForecast() {
 }
 function asOfLine() {
   const ats = (FC || []).filter(r => r.summary && r.summary.as_of).map(r => r.summary.as_of);
-  if (!FC_FRESH) return ats.length ? `Showing the forecast from ${clock(Math.min(...ats))} while a fresh one loads...` : '';
+  if (!FC_FRESH) return ats.length ? `Showing the forecast from ${clock(Math.min(...ats))} while a fresh one loads…` : '';
   if (!ats.length) return '';
   const oldest = Math.min(...ats);
   return `Forecast from ${clock(oldest)}.` + (Date.now() / 1000 - oldest > 5400 ? ' Open-Meteo hasn’t answered since then, so this is the last good forecast.' : '');
@@ -114,7 +125,7 @@ function renderHero() {
     <p class="hero-leave">Leave at <b>${t12(l.leave_at)}</b> · ${hm(l.drive_min)} drive${l.reason === 'traffic' ? ', ahead of the I-70 rush' : ''}</p>
     <div class="row"><button class="primary" onclick="going('${sel.date}', '${esc(sel.id)}', false, this)">I'm going</button>
       <button onclick="planDay('${sel.date}')">All resorts ${sel.date === today ? 'today' : 'that day'}</button>
-      <span class="mute goingmsg"></span></div>
+      <span class="mute goingmsg" role="status"></span></div>
     ${sel.next_best ? `<p class="small">Next best: ${esc(sel.next_best)}</p>` : ''}
     <div class="days" role="group" aria-label="Pick a day">${days.map(x => `
       <button class="day${x === sel ? ' on' : ''}" aria-pressed="${x === sel}" onclick="HERO_DATE='${x.date}'; renderHero()">
@@ -151,20 +162,21 @@ function renderForecast() {
   const rows = [...FC].sort((a, b) => key === 'name' ? a.name.localeCompare(b.name) : ((b.summary || {})[key] || 0) - ((a.summary || {})[key] || 0));
   $('frows').innerHTML = `<div class="frow head"><div>Resort</div><div class="tot c-past">Last 5</div><div class="tot">Next 5</div>
      <div class="tot">6-10</div><div class="tot">11-15</div><div class="c-strip">Daily snow (today marked)</div></div>` +
-    rows.map(r => r.error ? `<div class="frow"><div class="name">${esc(r.name)}</div><div class="mute" style="grid-column:2/-1">${esc(r.error)}</div></div>` :
-      `<div class="frow" onclick="location.hash='resort/${r.id}'">
+    rows.map(r => r.error ? `<div class="frow"><div class="name">${esc(r.name)}</div><div class="mute" style="grid-column:2/-1">No forecast yet: Open-Meteo didn’t answer (${esc(r.error)}). It tries again in a minute.</div></div>` :
+      `<a class="frow" href="#resort/${r.id}">
         <div><div class="name">${esc(r.name)}${r.pass === 'keystone' ? '<span class="badge">Keystone</span>' : ''}</div>
           <div class="small">${reportLine(r)}</div></div>
         <div class="tot c-past">${inch(r.summary.last5_in)}</div><div class="tot"><b class="${r.summary.next5_in >= ((OUT && OUT.powder_in) || 6) ? 'deep' : ''}">${inch(r.summary.next5_in)}</b></div>
         <div class="tot">${inch(r.summary.days6_10_in)}</div><div class="tot mute">${inch(r.summary.days11_15_in)}</div>
-        <div class="strip chart" id="strip_${r.id}"></div></div>`).join('');
+        <div class="strip chart" id="strip_${r.id}"></div></a>`).join('');
   for (const r of rows) {
     if (r.error) continue;
     const s = r.summary;
     const bars = [...s.past.map(d => ({ v: d.snow_in, fill: 'var(--snow-past)', tip: snowTip(d, true) })),
                   ...s.future.map((d, i) => ({ v: d.snow_in, fill: i < 10 ? 'var(--snow)' : 'var(--snow-low)', tip: snowTip(d, false) }))];
     const el = $('strip_' + r.id);
-    Charts.add(() => barChart(el, bars, { axis: false, height: 44, todayIndex: s.past.length, floorMax: 4, title: `${r.name} daily snow` }));
+    const bands = weekendBands([...s.past, ...s.future].map(d => d.date));
+    Charts.add(() => barChart(el, bars, { axis: false, height: 44, todayIndex: s.past.length, floorMax: 4, bands, title: `${r.name} daily snow` }));
   }
   $('fasof').textContent = asOfLine();
 }
@@ -172,7 +184,7 @@ function renderForecast() {
 /* ---------- Daily Snow ---------- */
 async function loadDailySnow(refresh) {
   const box = $('dailysnow');
-  if (refresh) box.innerHTML = '<p class="mute">Rewriting the Daily Snow...</p>';
+  if (refresh) box.innerHTML = '<p class="mute">Rewriting the Daily Snow…</p>';
   let r;
   try { r = await api('daily-snow' + (refresh ? '?refresh=true' : '')); } catch (e) { r = { error: e.message }; }
   // Not connected to Claude: a quiet line under the forecast instead of an empty card at the top
@@ -196,7 +208,7 @@ function route() {
 }
 async function openResort(id, band) {
   $('flist').hidden = true; const box = $('fdetail'); box.hidden = false;
-  box.innerHTML = '<p class="mute">Loading...</p>';
+  box.innerHTML = '<p class="mute">Loading…</p>';
   let d;
   try { d = await api(`resort/${id}?band=${band}`); } catch (e) { box.innerHTML = `<button onclick="location.hash=''">Back</button><p>${esc(e.message)}</p>`; return; }
   const future = d.daily.filter(x => x.date >= today).slice(0, 15);
@@ -220,16 +232,16 @@ async function openResort(id, band) {
    </div>${rep.status ? `<p class="small">Resort status: ${esc(rep.status)}${rep.conditions ? ' · ' + esc(rep.conditions) : ''}</p>` : ''}
      ${d.as_of ? `<p class="small">Forecast from ${clock(d.as_of)}.${Date.now() / 1000 - d.as_of > 5400 ? ' Open-Meteo hasn’t answered since then, so this is the last good forecast.' : ''}</p>` : ''}</div>
    <div class="card"><h3>Daily snow, next 15 days <span class="small">(${band}, ${d.elevations[band].toLocaleString()} ft; 6am to 6am)</span></h3>
-     <div class="legend"><span><i class="box" style="background:var(--snow-past)"></i>Last 5 days (modelled)</span><span><i class="box" style="background:var(--snow)"></i>Days 1-10</span><span><i class="box" style="background:var(--snow-low)"></i>Days 11-15</span></div>
+     <div class="legend"><span><i class="box" style="background:var(--snow-past)"></i>Last 5 days (modelled)</span><span><i class="box" style="background:var(--snow)"></i>Days 1-10</span><span><i class="box" style="background:var(--snow-low)"></i>Days 11-15 (low confidence)</span><span><i class="box wkend"></i>Weekend</span></div>
      <div class="chart" id="c_daily"></div></div>
    <div class="card"><h3>Getting there</h3>${leaveText(d.leave_today)}${trafficText(d.traffic)}
-     <p><button class="primary" onclick="going('${today}', '${esc(id)}', false, this)">I'm going today: packing list</button> <span class="mute goingmsg"></span></p>
+     <p><button class="primary" onclick="going('${today}', '${esc(id)}', false, this)">I'm going today: packing list</button> <span class="mute goingmsg" role="status"></span></p>
      ${d.transit.length ? '<ul>' + d.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}
      <p>${d.info.webcams_url ? `<a href="${esc(d.info.webcams_url)}" target="_blank" rel="noopener">Webcams</a>` : ''}
        ${d.info.openskimap_url ? ` · <a href="${esc(d.info.openskimap_url)}" target="_blank" rel="noopener">Trail map (OpenSkiMap)</a>` : ''}
        ${d.info.beginner_pct != null ? ` · <span class="mute">${d.info.beginner_pct}% of runs are green or blue</span>` : ''}</p></div>
    ${d.info.webcam_images.length ? `<div class="card"><h3>Webcams right now</h3><div class="cams">${d.info.webcam_images.map(u =>
-     `<a href="${esc(d.info.webcams_url || u)}" target="_blank" rel="noopener"><img loading="lazy" alt="${esc(d.resort.name)} webcam" src="${esc(u)}${u.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 300000)}"></a>`).join('')}</div></div>` : ''}
+     `<a href="${esc(d.info.webcams_url || u)}" target="_blank" rel="noopener"><img loading="lazy" width="640" height="360" alt="${esc(d.resort.name)} webcam" src="${esc(u)}${u.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 300000)}"></a>`).join('')}</div></div>` : ''}
    <div class="card"><h3>Next 48 hours: snow per hour</h3>${snow48 >= 0.05 ? '<div class="chart" id="c_h_snow"></div>' : '<p class="mute">No snow in the next 48 hours.</p>'}
      <h3 style="margin-top:12px">Next 48 hours: temperature (&deg;F)</h3><div class="chart" id="c_h_temp"></div></div>
    <div class="card"><h3>Model check: running snow total</h3>
@@ -249,7 +261,9 @@ async function openResort(id, band) {
   const bars = [...past.map(x => ({ v: x.snow_in, fill: 'var(--snow-past)', tip: snowTip(x, true) })),
                 ...future.map((x, i) => ({ v: x.snow_in, fill: i < 10 ? 'var(--snow)' : 'var(--snow-low)', tip: snowTip(x, false) }))];
   const labels = [...past, ...future].map(x => dayLabel(x.date));
-  Charts.add(() => barChart($('c_daily'), bars, { height: 170, labels, labelEvery: innerWidth < 600 ? 3 : 1, todayIndex: past.length, floorMax: 4, title: 'Daily snow' }));
+  const bands = weekendBands([...past, ...future].map(x => x.date));
+  Charts.add(() => barChart($('c_daily'), bars, { height: 170, labels, labelEvery: innerWidth < 600 ? 3 : 1, todayIndex: past.length, floorMax: 4,
+    bands, valueLabels: true, title: 'Daily snow' }));
 
   const cum = name => { let s = 0; return future.map(x => { const v = x.models[name]; if (v == null) return null; s += v; return Math.round(s * 10) / 10; }); };
   const series = d.models.map((m, i) => ({ name: m, color: `var(--s${i + 1})`, values: cum(m) }));
@@ -300,7 +314,9 @@ async function loadRadar() {
     L.marker([r.lat, r.lon], { icon: L.divIcon({ className: '', html: `<div class="snowpin">${esc(r.name)} ${inch(r.summary.next5_in)}</div>`, iconSize: null, iconAnchor: [0, 10] }) })
       .addTo(MAP).on('click', () => { show('forecast'); location.hash = 'resort/' + r.id; });
   }
-  startRadar();
+  // Reduced motion: show the latest frame and let Play start the loop
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { RIDX = RLAYERS.length - 1; radarFrame(); $('rplay').textContent = 'Play'; }
+  else startRadar();
 }
 function radarFrame() {
   RLAYERS.forEach((l, i) => l.setOpacity(i === RIDX ? 0.65 : 0));
@@ -316,7 +332,7 @@ function toggleRadar() {
 
 /* ---------- Plan ---------- */
 async function rank() {
-  const t = $('t'); t.innerHTML = '<tr><td>Loading...</td></tr>';
+  const t = $('t'); t.innerHTML = '<tr><td>Loading…</td></tr>';
   const q = `best-days?date=${$('d').value}&skis=${$('skis').checked}&departure=${encodeURIComponent($('dep').value)}`;
   let rows;
   try { rows = await api(q); } catch (e) { t.innerHTML = `<tr><td>${esc(e.message)}</td></tr>`; return; }
@@ -330,7 +346,7 @@ async function rank() {
     <p><b>Wear</b> (feels like ${top.gear.feels_like_f}°F): ${top.gear.wear.map(esc).join(', ')}</p>
     ${top.gear.notes.length ? `<p><b>Also</b>: ${top.gear.notes.map(esc).join('; ')}</p>` : ''}
     ${top.beginner_pct != null ? `<p class="mute">${top.beginner_pct}% of runs are green or blue.</p>` : ''}
-    <p><button class="primary" onclick="going($('d').value, '${esc(top.id)}', $('skis').checked, this)">I'm going: add packing list</button> <span class="mute goingmsg"></span></p>
+    <p><button class="primary" onclick="going($('d').value, '${esc(top.id)}', $('skis').checked, this)">I'm going: add packing list</button> <span class="mute goingmsg" role="status"></span></p>
     ${top.transit.length ? '<p><b>Shuttle / transit</b></p><ul>' + top.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}` : '';
 }
 function alertLines(al, limit) {
@@ -380,7 +396,7 @@ function leaveText(l) {
   return s;
 }
 async function askClaude() {
-  $('ans').textContent = 'Thinking...';
+  $('ans').textContent = 'Thinking…';
   try {
     const r = await api('ask', { method: 'POST', body: JSON.stringify({ question: $('q').value || 'Where should I go?', date: $('d').value, skis: $('skis').checked, departure: $('dep').value }) });
     $('ans').textContent = r.answer;
@@ -400,7 +416,7 @@ async function loadStats() {
   const t = s.this_season, l = s.last_season_to_date, full = s.last_season;
   const row = (k, label, fmt) => `<tr><td>${label}</td><td class="num"><b>${fmt(t[k])}</b></td><td class="num">${fmt(l[k])}</td><td class="num mute">${fmt(full[k])}</td></tr>`;
   const n = v => v == null ? '-' : Number(v).toLocaleString();
-  $('statsbox').innerHTML = `<h3>Season stats</h3><div class="wrap"><table>
+  $('statsbox').innerHTML = `<div class="row spread"><h3>Season stats</h3><button class="primary" onclick="Recap.open()">Season recap</button></div><div class="wrap"><table>
      <tr><th></th><th class="num">This season</th><th class="num">Last season, same date</th><th class="num">All last season</th></tr>
      ${row('days', 'Days', n)}${row('board_days', 'Board days', n)}${row('ski_days', 'Ski days', n)}
      ${row('vertical_ft', 'Vertical (ft)', n)}${row('top_speed_mph', 'Top speed (mph)', n)}${row('distance_mi', 'Distance (mi)', n)}${row('hours', 'Hours on snow', n)}</table></div>
@@ -414,6 +430,7 @@ async function loadStats() {
 
 async function loadDays() {
   const d = await api('days');
+  if (!d.length) { $('days').innerHTML = '<tr><td class="mute">No days yet. Add one above, or connect Garmin in Settings and your rides come in on their own.</td></tr>'; return; }
   $('days').innerHTML = '<tr><th>Date</th><th>Resort</th><th>On</th><th class="num">Vertical</th><th>Notes</th><th></th></tr>' +
     d.map(x => `<tr><td>${x.date}</td><td>${esc(rname(x.resort_id))}</td><td><button title="Switch board / skis" onclick="flipDay(${x.id}, '${x.equipment === 'board' ? 'ski' : 'board'}')">${x.equipment === 'board' ? 'Board' : 'Skis'}</button></td><td class="num">${x.vertical_ft ?? ''}</td><td>${esc(x.notes)}${x.garmin_ids ? '<span class="badge">Garmin</span>' : ''}</td>
       <td><button onclick="delDay(${x.id})">Delete</button></td></tr>`).join('');
@@ -424,9 +441,9 @@ async function loadGarmin(msg) {
   const last = g.last_sync || {};
   let h = '<h3>Garmin</h3>';
   const form = `<p class="mute">Sign in once and every Ski or Snowboard activity you record becomes a day here, with resort, board or skis, and vertical. Your password is only used to sign in and isn't saved.</p>
-    <div class="row"><input id="gemail" type="email" placeholder="Garmin email" autocomplete="username">
-    <input id="gpass" type="password" placeholder="Garmin password" autocomplete="current-password"><button onclick="garminConnect()">Connect Garmin</button></div>`;
-  if (g.needs_mfa) h += `<p>Garmin sent you a verification code.</p><div class="row"><input id="gcode" inputmode="numeric" placeholder="Code"><button onclick="garminMfa()">Verify</button></div>`;
+    <div class="row"><input id="gemail" type="email" placeholder="Garmin email" autocomplete="username" spellcheck="false" aria-label="Garmin email">
+    <input id="gpass" type="password" placeholder="Garmin password" autocomplete="current-password" aria-label="Garmin password"><button onclick="garminConnect()">Connect Garmin</button></div>`;
+  if (g.needs_mfa) h += `<p>Garmin sent you a verification code.</p><div class="row"><input id="gcode" inputmode="numeric" autocomplete="one-time-code" spellcheck="false" placeholder="123456" aria-label="Garmin verification code"><button onclick="garminMfa()">Verify</button></div>`;
   else if (g.connected) {
     h += `<p>Connected${g.source === 'workout tracker' ? ' (using the Workout Tracker’s Garmin login)' : ''}.
       ${last.at ? `Last checked ${esc(last.at)}${last.added ? `, ${last.added} new` : ''}.` : ''}
@@ -445,7 +462,7 @@ async function garminMfa() {
   loadGarmin(r.error || 'Connected.'); loadDays();
 }
 async function garminSync() {
-  $('garminbox').insertAdjacentHTML('beforeend', '<p class="mute">Checking Garmin...</p>');
+  $('garminbox').insertAdjacentHTML('beforeend', '<p class="mute">Checking Garmin…</p>');
   const r = await api('garmin/sync', { method: 'POST' }).catch(e => ({ error: e.message }));
   loadGarmin(r.error || `${r.added} new day${r.added === 1 ? '' : 's'} imported.`); loadDays();
 }
@@ -488,11 +505,11 @@ async function loadSettings() {
     <h3>Departure points</h3><p class="mute">One per line: name, latitude, longitude. The first is your home.</p>
     <textarea id="s_deps">${s.departures.map(d => `${esc(d.name)}, ${d.lat}, ${d.lon}`).join('\n')}</textarea>
     <label>Default departure<input id="s_default_departure" value="${esc(s.default_departure)}"></label>
-    <h3>Waze travel times</h3><div id="wazemap" class="row"><span class="mute">Looking for Waze sensors...</span></div>
+    <h3>Waze travel times</h3><div id="wazemap" class="row"><span class="mute">Looking for Waze sensors…</span></div>
     <label class="inline"><input type="checkbox" id="s_drying" ${s.drying_reminder ? 'checked' : ''}> Boot and glove drying reminder after a logged day</label>
     <label class="inline"><input type="checkbox" id="s_outlook" ${s.weekend_outlook ? 'checked' : ''}> Thursday weekend outlook on my phone</label>
     <label class="inline"><input type="checkbox" id="s_storm" ${s.storm_alerts ? 'checked' : ''}> Storm trending up alerts</label>
-    <p><button onclick="saveSettings()">Save</button> <span id="setmsg" class="mute"></span></p>`;
+    <p><button onclick="saveSettings()">Save</button> <span id="setmsg" class="mute" role="status"></span></p>`;
   const t = await api('traffic').catch(() => null);
   const ws = t ? t.waze_sensors : [];
   $('wazemap').innerHTML = !ws.length ? '<span class="mute">No Waze Travel Time sensors in Home Assistant. Add one per resort (Settings &gt; Devices &amp; services &gt; Waze Travel Time) and they show up here.</span>'
@@ -507,8 +524,8 @@ async function loadClaude() {
   if (!s.cli) h += '<p class="due">Claude Code is not installed here (it is inside the add-on).</p>';
   else if (l && !l.done) {
     h += l.url ? `<p><a href="${esc(l.url)}" target="_blank" rel="noopener">Open this link and approve</a>, then paste the code it shows.</p>
-      <div class="row"><input id="ccode" placeholder="Paste the code" style="flex:1;min-width:200px"><button onclick="claudeCode()">Connect</button>
-      <button onclick="claudeCancel()">Cancel</button></div>` : '<p class="mute">Starting sign-in...</p>';
+      <div class="row"><input id="ccode" placeholder="Paste the code…" autocomplete="off" spellcheck="false" aria-label="Claude sign-in code" style="flex:1;min-width:200px"><button onclick="claudeCode()">Connect</button>
+      <button onclick="claudeCancel()">Cancel</button></div>` : '<p class="mute">Starting sign-in…</p>';
     if (!l.url) setTimeout(loadClaude, 2000);
   } else if (s.signed_in) h += '<p>Connected to your Claude account. <button onclick="claudeLogout()">Sign out</button></p>';
   else {

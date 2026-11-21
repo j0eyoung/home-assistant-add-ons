@@ -44,7 +44,8 @@ addEventListener('resize', () => { clearTimeout(_rz); _rz = setTimeout(() => {
   Charts.list = Charts.list.filter(fn => fn() !== false);
 }, 150); });
 
-/* bars: [{v, fill, tip}] ; opts: {height, axis, labels, labelEvery, todayIndex, floorMax, unit}
+/* bars: [{v, fill, tip}] ; opts: {height, axis, labels, labelEvery, todayIndex, floorMax, unit,
+   bands: [[from, to], ...] shaded slots behind the bars (weekends), valueLabels: label the biggest bars}
    Returns false when the container is gone (so the resize list drops it). */
 function barChart(el, bars, opts = {}) {
   if (!el.isConnected) return false;
@@ -66,6 +67,12 @@ function barChart(el, bars, opts = {}) {
     svgEl('line', { x1: 0, x2: W, y1: padT + ph, y2: padT + ph, class: 'baseline' }, svg);
   }
   const slot = pw / bars.length, gap = Math.max(2, Math.min(6, slot * .25)), bw = Math.max(2, slot - gap);
+  for (const [a, b] of opts.bands || []) {
+    svgEl('rect', { x: padL + slot * a, y: padT - 2, width: slot * (b - a + 1), height: ph + 2, class: 'band' }, svg);
+  }
+  // Direct labels on the few biggest bars only (2" or more, top three), so the peaks read without hovering
+  const labelled = new Set(opts.valueLabels ? bars.map((b, i) => [b.v || 0, i]).filter(([v]) => v >= 2)
+    .sort((p, q) => q[0] - p[0]).slice(0, 3).map(([, i]) => i) : []);
   if (opts.todayIndex != null && opts.todayIndex > 0) {
     const x = padL + slot * opts.todayIndex - gap / 2;
     svgEl('line', { x1: x, x2: x, y1: padT - 2, y2: padT + ph, class: 'today' }, svg);
@@ -80,6 +87,10 @@ function barChart(el, bars, opts = {}) {
       hit.addEventListener('mouseleave', () => { bar.classList.remove('hl'); Tip.hide(); });
     }
     if (b.onclick) hit.addEventListener('click', b.onclick);
+    if (labelled.has(i)) {
+      const t = svgEl('text', { x: x + bw / 2, y: Math.max(10, padT + ph - h - 4), 'text-anchor': 'middle', class: 'vlabel' }, svg);
+      t.textContent = (Math.round(b.v * 10) / 10) + '"';
+    }
     if (axis && opts.labels && i % (opts.labelEvery || 1) === 0) {
       const t = svgEl('text', { x: x + bw / 2, y: H - 4, 'text-anchor': 'middle' }, svg);
       t.textContent = opts.labels[i];
