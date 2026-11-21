@@ -1,18 +1,18 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="origin">
 <title>Ski Assistant</title>
-<link rel="stylesheet" href="static/app.css">
+<link rel="stylesheet" href="static/app.css?v=0.6.0">
 <link rel="icon" type="image/png" href="static/icon-192.png">
 <link rel="apple-touch-icon" href="static/icon-192.png">
 </head><body>
-<nav id="nav"></nav>
+<nav id="nav" aria-label="Sections"></nav>
 <div id="tip" role="tooltip"></div>
 
 <section id="forecast">
  <div id="flist">
-  <div class="card" id="dailysnow"></div>
-  <div id="alerts"></div>
+  <div class="card hero" id="hero" aria-live="polite"><p class="mute">Working out the best day...</p></div>
+  <div class="card" id="dailysnow" hidden></div>
   <div class="card">
    <div class="row spread"><h3>Snow forecast <span class="small">(mid-mountain, ECMWF + GFS blend)</span></h3>
     <label class="inline">Sort <select id="fsort" onchange="renderForecast()">
@@ -21,9 +21,11 @@
    <div class="legend"><span><i class="box" style="background:var(--snow-past)"></i>Last 5 days (modelled)</span>
     <span><i class="box" style="background:var(--snow)"></i>Days 1-10</span><span><i class="box" style="background:var(--snow-low)"></i>Days 11-15 (low confidence)</span></div>
    <div id="frows"><p class="mute">Loading forecasts...</p></div>
+   <p class="small" id="fasof"></p>
    <p class="small">Snow is worked out from each elevation's temperature and humidity, not the model's own snowfall.
     Trail data &copy; OpenSkiMap.org and OpenStreetMap contributors (ODbL).</p>
   </div>
+  <p class="small" id="dsoff" hidden></p>
  </div>
  <div id="fdetail" hidden></div>
 </section>
@@ -31,14 +33,14 @@
 <section id="plan">
  <div class="card" id="roads"><p class="mute">Checking the roads...</p></div>
  <div class="row">
-  <input type="date" id="d"> <select id="dep"></select>
+  <input type="date" id="d" aria-label="Day"> <select id="dep" aria-label="Leaving from"></select>
   <label class="inline"><input type="checkbox" id="skis"> Skis day</label>
   <button onclick="rank()">Rank</button>
  </div>
  <div class="card wrap"><table id="t"></table></div>
  <div class="card" id="pick"></div>
  <div class="card"><h3>Ask Claude</h3>
-  <div class="row"><input id="q" style="flex:1;min-width:200px" placeholder="Where should I go Saturday?"><button onclick="askClaude()">Ask</button></div>
+  <div class="row"><input id="q" style="flex:1;min-width:200px" placeholder="Where should I go Saturday?" aria-label="Question for Claude"><button onclick="askClaude()">Ask</button></div>
   <p id="ans"></p></div>
 </section>
 
@@ -52,23 +54,23 @@
 <section id="log">
  <div class="card" id="statsbox"></div>
  <div class="card"><h3>Add a day</h3><div class="row">
-  <input type="date" id="ld"><select id="lr"></select>
-  <select id="le"><option value="board">Board</option><option value="ski">Skis</option></select>
-  <input id="lv" type="number" placeholder="Vertical ft (optional)" style="width:180px">
-  <input id="ln" placeholder="Notes" style="flex:1;min-width:160px"><button onclick="addDay()">Save</button></div></div>
+  <input type="date" id="ld" aria-label="Date"><select id="lr" aria-label="Resort"></select>
+  <select id="le" aria-label="Board or skis"><option value="board">Board</option><option value="ski">Skis</option></select>
+  <input id="lv" type="number" placeholder="Vertical ft (optional)" aria-label="Vertical feet" style="width:180px">
+  <input id="ln" placeholder="Notes" aria-label="Notes" style="flex:1;min-width:160px"><button onclick="addDay()">Save</button></div></div>
  <div class="card wrap"><table id="days"></table></div>
 </section>
 
 <section id="gear">
  <div class="card" id="upkeep"></div>
  <div class="card"><h3>Log a wax or tune</h3><div class="row">
-  <input type="date" id="gd"><select id="ge"><option value="board">Board</option><option value="ski">Skis</option></select>
-  <select id="gk"><option value="wax">Wax</option><option value="tune">Tune</option></select><button onclick="addService()">Save</button></div></div>
- <div class="card"><h3>Shopping list</h3><div class="row"><input id="shop" placeholder="Hand warmers"><button onclick="addShop()">Add to Home Assistant</button></div><p id="shopmsg" class="mute"></p></div>
+  <input type="date" id="gd" aria-label="Date"><select id="ge" aria-label="Board or skis"><option value="board">Board</option><option value="ski">Skis</option></select>
+  <select id="gk" aria-label="Wax or tune"><option value="wax">Wax</option><option value="tune">Tune</option></select><button onclick="addService()">Save</button></div></div>
+ <div class="card"><h3>Shopping list</h3><div class="row"><input id="shop" placeholder="Hand warmers" aria-label="Shopping list item"><button onclick="addShop()">Add to Home Assistant</button></div><p id="shopmsg" class="mute"></p></div>
 </section>
 
 <section id="settings"><div class="card" id="claudebox"></div><div class="card" id="garminbox"></div><div class="card" id="setbox"></div></section>
 
-<script src="static/charts.js"></script>
-<script src="static/app.js"></script>
+<script src="static/charts.js?v=0.6.0"></script>
+<script src="static/app.js?v=0.6.0"></script>
 </body></html>

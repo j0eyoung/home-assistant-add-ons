@@ -1,4 +1,5 @@
 """API + single-page UI. Served through Home Assistant ingress on port 8099."""
+import datetime as dt
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
@@ -32,6 +33,16 @@ import util
 app = FastAPI(title="Ski Assistant")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 ALERT_IN = float(os.getenv("POWDER_ALERT_INCHES", "6"))
+
+
+@app.middleware("http")
+async def _fresh_ui(request, call_next):
+    """The browser checks the page and its files with the add-on each load (a quick 304 when unchanged), so an
+    update shows straight away instead of the old cached copy."""
+    resp = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.on_event("startup")
@@ -70,6 +81,25 @@ def best_days(date: Optional[str] = None, skis: bool = False, departure: Optiona
 @app.get("/api/alerts")
 def alerts():
     return ranking.powder_alerts(resorts.load(), threshold_in=ALERT_IN)
+
+
+@app.get("/api/outlook")
+def outlook(days: int = 5, skis: bool = False, departure: Optional[str] = None):
+    """The Forecast tab's best-bet card: the top resort for each of the next few days, the best of those days,
+    and any powder alerts."""
+    rs = resorts.load()
+    start = util.today()
+    out = []
+    for i in range(max(1, min(days, 7))):
+        date = (start + dt.timedelta(days=i)).isoformat()
+        rows = [x for x in ranking.best_days(rs, date, skis=skis, departure=departure) if "error" not in x]
+        if rows:
+            t = rows[0]
+            out.append({"date": date, "id": t["id"], "resort": t["resort"], "score": t["score"], "fresh_in": t["fresh_in"],
+                        "tmax_f": t["tmax_f"], "gust_mph": t["gust_mph"], "leave": t["leave"],
+                        "next_best": rows[1]["resort"] if len(rows) > 1 else None})
+    best = max(out, key=lambda x: x["score"]) if out else None
+    return {"days": out, "best_date": best["date"] if best else None, "powder_in": ALERT_IN, "alerts": alerts()}
 
 
 @app.get("/api/snowpack")
@@ -151,13 +181,14 @@ def resort_detail(resort_id: str, band: str = "mid", departure: Optional[str] = 
     try:
         days = forecast.daily(r, band)
         hours = forecast.next48(r, band)
+        as_of = forecast.hourly(r)["as_of"]
     except Exception as e:
         raise HTTPException(502, f"forecast failed: {e}")
     st = settings.load()
     today = util.today().isoformat()
     return {"resort": {k: r[k] for k in ("id", "name", "base_ft", "summit_ft", "lat", "lon")} | {"pass": r.get("pass")},
             "band": band, "elevations": forecast.band_ft(r), "models": list(forecast.MODELS.values()),
-            "daily": days, "next48": hours, **_report(r),
+            "daily": days, "next48": hours, "as_of": as_of, **_report(r),
             "info": resortinfo.info(r) | {"openskimap_url": resortinfo.openskimap_url(r)},
             "transit": transit.for_resort(r), "traffic": traffic.for_resort(r), "accuracy": accuracy.scores(r["id"]),
             "leave_today": drive.plan(r, settings.departure(departure), today, st["arrive_by"], st["buffer_min"])}

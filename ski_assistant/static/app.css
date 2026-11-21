@@ -23,27 +23,55 @@
 }
 
 * { box-sizing: border-box; }
-body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 12px 16px 40px;
-       background: var(--page); color: var(--ink); max-width: 1100px; }
+html { background: var(--page); }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0 auto; padding: 12px 16px 40px;
+       background: var(--page); color: var(--ink); max-width: 1100px; line-height: 1.45; }
 a { color: var(--accent); }
-h2 { margin: 6px 0 10px; font-size: 1.3rem; }
+h2 { margin: 6px 0 10px; font-size: 1.4rem; line-height: 1.2; }
 h3 { margin: 4px 0 8px; font-size: 1.05rem; }
 .mute { color: var(--ink2); font-size: .9em; }
 .small { font-size: .82em; color: var(--muted); }
 .num { font-variant-numeric: tabular-nums; }
 
-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-nav button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+/* Tabs: a row along the top on wide screens, a bar along the bottom on phones */
+nav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+nav button { display: inline-flex; align-items: center; gap: 7px; border-color: transparent; background: none; color: var(--ink2);
+             padding: 8px 12px; font-weight: 500; }
+nav button svg { flex: none; }
+nav button:hover { background: var(--raised); color: var(--ink); }
+nav button.on, nav button.on:hover { background: var(--surface); color: var(--accent); border-color: var(--border); font-weight: 600; }
 input, select, button, textarea { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border);
        background: var(--surface); color: var(--ink); }
 button { cursor: pointer; }
 button:hover { background: var(--raised); }
-nav button.on:hover { background: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.primary:hover { background: var(--accent); filter: brightness(1.08); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 textarea { width: 100%; min-height: 60px; }
 label { display: flex; flex-direction: column; gap: 3px; font-size: .9em; color: var(--ink2); }
 label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--ink); }
 
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin: 10px 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin: 10px 0; }
+
+/* Best bet: the answer to "where and when", first thing on the Forecast tab */
+.hero { padding: 18px 18px 14px; }
+.hero-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.eyebrow { font-size: .78rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink2); }
+.pill { font-size: .72rem; font-weight: 700; padding: 2px 9px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); }
+.hero-title { font-size: 2rem; margin: 4px 0 12px; letter-spacing: -.01em; }
+.hero-stats { display: flex; gap: 12px 32px; flex-wrap: wrap; margin-bottom: 10px; }
+.hero-stats .big { display: block; font-size: 2.5rem; font-weight: 700; line-height: 1; }
+.hero-stats .lead .big { color: var(--accent); }
+.hero-stats .k { font-size: .8rem; color: var(--ink2); }
+.hero-leave { margin: 4px 0 10px; }
+.days { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 6px; margin-top: 14px; }
+.day { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 10px; text-align: left; background: var(--raised); }
+.day:hover { border-color: var(--axis); background: var(--raised); }
+.day.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.day .dname { font-size: .75rem; font-weight: 600; color: var(--ink2); }
+.day .dval { font-size: 1.2rem; font-weight: 700; }
+.day .dres { font-size: .75rem; color: var(--ink2); line-height: 1.25; }
+.day .best { font-size: .68rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; margin-left: 2px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .spread { justify-content: space-between; }
 .wrap { overflow-x: auto; }
@@ -72,7 +100,8 @@ section { display: none; } section.on { display: block; }
 .frow.head:hover { background: none; }
 .frow .name { font-weight: 600; }
 .frow .tot { text-align: right; font-variant-numeric: tabular-nums; }
-.frow .tot b { font-size: 1.1em; }
+.frow .tot b { font-size: 1.25em; }
+.frow .tot b.deep { color: var(--accent); }
 .frow .strip { height: 44px; }
 @media (max-width: 720px) {
   .frow { grid-template-columns: 1fr repeat(3, 52px); }
@@ -85,6 +114,10 @@ section { display: none; } section.on { display: block; }
 .tile { background: var(--raised); border-radius: 8px; padding: 8px 10px; }
 .tile .v { font-size: 1.35rem; font-weight: 700; }
 .tile .k { font-size: .8em; color: var(--ink2); }
+.tiles.primary { margin-bottom: 8px; }
+.tiles.primary .tile { background: none; border: 1px solid var(--border); }
+.tiles.primary .tile .v { font-size: 2rem; line-height: 1.1; }
+.tiles.primary .tile:first-child .v { color: var(--accent); }
 .seg button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .legend { display: flex; gap: 14px; font-size: .85em; color: var(--ink2); margin: 2px 0 4px; }
 .legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
@@ -116,3 +149,21 @@ svg .bar.hl { opacity: .75; }
            padding: 2px 7px; font-size: 12px; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
 
 @media (max-width: 720px) { .frow.head .c-strip { display: none; } }
+
+/* Phones (the Home Assistant app): tabs become a bar along the bottom, controls get thumb-sized */
+@media (max-width: 720px) {
+  body { padding: 10px 12px calc(84px + env(safe-area-inset-bottom)); }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 900; margin: 0; gap: 0;
+        display: grid; grid-template-columns: repeat(6, 1fr); background: var(--surface);
+        border-top: 1px solid var(--border); padding: 4px 2px calc(4px + env(safe-area-inset-bottom)); }
+  nav button { flex-direction: column; justify-content: center; gap: 3px; min-height: 54px; padding: 4px 0;
+               font-size: .68rem; border: 0; border-radius: 10px; }
+  nav button.on, nav button.on:hover { background: none; border: 0; }
+  nav button:hover { background: none; }
+  button, select, input:not([type=checkbox]) { min-height: 44px; }
+  .hero { padding: 16px 14px 12px; }
+  .hero-title { font-size: 1.7rem; }
+  .hero-stats .big { font-size: 2.1rem; }
+  .days { grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
+  .tiles.primary .tile .v { font-size: 1.6rem; }
+}

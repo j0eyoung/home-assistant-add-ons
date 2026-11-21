@@ -76,14 +76,19 @@ def quality(ratio, rain_share):
 
 
 # Fetch and derive
-def _fetch(r, model):
+def _url(r, model):
     els = band_ft(r)
-    q = (f"?latitude={','.join([str(r['lat'])] * 3)}&longitude={','.join([str(r['lon'])] * 3)}"
-         f"&elevation={','.join(str(round(els[b] * FT_TO_M)) for b in BANDS)}"
-         f"&hourly={HOURLY}&models={model}&past_days={PAST_DAYS}&forecast_days={FORECAST_DAYS}"
-         "&wind_speed_unit=mph&timezone=America%2FDenver")
-    data = httpjson.get(URL + q, ttl=1800, timeout=30)
-    return data if isinstance(data, list) else [data]
+    return (URL + f"?latitude={','.join([str(r['lat'])] * 3)}&longitude={','.join([str(r['lon'])] * 3)}"
+            f"&elevation={','.join(str(round(els[b] * FT_TO_M)) for b in BANDS)}"
+            f"&hourly={HOURLY}&models={model}&past_days={PAST_DAYS}&forecast_days={FORECAST_DAYS}"
+            "&wind_speed_unit=mph&timezone=America%2FDenver")
+
+
+def _fetch(r, model):
+    """(locations, fetched_at). If Open-Meteo doesn't answer, httpjson hands back the last good forecast."""
+    url = _url(r, model)
+    data = httpjson.get(url, ttl=TTL, timeout=30)
+    return (data if isinstance(data, list) else [data]), httpjson.fetched_at(url)
 
 
 def _hours(loc, model):
@@ -115,7 +120,9 @@ TTL = 1800
 
 def hourly(r):
     """{"times": [...], "models": {model: {band: [hour|None]}}, "blend": {band: [hour|None]}}.
-    Cached per resort for as long as the raw forecast is, so the wet-bulb maths runs once per refresh."""
+    Cached per resort for as long as the raw forecast is, so the wet-bulb maths runs once per refresh.
+    "as_of" is when the oldest model answer used was fetched: older than TTL means Open-Meteo didn't answer
+    and this is the last good forecast."""
     key = (r["id"], r["lat"], r["lon"], r["base_ft"], r["summit_ft"])
     hit = _derived.get(key)
     if hit and time.time() - hit[0] < TTL:
@@ -123,16 +130,23 @@ def hourly(r):
 
     def one(model):
         try:
-            return model, _fetch(r, model)
+            return (model, *_fetch(r, model))
         except Exception:
-            return model, None
+            return model, None, None
 
     with ThreadPoolExecutor(max_workers=len(MODELS)) as pool:
-        fetched = [(m, locs) for m, locs in pool.map(one, MODELS) if locs]
+        fetched = sorted([x for x in pool.map(one, MODELS) if x[1]], key=lambda x: -(x[2] or 0))
     if not fetched:
         raise RuntimeError("no forecast model answered")
+    # A stale model answer can start on a different day, so every model is lined up on the freshest one's hours
     times = fetched[0][1][0]["hourly"]["time"]
-    per_model = {m: {b: _hours(loc, m) for b, loc in zip(BANDS, locs)} for m, locs in fetched}
+
+    def aligned(loc, model):
+        by_time = dict(zip(loc["hourly"]["time"], _hours(loc, model)))
+        return [by_time.get(t) for t in times]
+
+    per_model = {m: {b: aligned(loc, m) for b, loc in zip(BANDS, locs)} for m, locs, _ in fetched}
+    as_of = min(at or time.time() for _, _, at in fetched)
     # Weight each model by how well it has matched this resort's SNOTEL this season (equal until there's data)
     try:
         import accuracy
@@ -141,9 +155,10 @@ def hourly(r):
         weights = {}
     blend = {b: [_mean([per_model[m][b][i] for m in per_model], [weights.get(m, 1.0) for m in per_model])
                  for i in range(len(times))] for b in BANDS}
-    out = {"times": times, "models": per_model, "blend": blend}
+    out = {"times": times, "models": per_model, "blend": blend, "as_of": as_of}
+    # Kept until the raw forecast expires; a stale one is looked at again once httpjson will retry Open-Meteo
     with _lock:
-        _derived[key] = (time.time(), out)
+        _derived[key] = (max(as_of, time.time() - TTL + httpjson.RETRY_AFTER), out)
     return out
 
 
@@ -255,7 +270,7 @@ def summary(r):
                                           "tmax_f", "tmin_f", "gust_mph", "rain_in")} for d in future],
             "last5_in": total(past), "next5_in": total(future[:5]), "days6_10_in": total(future[5:10]),
             "days11_15_in": total(future[10:15]),
-            "next5_by_band": {b: band_total(b) for b in ("base", "summit")}}
+            "next5_by_band": {b: band_total(b) for b in ("base", "summit")}, "as_of": h["as_of"]}
 
 
 def next48(r, band="mid"):

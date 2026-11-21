@@ -13,29 +13,61 @@ const dayLabel = iso => { const d = new Date(iso + 'T12:00'); return `${DOW[d.ge
 const inch = v => v == null ? '-' : (Math.round(v * 10) / 10) + '"';
 const t12 = s => { const [h, m] = s.split(':').map(Number); return `${h % 12 || 12}:${String(m).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`; };
 const hm = n => n >= 60 ? `${Math.floor(n / 60)}h${String(n % 60).padStart(2, '0')}` : `${n} min`;
+const isoPlus = n => { const d = new Date(today + 'T12:00'); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA'); };
+const dayName = (iso, long) => iso === today ? 'Today' : iso === isoPlus(1) ? 'Tomorrow'
+  : new Date(iso + 'T12:00').toLocaleDateString('en-US', { weekday: long ? 'long' : 'short' });
+const monthDay = iso => new Date(iso + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+// "2:15pm", with the day in front when it isn't today
+const clock = s => { const d = new Date(s * 1000), t = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase();
+  return d.toLocaleDateString('en-CA') === today ? t : `${DOW[d.getDay()]} ${t}`; };
+// Per-browser copy of the last forecast, so the page paints at once while the add-on fetches a fresh one
+const stash = (k, data) => { try { localStorage.setItem('ski_' + k, JSON.stringify({ at: Date.now(), data })); } catch (e) {} };
+const unstash = (k, maxH = 12) => { try { const v = JSON.parse(localStorage.getItem('ski_' + k)); return v && Date.now() - v.at < maxH * 3600e3 ? v.data : null; } catch (e) { return null; } };
 
-let RESORTS = [], SET = {}, FC = null;
+let RESORTS = [], SET = {}, FC = null, OUT = null, HERO_DATE = null;
 const TABS = { forecast: 'Forecast', plan: 'Plan', radar: 'Radar', log: 'Season log', gear: 'Gear', settings: 'Settings' };
+const ICONS = {  // 24px line icons, drawn with currentColor
+  forecast: '<path d="M12 2v20M3.3 7l17.4 10M3.3 17l17.4-10M9.5 3.5 12 6l2.5-2.5M9.5 20.5 12 18l2.5 2.5"/>',
+  plan: '<circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h7.5a3.5 3.5 0 0 0 0-7h-7a3.5 3.5 0 0 1 0-7H16"/>',
+  radar: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12l6.4-6.4"/><circle cx="12" cy="12" r="1"/>',
+  log: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M8 14h3M8 17h6"/>',
+  gear: '<rect x="5" y="7" width="14" height="14" rx="3"/><path d="M9 7V5a3 3 0 0 1 6 0v2M9 13h6"/>',
+  settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+};
 const LOADERS = { forecast: () => {}, plan: loadRoads, radar: loadRadar, log: () => { loadStats(); loadDays(); }, gear: loadGear, settings: () => { loadClaude(); loadGarmin(); loadSettings(); } };
 
+function paint(t) {
+  for (const k in TABS) {
+    $(k).classList.toggle('on', k === t);
+    const b = $('b_' + k); b.classList.toggle('on', k === t);
+    if (k === t) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  }
+}
 function show(t) {
-  for (const k in TABS) { $(k).classList.toggle('on', k === t); $('b_' + k).classList.toggle('on', k === t); }
+  paint(t);
   LOADERS[t]();
   try { localStorage.setItem('tab', t); } catch (e) {}
 }
-$('nav').innerHTML = Object.entries(TABS).map(([k, v]) => `<button id="b_${k}" onclick="show('${k}')">${v}</button>`).join('');
+$('nav').innerHTML = Object.entries(TABS).map(([k, v]) => `<button id="b_${k}" onclick="show('${k}')">` +
+  `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>` +
+  `<span>${v}</span></button>`).join('');
 const rname = id => id === 'other' ? 'Other' : (RESORTS.find(r => r.id === id) || {}).name || id;
 const ropts = blank => (blank ? '<option value="">(any)</option>' : '') + RESORTS.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
 
 async function init() {
+  let t = 'forecast'; try { t = localStorage.getItem('tab') || 'forecast'; } catch (e) {}
+  if (!TABS[t]) t = 'forecast';
+  paint(t);
+  const fc = unstash('forecast'), ol = unstash('outlook');
+  if (fc) { FC = fc; renderForecast(); }
+  if (ol) { OUT = ol; renderHero(); }
   RESORTS = await api('resorts');
   SET = (await api('settings')).settings;
   fillDepartures();
   for (const id of ['d', 'ld', 'gd']) $(id).value = today;
   $('lr').innerHTML = ropts();
-  let t = 'forecast'; try { t = localStorage.getItem('tab') || 'forecast'; } catch (e) {}
-  show(TABS[t] ? t : 'forecast');
-  loadDailySnow(false); loadForecast(); loadAlerts(); rank();
+  show(t);
+  loadDailySnow(false); loadForecast(); loadOutlook(); rank();
   addEventListener('hashchange', route);
 }
 function fillDepartures() {
@@ -43,13 +75,58 @@ function fillDepartures() {
 }
 
 /* ---------- Forecast dashboard ---------- */
+let FC_FRESH = false;
 async function loadForecast() {
-  try { FC = await api('forecast'); } catch (e) { $('frows').innerHTML = `<p class="mute">${esc(e.message)}</p>`; return; }
+  try { FC = await api('forecast'); } catch (e) { if (!FC) $('frows').innerHTML = `<p class="mute">${esc(e.message)}</p>`; return; }
+  FC_FRESH = true; stash('forecast', FC);
   renderForecast(); route();
 }
-async function loadAlerts() {
-  const a = await api('alerts').catch(() => []);
-  $('alerts').innerHTML = a.map(x => `<div class="alert"><b>Powder alert:</b> ${esc(x.resort)} ${x.snow_in}" from ${dayLabel(x.first_day)}</div>`).join('');
+function asOfLine() {
+  const ats = (FC || []).filter(r => r.summary && r.summary.as_of).map(r => r.summary.as_of);
+  if (!FC_FRESH) return ats.length ? `Showing the forecast from ${clock(Math.min(...ats))} while a fresh one loads...` : '';
+  if (!ats.length) return '';
+  const oldest = Math.min(...ats);
+  return `Forecast from ${clock(oldest)}.` + (Date.now() / 1000 - oldest > 5400 ? ' Open-Meteo hasn’t answered since then, so this is the last good forecast.' : '');
+}
+
+/* ---------- Best bet (top of the Forecast tab) ---------- */
+async function loadOutlook() {
+  try { OUT = await api('outlook'); } catch (e) { if (!OUT) $('hero').innerHTML = `<h3>Best bet</h3><p class="mute">${esc(e.message)}</p>`; return; }
+  stash('outlook', OUT);
+  renderHero();
+}
+function renderHero() {
+  const box = $('hero');
+  const days = ((OUT && OUT.days) || []).filter(x => x.date >= today);
+  if (!days.length) { box.innerHTML = '<h3>Best bet</h3><p class="mute">No resort forecast yet. It shows here once Open-Meteo answers.</p>'; return; }
+  const best = days.find(x => x.date === OUT.best_date) || days.reduce((a, b) => (b.score > a.score ? b : a));
+  const sel = days.find(x => x.date === HERO_DATE) || best;
+  const l = sel.leave, powderIn = OUT.powder_in || 6;
+  box.innerHTML = `
+    <div class="hero-top"><span class="eyebrow">${sel === best ? 'Best bet' : 'Top pick'} · ${dayName(sel.date, true)}, ${monthDay(sel.date)}</span>
+      ${sel.fresh_in >= powderIn ? '<span class="pill">Powder day</span>' : ''}</div>
+    <h2 class="hero-title">${esc(sel.resort)}</h2>
+    <div class="hero-stats">
+      <div class="lead"><span class="big num">${inch(sel.fresh_in)}</span><span class="k">fresh snow</span></div>
+      <div><span class="big num">${Math.round(sel.tmax_f)}°</span><span class="k">high</span></div>
+      <div><span class="big num">${Math.round(sel.gust_mph)}</span><span class="k">mph gusts</span></div>
+    </div>
+    <p class="hero-leave">Leave at <b>${t12(l.leave_at)}</b> · ${hm(l.drive_min)} drive${l.reason === 'traffic' ? ', ahead of the I-70 rush' : ''}</p>
+    <div class="row"><button class="primary" onclick="going('${sel.date}', '${esc(sel.id)}', false, this)">I'm going</button>
+      <button onclick="planDay('${sel.date}')">All resorts ${sel.date === today ? 'today' : 'that day'}</button>
+      <span class="mute goingmsg"></span></div>
+    ${sel.next_best ? `<p class="small">Next best: ${esc(sel.next_best)}</p>` : ''}
+    <div class="days" role="group" aria-label="Pick a day">${days.map(x => `
+      <button class="day${x === sel ? ' on' : ''}" aria-pressed="${x === sel}" onclick="HERO_DATE='${x.date}'; renderHero()">
+        <span class="dname">${dayName(x.date)}${x === best ? ' <span class="best">best</span>' : ''}</span>
+        <span class="dval num">${inch(x.fresh_in)}</span><span class="dres">${esc(x.resort)}</span></button>`).join('')}</div>
+    ${(OUT.alerts || []).map(x => `<div class="alert"><b>Powder alert:</b> ${esc(x.resort)} ${x.snow_in}" from ${dayLabel(x.first_day)}</div>`).join('')}`;
+}
+function planDay(date) {
+  $('d').value = date;
+  location.hash = '';
+  show('plan'); rank();
+  scrollTo(0, 0);
 }
 function reportLine(row) {
   const rep = row.reported || {}, sn = row.snotel;
@@ -78,7 +155,7 @@ function renderForecast() {
       `<div class="frow" onclick="location.hash='resort/${r.id}'">
         <div><div class="name">${esc(r.name)}${r.pass === 'keystone' ? '<span class="badge">Keystone</span>' : ''}</div>
           <div class="small">${reportLine(r)}</div></div>
-        <div class="tot c-past">${inch(r.summary.last5_in)}</div><div class="tot"><b>${inch(r.summary.next5_in)}</b></div>
+        <div class="tot c-past">${inch(r.summary.last5_in)}</div><div class="tot"><b class="${r.summary.next5_in >= ((OUT && OUT.powder_in) || 6) ? 'deep' : ''}">${inch(r.summary.next5_in)}</b></div>
         <div class="tot">${inch(r.summary.days6_10_in)}</div><div class="tot mute">${inch(r.summary.days11_15_in)}</div>
         <div class="strip chart" id="strip_${r.id}"></div></div>`).join('');
   for (const r of rows) {
@@ -89,14 +166,19 @@ function renderForecast() {
     const el = $('strip_' + r.id);
     Charts.add(() => barChart(el, bars, { axis: false, height: 44, todayIndex: s.past.length, floorMax: 4, title: `${r.name} daily snow` }));
   }
+  $('fasof').textContent = asOfLine();
 }
 
 /* ---------- Daily Snow ---------- */
 async function loadDailySnow(refresh) {
   const box = $('dailysnow');
-  box.innerHTML = '<p class="mute">Loading the Daily Snow...</p>';
+  if (refresh) box.innerHTML = '<p class="mute">Rewriting the Daily Snow...</p>';
   let r;
   try { r = await api('daily-snow' + (refresh ? '?refresh=true' : '')); } catch (e) { r = { error: e.message }; }
+  // Not connected to Claude: a quiet line under the forecast instead of an empty card at the top
+  const off = r.error && /connect claude/i.test(r.error);
+  box.hidden = off; $('dsoff').hidden = !off;
+  if (off) { $('dsoff').innerHTML = `Daily Snow is off. <a href="#" onclick="show('settings'); return false">Connect Claude in Settings</a> to get it each morning.`; return; }
   if (r.error) { box.innerHTML = `<h3>Daily Snow</h3><p class="mute">${esc(r.error)}</p>`; return; }
   const lines = r.text.split('\n'), head = lines.shift();
   box.classList.add('collapsed');
@@ -122,23 +204,34 @@ async function openResort(id, band) {
   const rep = d.reported || {}, sn = d.snotel || {};
   const tile = (v, k) => v == null || v === '' ? '' : `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`;
   const total = (a, b) => inch(future.slice(a, b).reduce((s, x) => s + x.snow_in, 0));
+  const snow48 = d.next48.reduce((s, h) => s + h.snow_in, 0);
   box.innerHTML = `
    <div class="row spread"><div class="row"><button onclick="location.hash=''">&larr; All resorts</button><h2>${esc(d.resort.name)}</h2></div>
     <div class="row seg">${['base', 'mid', 'summit'].map(b => `<button class="${b === band ? 'on' : ''}" onclick="location.hash='resort/${id}/${b}'">${b[0].toUpperCase() + b.slice(1)} ${d.elevations[b].toLocaleString()} ft</button>`).join('')}</div></div>
-   <div class="card"><div class="tiles">
-     ${tile(total(0, 5), 'Next 5 days')}${tile(total(5, 10), 'Days 6-10')}${tile(total(10, 15), 'Days 11-15 (low confidence)')}
+   <div class="card"><div class="tiles primary">
+     ${tile(total(0, 5), 'Next 5 days')}${tile(total(5, 10), 'Days 6-10')}${tile(total(10, 15), 'Days 11-15 (low confidence)')}</div>
+     <div class="tiles">
      ${tile(rep.base_in != null ? inch(rep.base_in) : null, 'Reported base')}${tile(rep.new_24h_in != null ? inch(rep.new_24h_in) : null, 'Reported 24h')}
      ${tile(rep.season_in ? inch(rep.season_in) : null, 'Season total')}
      ${tile(rep.lifts_total != null ? `${rep.lifts_open}/${rep.lifts_total}` : null, 'Lifts open')}
      ${tile(rep.terrain_open_pct != null ? rep.terrain_open_pct + '%' : null, 'Terrain open')}
      ${tile(sn.depth_in != null ? inch(sn.depth_in) : null, `SNOTEL depth${sn.as_of ? ' (' + esc(sn.as_of) + ')' : ''}`)}
      ${tile(sn.new_72h_in != null ? inch(sn.new_72h_in) : null, 'SNOTEL 72h change')}
-   </div>${rep.status ? `<p class="small">Resort status: ${esc(rep.status)}${rep.conditions ? ' · ' + esc(rep.conditions) : ''}</p>` : ''}</div>
-   ${d.info.webcam_images.length ? `<div class="card"><h3>Webcams right now</h3><div class="cams">${d.info.webcam_images.map(u =>
-     `<a href="${esc(d.info.webcams_url || u)}" target="_blank" rel="noopener"><img loading="lazy" alt="${esc(d.resort.name)} webcam" src="${esc(u)}${u.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 300000)}"></a>`).join('')}</div></div>` : ''}
+   </div>${rep.status ? `<p class="small">Resort status: ${esc(rep.status)}${rep.conditions ? ' · ' + esc(rep.conditions) : ''}</p>` : ''}
+     ${d.as_of ? `<p class="small">Forecast from ${clock(d.as_of)}.${Date.now() / 1000 - d.as_of > 5400 ? ' Open-Meteo hasn’t answered since then, so this is the last good forecast.' : ''}</p>` : ''}</div>
    <div class="card"><h3>Daily snow, next 15 days <span class="small">(${band}, ${d.elevations[band].toLocaleString()} ft; 6am to 6am)</span></h3>
      <div class="legend"><span><i class="box" style="background:var(--snow-past)"></i>Last 5 days (modelled)</span><span><i class="box" style="background:var(--snow)"></i>Days 1-10</span><span><i class="box" style="background:var(--snow-low)"></i>Days 11-15</span></div>
      <div class="chart" id="c_daily"></div></div>
+   <div class="card"><h3>Getting there</h3>${leaveText(d.leave_today)}${trafficText(d.traffic)}
+     <p><button class="primary" onclick="going('${today}', '${esc(id)}', false, this)">I'm going today: packing list</button> <span class="mute goingmsg"></span></p>
+     ${d.transit.length ? '<ul>' + d.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}
+     <p>${d.info.webcams_url ? `<a href="${esc(d.info.webcams_url)}" target="_blank" rel="noopener">Webcams</a>` : ''}
+       ${d.info.openskimap_url ? ` · <a href="${esc(d.info.openskimap_url)}" target="_blank" rel="noopener">Trail map (OpenSkiMap)</a>` : ''}
+       ${d.info.beginner_pct != null ? ` · <span class="mute">${d.info.beginner_pct}% of runs are green or blue</span>` : ''}</p></div>
+   ${d.info.webcam_images.length ? `<div class="card"><h3>Webcams right now</h3><div class="cams">${d.info.webcam_images.map(u =>
+     `<a href="${esc(d.info.webcams_url || u)}" target="_blank" rel="noopener"><img loading="lazy" alt="${esc(d.resort.name)} webcam" src="${esc(u)}${u.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 300000)}"></a>`).join('')}</div></div>` : ''}
+   <div class="card"><h3>Next 48 hours: snow per hour</h3>${snow48 >= 0.05 ? '<div class="chart" id="c_h_snow"></div>' : '<p class="mute">No snow in the next 48 hours.</p>'}
+     <h3 style="margin-top:12px">Next 48 hours: temperature (&deg;F)</h3><div class="chart" id="c_h_temp"></div></div>
    <div class="card"><h3>Model check: running snow total</h3>
      <div class="legend">${d.models.map((m, i) => `<span><i style="background:var(--s${i + 1})"></i>${esc(m)}</span>`).join('')}</div>
      <div class="chart" id="c_models"></div>
@@ -146,20 +239,12 @@ async function openResort(id, band) {
      <p class="small">${Object.entries(d.accuracy).some(([, v]) => v.days) ? 'Checked against SNOTEL, last 30 days: ' + Object.entries(d.accuracy).map(([m, v]) =>
        `${esc(m)} ${v.mean_miss_in != null ? 'off by ' + v.mean_miss_in + '" water a day' : 'no data'} over ${v.days} wet days, weight ${Math.round(v.weight * 100)}%`).join(' · ')
        : 'Each model gets checked against SNOTEL every day; the blend leans toward the better one once there are 5 wet days to judge.'}</p></div>
-   <div class="card"><h3>Next 48 hours: snow per hour</h3><div class="chart" id="c_h_snow"></div>
-     <h3 style="margin-top:12px">Next 48 hours: temperature (&deg;F)</h3><div class="chart" id="c_h_temp"></div></div>
    <div class="card wrap"><h3>Day by day</h3><table>
      <tr><th>Day</th><th class="num">Snow</th><th class="num">Day / night</th><th>Quality</th><th class="num">High / low</th><th class="num">Wind / gust</th><th class="num">Freezing level</th></tr>
      ${future.map(x => `<tr><td>${dayLabel(x.date)}</td><td class="num"><b>${inch(x.snow_in)}</b></td><td class="num">${inch(x.snow_day_in)} / ${inch(x.snow_night_in)}</td>
        <td>${x.quality === 'rain' || x.quality === 'mixed' ? `<span class="warnnote">${esc(x.quality)}</span>` : esc(x.quality || '')}</td>
        <td class="num">${Math.round(x.tmax_f)}° / ${Math.round(x.tmin_f)}°</td><td class="num">${Math.round(x.wind_mph)} / ${Math.round(x.gust_mph)} mph</td>
-       <td class="num">${x.freezing_ft ? x.freezing_ft.toLocaleString() + ' ft' : '-'}</td></tr>`).join('')}</table></div>
-   <div class="card"><h3>Getting there</h3>${leaveText(d.leave_today)}${trafficText(d.traffic)}
-     <p><button onclick="going('${today}', '${esc(id)}')">I'm going today: packing list</button> <span class="mute" id="goingmsg"></span></p>
-     ${d.transit.length ? '<ul>' + d.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}
-     <p>${d.info.webcams_url ? `<a href="${esc(d.info.webcams_url)}" target="_blank" rel="noopener">Webcams</a>` : ''}
-       ${d.info.openskimap_url ? ` · <a href="${esc(d.info.openskimap_url)}" target="_blank" rel="noopener">Trail map (OpenSkiMap)</a>` : ''}
-       ${d.info.beginner_pct != null ? ` · <span class="mute">${d.info.beginner_pct}% of runs are green or blue</span>` : ''}</p></div>`;
+       <td class="num">${x.freezing_ft ? x.freezing_ft.toLocaleString() + ' ft' : '-'}</td></tr>`).join('')}</table></div>`;
 
   const bars = [...past.map(x => ({ v: x.snow_in, fill: 'var(--snow-past)', tip: snowTip(x, true) })),
                 ...future.map((x, i) => ({ v: x.snow_in, fill: i < 10 ? 'var(--snow)' : 'var(--snow-low)', tip: snowTip(x, false) }))];
@@ -174,7 +259,7 @@ async function openResort(id, band) {
 
   const hrs = d.next48, hl = hrs.map(h => { const x = new Date(h.time); return x.getHours() === 0 ? DOW[x.getDay()] : (x.getHours() % 12 || 12) + (x.getHours() < 12 ? 'a' : 'p'); });
   const htip = h => { const x = new Date(h.time); return `<b>${DOW[x.getDay()]} ${t12(h.time.slice(11, 16))}</b><br>snow ${h.snow_in.toFixed(2)}"${h.rain_in > 0.01 ? `<br>rain ${h.rain_in.toFixed(2)}"` : ''}<br>${h.temp_f}°F · gust ${h.gust_mph} mph`; };
-  Charts.add(() => barChart($('c_h_snow'), hrs.map(h => ({ v: h.snow_in, tip: htip(h) })), { height: 120, labels: hl, labelEvery: 6, floorMax: 0.5, title: 'Hourly snow' }));
+  if ($('c_h_snow')) Charts.add(() => barChart($('c_h_snow'), hrs.map(h => ({ v: h.snow_in, tip: htip(h) })), { height: 120, labels: hl, labelEvery: 6, floorMax: 0.5, title: 'Hourly snow' }));
   Charts.add(() => lineChart($('c_h_temp'), [{ name: 'Temperature', color: 'var(--s2)', values: hrs.map(h => h.temp_f) }],
     { height: 120, labels: hl, labelEvery: 6, unit: '°', title: 'Hourly temperature', tip: i => htip(hrs[i]) }));
   scrollTo(0, 0);
@@ -245,7 +330,7 @@ async function rank() {
     <p><b>Wear</b> (feels like ${top.gear.feels_like_f}°F): ${top.gear.wear.map(esc).join(', ')}</p>
     ${top.gear.notes.length ? `<p><b>Also</b>: ${top.gear.notes.map(esc).join('; ')}</p>` : ''}
     ${top.beginner_pct != null ? `<p class="mute">${top.beginner_pct}% of runs are green or blue.</p>` : ''}
-    <p><button onclick="going($('d').value, '${esc(top.id)}', $('skis').checked)">I'm going: add packing list</button> <span class="mute" id="goingmsg"></span></p>
+    <p><button class="primary" onclick="going($('d').value, '${esc(top.id)}', $('skis').checked, this)">I'm going: add packing list</button> <span class="mute goingmsg"></span></p>
     ${top.transit.length ? '<p><b>Shuttle / transit</b></p><ul>' + top.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}` : '';
 }
 function alertLines(al, limit) {
@@ -303,9 +388,10 @@ async function askClaude() {
 }
 
 /* ---------- Season log ---------- */
-async function going(date, resortId, skis = false) {
+async function going(date, resortId, skis = false, btn = null) {
   const r = await api('going', { method: 'POST', body: JSON.stringify({ date, resort_id: resortId, skis }) }).catch(e => ({ note: e.message }));
-  $('goingmsg').textContent = r.note || '';
+  const msg = btn && btn.parentElement.querySelector('.goingmsg');
+  if (msg) msg.textContent = r.note || '';
 }
 
 async function loadStats() {

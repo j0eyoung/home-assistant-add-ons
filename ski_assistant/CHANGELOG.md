@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 - Best Bet, Phone Tab Bar, Instant Forecast
+
+### 🌟 Features
+* **Best bet at the top of the Forecast tab.** The best resort and day in the next five days, with fresh snow, the high, gusts and when to leave, and an "I'm going" button. Tap a day underneath to see that day's top pick, or "All resorts that day" to open the Plan tab on that date. Powder alerts show here too.
+* **Tabs along the bottom on your phone**, with icons. Buttons and fields are bigger and easier to tap.
+
+### 🔧 Improvements
+* **The forecast shows up straight away.** The page shows the last forecast it had while a fresh one loads. If Open-Meteo doesn't answer, you see the last good forecast and the time it's from instead of "no forecast model answered", and the add-on waits a few minutes before asking again, so a slow Open-Meteo no longer holds up the page.
+* **Resort pages put the snow first:** big next 5, 6-10 and 11-15 day totals, then the daily snow chart and "Getting there", with the webcams after. When no snow is due in the next 48 hours it says so instead of showing an empty chart.
+* The page sits in the middle of wide screens, snow totals are larger, and a 5-day total at or above your powder alert size stands out in blue.
+* When Claude isn't connected, Daily Snow no longer takes the top of the page; a short line under the forecast links to Settings.
+* After an update the browser loads the new page, not an old saved copy.
+
 ## 0.5.3 - Shorter Road Alerts, Tidier Tabs
 
 ### 🌟 Features
