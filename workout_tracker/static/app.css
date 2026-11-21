@@ -199,7 +199,10 @@ pre.notes { white-space: pre-wrap; font: inherit; font-size: 0.88rem; color: var
 .gallery { display: flex; gap: 6px; overflow-x: auto; margin: 6px 0; }
 .gallery img { height: 150px; width: auto; border-radius: 10px; background: var(--card-2); flex: 0 0 auto; }
 .tabs button { font-size: 0.68rem; }
-.msg .changes { margin-top: 10px; padding: 10px; border-radius: 10px; background: var(--card-2); }
+.msg .changes { margin-top: 10px; padding: 10px; border-radius: 10px; background: var(--card-2); white-space: normal; }
+.msg .changes .block-day { background: color-mix(in srgb, var(--muted) 22%, var(--card)); }
+.msg .changes .block-day.strength { background: color-mix(in srgb, var(--accent) 24%, var(--card)); }
+.msg .changes .block-day.cardio { background: color-mix(in srgb, var(--ok) 24%, var(--card)); }
 .msg .changes ul { margin: 6px 0 0; padding-left: 20px; }
 .more-item { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; cursor: pointer; min-height: 64px; }
 .more-icon { font-size: 1.6rem; }
@@ -207,6 +210,18 @@ pre.notes { white-space: pre-wrap; font: inherit; font-size: 0.88rem; color: var
 .week-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
 .week-day.today { border-color: var(--accent); }
 .week-day.done { opacity: 0.75; }
+.week-nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.week-nav .btn { padding-left: 4px; padding-right: 4px; }
+@media (max-width: 360px) { .week-nav { grid-template-columns: 1fr 1fr; } }
+.block-week { display: block; width: 100%; text-align: left; padding: 8px 0 8px 8px; margin-top: 6px; border: none;
+  border-top: 1px solid var(--line); border-left: 3px solid transparent; background: none; color: inherit; font: inherit; }
+button.block-week { cursor: pointer; }
+.block-week.shown { border-left-color: var(--accent); }
+.block-days { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.block-day { font-size: 0.75rem; padding: 2px 7px; border-radius: 8px; white-space: nowrap;
+  background: color-mix(in srgb, var(--muted) 15%, transparent); }
+.block-day.strength { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.block-day.cardio { background: color-mix(in srgb, var(--ok) 20%, transparent); }
 .progress { font-size: 0.88rem; margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: var(--card-2); }
 .chips.wrap { flex-wrap: wrap; overflow: visible; }
 .chip.on { background: var(--accent); color: var(--accent-text); border-color: transparent; }

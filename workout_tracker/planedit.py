@@ -32,11 +32,11 @@ INSTRUCTIONS = (
 )
 
 
-def extract(reply):
+def extract(reply, pattern=BLOCK):
     """(reply without the block, parsed block or None)."""
     if not reply:
         return reply, None
-    m = BLOCK.search(reply)
+    m = pattern.search(reply)
     if not m:
         return reply, None
     clean = (reply[:m.start()] + reply[m.end():]).strip()
@@ -44,6 +44,176 @@ def extract(reply):
         return clean, json.loads(m.group(1))
     except ValueError:
         return clean, None
+
+
+# --- A 4-week block: the coach plans every day of the next four weeks, Joe applies it in one tap --------------
+
+PLAN_BLOCK = re.compile(r"```\s*plan-block\s*(\{.*?\})\s*```", re.S)
+ASKS_FOR_BLOCK = re.compile(r"\b(4|four)[- ]?weeks?\b|\bblock\b|\bmonth\b|\bnext few weeks\b|\bmesocycle\b", re.I)
+DAY_LABELS = {"legs": "Legs", "back": "Back", "core": "Core", "hips": "Hips", "full": "Full body"}
+
+
+def block_instructions(today):
+    import planner
+    this_monday = planner.monday(today)
+    return (
+        "PLANNING A 4-WEEK BLOCK: when Joe asks for a plan for the next few weeks, you may end your reply with one fenced "
+        "block like this instead of plan-changes:\n"
+        '```plan-block\n{"start": "YYYY-MM-DD", "goal": "one line: what these four weeks build toward", "weeks": [\n'
+        ' {"phase": "Base", "focus": "one short line for the week", "days": ["strength:legs", "strength:core", '
+        '"cardio:walk:30", "strength:back", "strength:hips", "strength:full", "rest"]},\n'
+        " ... exactly 4 weeks]}\n```\n"
+        f"start is a Monday: {this_monday.isoformat()} (this week) or "
+        f"{(this_monday + datetime.timedelta(days=7)).isoformat()} (next week). "
+        "days lists Monday to Sunday, each one of: strength:legs, strength:back, strength:core, strength:hips, "
+        f"strength:full, cardio:<walk|bike|run|swim|row>:<minutes 5-{CARDIO_MAX_MINUTES}>, recovery, rest. "
+        "Every week keeps at least one rest or recovery day and at most 5 strength days. phase is Base, Build, Build+ or "
+        "Easy week: include at least one Easy week (usually the last) and never two Build+ weeks in a row. bike = Peloton, "
+        "row = water rower: while one is locked its days are walked instead. The exercises, sets and weights are still "
+        "picked each day from his morning check-in, and a high kidney score still turns any day into recovery, so plan "
+        "the shape of the weeks, not the exercises. Explain the plan briefly in your reply."
+    )
+
+
+def _parse_day(raw, goals):
+    """A block day from the coach ("strength:legs", "cardio:walk:30", "rest") or from the page (a dict)."""
+    import planner
+    if isinstance(raw, dict):
+        focus, theme, ctype, minutes = raw.get("focus"), raw.get("theme"), raw.get("cardio_type"), raw.get("cardio_minutes")
+    else:
+        parts = [p.strip().lower() for p in str(raw or "").split(":")]
+        focus = parts[0]
+        theme = parts[1] if focus == "strength" and len(parts) > 1 else None
+        ctype = parts[1] if focus == "cardio" and len(parts) > 1 else None
+        minutes = parts[2] if focus == "cardio" and len(parts) > 2 else None
+    if focus in ("rest", "recovery"):
+        return {"focus": focus}
+    if focus == "strength":
+        return {"focus": "strength", "theme": theme} if theme in planner.THEMES else None
+    if focus == "cardio":
+        if ctype not in CARDIO_TEXT or ctype == "recovery":
+            return None
+        if minutes in (None, ""):
+            return {"focus": "cardio", "cardio_type": ctype, "cardio_minutes": None}   # the engine picks the minutes
+        try:
+            minutes = int(minutes)
+        except (TypeError, ValueError):
+            return None
+        if not 5 <= minutes <= CARDIO_MAX_MINUTES:
+            return None
+        return {"focus": "cardio", "cardio_type": ctype, "cardio_minutes": minutes}
+    return None
+
+
+def _usual_day(d, goals):
+    """The normal pattern for a date (ignoring any block), used when a proposed day or week isn't allowed."""
+    import planner
+    base = planner._base(d, goals)
+    if base["focus"] == "strength":
+        return {"focus": "strength", "theme": planner.theme_for(d, "strength", goals)}
+    if base["focus"] == "cardio":
+        return {"focus": "cardio", "cardio_type": base["cardio_type"], "cardio_minutes": None}
+    return {"focus": base["focus"]}
+
+
+def day_label(day):
+    if day["focus"] == "strength":
+        return DAY_LABELS.get(day.get("theme"), "Strength")
+    if day["focus"] == "cardio":
+        name = {"walk": "Walk", "bike": "Peloton", "row": "Rower", "run": "Run", "swim": "Swim"}.get(day["cardio_type"], "Cardio")
+        return f"{name} {day['cardio_minutes']} min" if day.get("cardio_minutes") else name
+    return day["focus"].capitalize()
+
+
+def validate_block(data, today, goals, machines=None):
+    """(block ready to save, or None, and reasons for anything changed or refused). Nothing the coach sends is trusted:
+    a day that isn't allowed falls back to the usual plan, a week without a rest day or with more than 5 strength days
+    keeps the usual week, and every block gets an Easy week."""
+    import planner
+    data = data or {}
+    notes = []
+    try:
+        start = planner.monday(datetime.date.fromisoformat(str(data.get("start"))))
+    except ValueError:
+        return None, ["The 4-week plan had no start date, so it was skipped."]
+    this_monday = planner.monday(today)
+    if start not in (this_monday, this_monday + datetime.timedelta(days=7)):
+        return None, [f"A 4-week plan has to start this week or next, not {start:%b %d}."]
+    weeks_in = data.get("weeks") or []
+    if len(weeks_in) != planner.BLOCK_WEEKS:
+        return None, [f"The plan had {len(weeks_in)} weeks instead of 4, so it was skipped."]
+    weeks, days_out = [], {}
+    for i, w in enumerate(weeks_in):
+        w = w if isinstance(w, dict) else {}
+        wstart = start + datetime.timedelta(days=7 * i)
+        phase = w.get("phase") if w.get("phase") in planner.PHASES else None
+        if not phase:
+            phase = planner.PHASES[planner.week_number(wstart) % 4]
+            notes.append(f"Week {i + 1} had no valid phase, so it follows the usual cycle ({phase}).")
+        raw_days = w.get("days") if isinstance(w.get("days"), list) else []
+        days = []
+        for j in range(7):
+            d = wstart + datetime.timedelta(days=j)
+            day = _parse_day(raw_days[j], goals) if j < len(raw_days) else None
+            if day is None:
+                day = _usual_day(d, goals)
+                notes.append(f"{d:%a %b %d} wasn't a day the plan allows, so it keeps the usual plan.")
+            days.append(day)
+        focuses = [x["focus"] for x in days]
+        if not any(f in ("rest", "recovery") for f in focuses) or focuses.count("strength") > planner.MAX_STRENGTH_DAYS:
+            days = [_usual_day(wstart + datetime.timedelta(days=j), goals) for j in range(7)]
+            notes.append(f"Week {i + 1} needs a rest or recovery day and at most 5 strength days, so it keeps the usual week.")
+        weeks.append({"phase": phase, "focus": str(w.get("focus") or "")[:160], "start": wstart.isoformat()})
+        for j, day in enumerate(days):
+            days_out[(wstart + datetime.timedelta(days=j)).isoformat()] = day
+    for i in range(1, len(weeks)):
+        if weeks[i]["phase"] == "Build+" and weeks[i - 1]["phase"] == "Build+":
+            weeks[i]["phase"] = "Build"
+            notes.append(f"Week {i + 1} is Build instead of a second Build+ in a row.")
+    if not any(w["phase"] == "Easy week" for w in weeks):
+        weeks[-1]["phase"] = "Easy week"
+        notes.append("Week 4 is an Easy week: every block needs one.")
+    locked = [m for m, st in (machines or {}).items() if not st.get("ok")]
+    if any(d.get("cardio_type") in locked for d in days_out.values()):
+        names = ", ".join(sorted({(machines[m] or {}).get("name", m) for m in locked
+                                  if any(d.get("cardio_type") == m for d in days_out.values())}))
+        notes.append(f"{names}: locked for now, so those days are walked until it unlocks.")
+    # days already gone keep what they were: changing them would count as skipped days and re-plan the week
+    days_out = {k: v for k, v in days_out.items() if k >= today.isoformat()}
+    block = {"start": start.isoformat(), "goal": str(data.get("goal") or "")[:200], "weeks": weeks, "days": days_out,
+             "created": today.isoformat()}
+    return block, notes
+
+
+def block_preview(block, goals=()):
+    """The block as the page shows it: four weeks of seven labelled days."""
+    import planner
+    out = {"start": block["start"], "goal": block["goal"], "weeks": []}
+    for w in block["weeks"]:
+        wstart = datetime.date.fromisoformat(w["start"])
+        days = []
+        for j in range(7):
+            d = wstart + datetime.timedelta(days=j)
+            day = block["days"].get(d.isoformat()) or _usual_day(d, goals)
+            days.append({**day, "date": d.isoformat(), "weekday": planner.DAY_NAMES[j], "label": day_label(day)})
+        out["weeks"].append({**w, "days": days})
+    return out
+
+
+def block_context(today):
+    """One line per week of the current block, for the coach."""
+    import planner
+    b = planner.block(today)
+    if not b:
+        return "No 4-week block is planned; the usual Base/Build/Build+/Easy cycle applies."
+    lines = [f"CURRENT 4-WEEK BLOCK (goal: {b.get('goal') or 'not given'}):"]
+    for i, w in enumerate(b["weeks"]):
+        wstart = datetime.date.fromisoformat(w["start"])
+        days = [day_label(b["days"].get((wstart + datetime.timedelta(days=j)).isoformat())
+                          or _usual_day(wstart + datetime.timedelta(days=j), ()))
+                for j in range(7)]
+        lines.append(f"Week {i + 1} from {wstart:%Y-%m-%d}, {w['phase']}: {w.get('focus') or ''} [{', '.join(days)}]")
+    return "\n".join(lines)
 
 
 def _resolve(name, by_name):

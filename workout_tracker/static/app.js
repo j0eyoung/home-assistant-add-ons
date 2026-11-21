@@ -1288,12 +1288,16 @@ async function renderWeek() {
   const w = state.week;
   const badge = { done: "✓ done", today: "today", missed: "missed", past: "", upcoming: "" };
   const range = `${formatDate(w.days[0].date)} – ${formatDate(w.days[6].date)}`;
+  const navs = [[0, "This week"], [1, "Next week"], [2, "In 2 weeks"], [3, "In 3 weeks"]];
   $view.innerHTML = `
-    <div class="two-col" style="margin-bottom:8px">
-      <button type="button" class="btn small" data-act="week-nav" data-v="0" ${off === 0 ? "disabled" : ""}>This week</button>
-      <button type="button" class="btn small" data-act="week-nav" data-v="1" ${off === 1 ? "disabled" : ""}>Next week</button>
+    <div class="week-nav" style="margin-bottom:8px">
+      ${navs.map(([v, l]) => `<button type="button" class="btn small" data-act="week-nav" data-v="${v}" ${off === v ? "disabled" : ""}>${l}</button>`).join("")}
     </div>
-    <p class="small muted" style="margin:0 0 8px">${esc(range)} · <strong>${esc(w.phase)}</strong></p>
+    <p class="small muted" style="margin:0 0 8px">${esc(range)} · <strong>${esc(w.phase)}</strong>${w.block_week ? ` · week ${w.block_week.n} of your 4-week plan` : ""}</p>
+    ${w.block ? `<div class="card"><strong>Your 4-week plan</strong>${w.block.goal ? `<div class="sub">${esc(w.block.goal)}</div>` : ""}
+      ${blockWeeks(w.block, true)}
+      <div class="small muted" style="margin-top:6px">Each day still follows your morning check-in. Tap a week to see its days.</div>
+      <div class="row-actions"><button type="button" class="btn link small" data-act="block-clear">End this plan</button></div></div>` : ""}
     ${w.replan ? `<div class="card season"><strong>You skipped a day, so I re-planned the week</strong>
       <div class="sub">Moved up: ${esc(w.replan.missed.join(", "))}.${w.replan.dropped.length ? ` Left out to keep your rest day: ${esc(w.replan.dropped.join(", "))}.` : ""}</div></div>` : ""}
     ${w.machines && !w.sports?.includes("triathlon") ? `<div class="card"><strong>Cardio machines</strong>
@@ -1307,12 +1311,14 @@ async function renderWeek() {
         <span class="badge">${esc(d.label)}</span>${badge[d.status] ? `<span class="badge${d.status === "missed" ? " bad" : ""}">${badge[d.status]}</span>` : ""}</div>
       ${d.theme_label ? `<div class="sub">${esc(d.focus === "cardio" ? "Cardio " : "")}${esc(d.theme_label)}${d.replanned ? " · moved up after a skipped day" : ""}</div>` : ""}
       ${d.cardio_text && d.focus === "cardio" ? `<div><strong>${esc(d.cardio_text)}</strong>${d.machine ? ` on the ${esc(d.machine)}` : ""}${d.long ? " (long and easy)" : ""}</div>` : ""}
+      ${d.machine_locked ? `<div class="small muted">Your plan has a cardio machine here: walking until it unlocks.</div>` : ""}
       ${d.strength?.length ? `<div class="sub">${esc(d.strength.slice(0, 6).join(", "))}${d.strength.length > 6 ? "…" : ""}</div>` : ""}
       <div class="small muted">${esc(d.mind)}</div>
       ${d.changed ? `<div class="small" style="color:var(--accent)">Changed by your coach${d.note ? `: ${esc(d.note)}` : ""}</div>` : ""}
     </div>`).join("")}
     <div class="row-actions">
       <button type="button" class="btn small" data-act="week-ask">Ask the coach to adjust my week</button>
+      <button type="button" class="btn small" data-act="block-ask">Plan my next 4 weeks</button>
       <button type="button" class="btn small" data-act="week-recap">Weekly recap</button>
       <button type="button" class="btn link small" data-act="week-reset">Undo coach changes</button>
     </div>
@@ -1362,6 +1368,34 @@ function changesBlock(m, i) {
            <button type="button" class="btn small" data-act="dismiss-changes" data-i="${i}">No thanks</button></div>`}</div>`;
   }
   if (m.rejected?.length) html += `<div class="small muted" style="margin-top:6px">Skipped for safety: ${esc(m.rejected.join(" "))}</div>`;
+  return html + blockBlock(m, i);
+}
+
+// Four weeks of labelled days, used in the coach's reply and on the Week tab.
+function blockWeeks(b, onWeekTab) {
+  return b.weeks.map((w, n) => {
+    const inner = `<div><strong>Week ${n + 1}</strong> · ${esc(formatDate(w.start))} · ${esc(w.phase)}${w.current ? ' <span class="badge">now</span>' : ""}</div>
+      ${w.focus ? `<div class="small muted">${esc(w.focus)}</div>` : ""}
+      <div class="block-days">${w.days.map((d) => `<span class="block-day ${esc(d.focus)}"><b>${esc(d.weekday)}</b> ${esc(d.label)}</span>`).join("")}</div>`;
+    return onWeekTab && w.offset >= 0 && w.offset <= 3
+      ? `<button type="button" class="block-week${w.shown ? " shown" : ""}" data-act="week-nav" data-v="${w.offset}">${inner}</button>`
+      : `<div class="block-week">${inner}</div>`;
+  }).join("");
+}
+
+// The coach's 4-week plan: nothing changes until you tap Apply.
+function blockBlock(m, i) {
+  if (!m.block && !m.block_notes?.length) return "";
+  let html = "";
+  if (m.block) {
+    const done = m.block_applied !== undefined;
+    html += `<div class="changes"><strong>Suggested 4-week plan</strong>${m.block.goal ? `<div class="small">${esc(m.block.goal)}</div>` : ""}
+      ${blockWeeks(m.block, false)}
+      ${done ? `<div class="small muted">${m.block_applied ? "Applied: see the Week tab." : "Not applied."}</div>`
+        : `<div class="row-actions"><button type="button" class="btn small" data-act="apply-block" data-i="${i}">Apply the 4 weeks</button>
+           <button type="button" class="btn small" data-act="dismiss-block" data-i="${i}">No thanks</button></div>`}</div>`;
+  }
+  if (m.block_notes?.length) html += `<div class="small muted" style="margin-top:6px">Adjusted for safety: ${esc(m.block_notes.join(" "))}</div>`;
   return html;
 }
 
@@ -1712,6 +1746,17 @@ async function renderSettings() {
     <div class="card">
       <label class="sub" for="gear-notes">Gear details (the coach reads this: weights, plates, tensions)</label>
       <textarea id="gear-notes" style="min-height:150px">${esc(s.gear_notes)}</textarea>
+      <p class="sub" style="margin:12px 0 6px">Weights you own. Suggested weights only go up to one of these, one step at a time.</p>
+      <label class="sub" for="w-dumbbell">Dumbbells (lb, separated by commas)</label>
+      <input id="w-dumbbell" class="code-input" style="width:100%" inputmode="decimal" value="${esc((s.weights?.dumbbell || []).join(", "))}">
+      <label class="sub" for="w-kettlebell">Kettlebells (lb)</label>
+      <input id="w-kettlebell" class="code-input" style="width:100%" inputmode="decimal" value="${esc((s.weights?.kettlebell || []).join(", "))}">
+      <div class="two-col" style="align-items:end">
+        <div><label class="sub" for="w-bar">Smallest jump on the barbell or EZ bar (lb)</label>
+          <input id="w-bar" class="code-input" style="width:100%" type="number" min="1" max="25" step="0.5" value="${esc(s.weights?.bar_step ?? 5)}"></div>
+        <div><label class="sub" for="w-cable">Cable machine step (lb)</label>
+          <input id="w-cable" class="code-input" style="width:100%" type="number" min="1" max="25" step="0.5" value="${esc(s.weights?.cable_step ?? 5)}"></div>
+      </div>
       <div class="row-actions"><button type="button" class="btn small" data-act="save-gear">Save gear details</button></div>
     </div>
     <h2>Yoga pictures</h2>
@@ -2383,6 +2428,20 @@ const actions = {
     history.replaceState(null, "", "#coach");
     showTab("coach");
   },
+  "block-ask"() {
+    state.coachDraft = "Plan my next 4 weeks as a block, starting next Monday: which days are strength (and which muscle group), "
+      + "cardio and rest, and the phase of each week, thinking about my sports and how I've been feeling.";
+    history.replaceState(null, "", "#coach");
+    showTab("coach");
+  },
+  async "block-clear"() {
+    if (!confirm("End the 4-week plan and go back to the usual week?")) return;
+    await api("api/block/clear", { method: "POST" });
+    state.week = null;
+    await refreshPlan();
+    render();
+    toast("Back to the usual week");
+  },
   "week-recap"() {
     // the coach writes it from your logged workouts, symptoms, Garmin data and the plan
     state.coachDraft = "Write my weekly recap: what I did this week compared with the plan, how my kidney and pelvic floor "
@@ -2516,6 +2575,30 @@ const actions = {
     } catch { toast("Couldn't update the plan"); el.disabled = false; return; }
     renderCoach(true);
   },
+  async "apply-block"(el) {
+    const m = state.coach[Number(el.dataset.i)];
+    if (!m || !m.block) return;
+    el.disabled = true;
+    try {
+      const r = await api("api/plan/block", { method: "POST", body: JSON.stringify({ block: m.block }) });
+      m.block_applied = !!r.ok;
+      if (r.rejected?.length) m.block_notes = r.rejected;
+      if (m.id) api(`api/coach/chat/${m.id}/state`, { method: "POST", body: JSON.stringify({ block_applied: !!r.ok }) }).catch(() => {});
+      state.week = null;
+      if (saveTimer) await saveDraft();
+      await refreshPlan();
+      toast(r.ok ? "Your 4-week plan is on the Week tab" : "The plan couldn't be applied");
+    } catch { toast("Couldn't apply the plan"); el.disabled = false; return; }
+    renderCoach(true);
+  },
+  "dismiss-block"(el) {
+    const m = state.coach[Number(el.dataset.i)];
+    if (m) {
+      m.block_applied = false;
+      if (m.id) api(`api/coach/chat/${m.id}/state`, { method: "POST", body: JSON.stringify({ block_applied: false }) }).catch(() => {});
+    }
+    renderCoach(true);
+  },
   "dismiss-changes"(el) {
     const m = state.coach[Number(el.dataset.i)];
     if (m) {
@@ -2633,7 +2716,14 @@ const actions = {
   },
   async "save-gear"() {
     try {
-      state.settings = await api("api/settings", { method: "PUT", body: JSON.stringify({ gear_notes: document.getElementById("gear-notes").value }) });
+      const val = (id) => document.getElementById(id).value;
+      state.settings = await api("api/settings", { method: "PUT", body: JSON.stringify({
+        gear_notes: val("gear-notes"),
+        weights: { dumbbell: val("w-dumbbell"), kettlebell: val("w-kettlebell"), bar_step: val("w-bar"), cable_step: val("w-cable") },
+      }) });
+      const w = state.settings.weights || {};   // show the lists as saved (sorted, numbers only)
+      document.getElementById("w-dumbbell").value = (w.dumbbell || []).join(", ");
+      document.getElementById("w-kettlebell").value = (w.kettlebell || []).join(", ");
       toast("Saved");
     } catch { toast("Couldn't save"); }
   },

@@ -43,7 +43,55 @@ def week_number(date):
 
 
 def phase(date):
+    found = block_week(date)
+    if found:
+        return found[1]["phase"]
     return PHASES[week_number(date) % 4]
+
+
+# --- A 4-week block from the coach ---------------------------------------------------------------------------
+# settings "block": {"start": Monday, "goal": text, "weeks": [{"phase", "focus"} x 4],
+#                    "days": {date: {"focus", "theme", "cardio_type", "cardio_minutes"}}, "created": date}
+# Each week's phase replaces the usual Base/Build/Build+/Easy cycle, and each day replaces the usual pattern.
+# Single-day changes from the coach (week_overrides) still win over the block, and "Undo coach changes" keeps it.
+
+BLOCK_WEEKS = 4
+
+
+def block(date=None):
+    """The 4-week block, while it hasn't finished yet; else None."""
+    b = library.load_settings().get("block")
+    if not b or not b.get("start"):
+        return None
+    try:
+        start = datetime.date.fromisoformat(b["start"])
+    except ValueError:
+        return None
+    date = date or (_ctx["today"]() if _ctx["today"] else datetime.date.today())
+    if date > start + datetime.timedelta(days=7 * BLOCK_WEEKS - 1):
+        return None
+    return b
+
+
+def block_week(date):
+    """(week index 0-3, week) when the date falls inside the block."""
+    b = library.load_settings().get("block")
+    if not b or not b.get("start"):
+        return None
+    try:
+        i = (date - datetime.date.fromisoformat(b["start"])).days // 7
+    except ValueError:
+        return None
+    weeks = b.get("weeks") or []
+    return (i, weeks[i]) if 0 <= i < len(weeks) else None
+
+
+def save_block(b):
+    library.save_settings({"block": b})
+
+
+def clear_block():
+    library.save_settings({"block": None})
 
 
 SEASON_PHASES = {
@@ -81,11 +129,11 @@ def season_info(today, season_iso=None):
     return {"days": days, "phase": name, "text": SEASON_PHASES[name], "opening": opening.isoformat()}
 
 
-def theme_for(date, focus, goals=()):
+def theme_for(date, focus, goals=(), preferred=None):
     if focus == "strength":
         # position among the week's strength days, shifted each week so a weekday is not always the same group
         pos = STRENGTH_WEEKDAYS.index(date.weekday()) if date.weekday() in STRENGTH_WEEKDAYS else date.weekday() % 5
-        theme = THEMES[(pos + week_number(date)) % len(THEMES)]
+        theme = preferred if preferred in THEMES else THEMES[(pos + week_number(date)) % len(THEMES)]
         snow = {"skiing", "snowboarding"} & set(goals)
         season = season_info(date) if snow else None
         if season:
@@ -209,7 +257,16 @@ def day_plan(date, goals):
             if yesterday in _ctx["snow"]():
                 day["theme"], day["theme_label"] = "core", THEME_LABELS["core"]
                 day["after_snow"] = True
-    if day["focus"] == "cardio" and not day.get("changed") and "triathlon" not in goals:
+    if day["focus"] == "cardio" and day.get("block") and day["cardio_type"] in ("bike", "row"):
+        # the block may plan the Peloton or rower for later weeks: only once it is unlocked on the day
+        st = (machines().get(day["cardio_type"]) or {})
+        if not st.get("ok"):
+            day["cardio_type"], day["cardio_minutes"] = "walk", None
+            day["machine_locked"] = True
+        else:
+            day["cardio_minutes"] = min(day.get("cardio_minutes") or st["minutes"], st["minutes"])
+            day["machine"] = st["name"]
+    elif day["focus"] == "cardio" and not day.get("changed") and not day.get("block") and "triathlon" not in goals:
         # Peloton and rower come back once your scores unlock them (readiness.py); they rotate with walking
         st = machines()
         unlocked = [m for m in ("bike", "row") if (st.get(m) or {}).get("ok")]
@@ -227,15 +284,18 @@ def _day_plan_base(date, goals):
     """Plan for one date without the skipped-day re-plan."""
     day = _base(date, goals)
     ov = overrides().get(date.isoformat())
-    if ov:
-        day.update({k: v for k, v in ov.items() if k in ("focus", "cardio_type", "cardio_minutes", "note")})
-        day["changed"] = True
+    planned = None
+    if not ov and block_week(date):
+        planned = (library.load_settings().get("block") or {}).get("days", {}).get(date.isoformat())
+    if ov or planned:
+        day.update({k: v for k, v in (ov or planned).items() if k in ("focus", "cardio_type", "cardio_minutes", "note")})
+        day["changed" if ov else "block"] = True
         if day["focus"] in ("rest", "recovery"):
             day["cardio_type"], day["cardio_minutes"] = None, None
         elif day["focus"] == "cardio" and not day["cardio_type"]:
             base = _base(date, goals)
             day["cardio_type"] = base["cardio_type"] or _cardio_type("a", goals)
-    day["theme"] = theme_for(date, day["focus"], goals)
+    day["theme"] = theme_for(date, day["focus"], goals, preferred=(planned or {}).get("theme"))
     day["theme_label"] = THEME_LABELS.get(day["theme"]) if day["theme"] else None
     day["phase"] = phase(date)
     snow = {"skiing", "snowboarding"} & set(goals)

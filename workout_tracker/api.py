@@ -40,7 +40,7 @@ from engine import WorkoutEngine
 from exercises import CARDIO_IMAGES, GUIDES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "0.12.2"
+VERSION = "0.13.0"
 
 app = FastAPI(title="AI Workout Tracker")
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
@@ -307,7 +307,8 @@ def with_progress(card, last, phase):
     date, sets = history.last_session(DB_PATH, card["name"])
     suggest = progression.suggest_hold if card.get("hold") else progression.suggest
     card["progress"] = suggest(date, sets, phase, last.get("rpe"), last.get("kidney_flank_pain"),
-                               last.get("pelvic_floor_tightness"))
+                               last.get("pelvic_floor_tightness"), equipment=card.get("equipment"),
+                               dose=card.get("dose"), bothered=card["name"] in back)
     if card["progress"]:
         card["progress"]["sets"] = sets                   # last time's sets, for "Same as last time"
     if card.get("hold") and card["progress"]:
@@ -747,7 +748,8 @@ def coach_chat_import(c: ChatImport):
         for m in c.messages[-50:]:
             role, text = m.get("role"), str(m.get("content") or "")[:20000]
             if role in ("user", "assistant") and text:
-                extra = {k: m[k] for k in ("error", "changes", "rejected", "applied", "dismissed") if k in m}
+                extra = {k: m[k] for k in ("error", "changes", "rejected", "applied", "dismissed", "block",
+                                           "block_notes", "block_applied") if k in m}
                 chatlog.add(DB_PATH, role, text, extra)
     return coach_chat()
 
@@ -755,6 +757,7 @@ def coach_chat_import(c: ChatImport):
 class ChatFlags(BaseModel):
     applied: int | None = None
     dismissed: bool | None = None
+    block_applied: bool | None = None        # the 4-week plan: applied (True) or turned down (False)
 
 
 @app.post("/api/coach/chat/{mid}/state")
@@ -787,6 +790,8 @@ def ask_coach(m: CoachMessage):
         chatlog.add(DB_PATH, "assistant", f"Coach hit an error: {r['error']}", {"error": True})
     else:
         extra = {"changes": r["changes"], "rejected": r["rejected"]}
+        if r.get("block") or r.get("block_notes"):
+            extra.update(block=r.get("block"), block_notes=r.get("block_notes") or [])
         chatlog.add(DB_PATH, "assistant", r["reply"] or "(no reply)", extra)
     return r
 
@@ -806,21 +811,56 @@ def _ask_coach(message, recent):
                    "; ".join(f"{v['name']}: {'unlocked, ' + str(v['minutes']) + ' min max' if v['ok'] else 'locked. ' + v['why']}"
                              for v in st.values()))
     entries = [e for e in lib["entries"] if e["name"] not in resting]
-    context = "\n\n".join(x for x in [planedit.INSTRUCTIONS, ck_line, pause_line,
+    # the 4-week block format only goes in when Joe asks about the next few weeks (it is long)
+    wants_block = bool(planedit.ASKS_FOR_BLOCK.search(message or ""))
+    context = "\n\n".join(x for x in [planedit.INSTRUCTIONS, planedit.block_instructions(today) if wants_block else "",
+                                      ck_line, pause_line,
                                       planedit.context(plan, entries, library.selected_equipment(), selected_sports()),
-                                      planedit.week_context(today, selected_sports())] if x)
+                                      planedit.week_context(today, selected_sports()),
+                                      planedit.block_context(today)] if x)
     info = _season(today)
     season_text = (f"{info['opening']} ({info['days']} days away)" if info["days"] > 0 else f"{info['opening']} (it has opened)") + \
         f". Phase: {info['phase']}: {info['text']}" if info else ""
     reply, error = coach.ask(message, recent, plan_context=context, season=season_text, sports=selected_sports())
+    reply, bdata = planedit.extract(reply, planedit.PLAN_BLOCK)
     reply, data = planedit.extract(reply)
     ops, pause_rejects = _drop_paused((data or {}).get("changes") or [])
     changes, rejected = planedit.validate({"changes": [c for c in ops if c.get("op") != "day"]}, plan, lib["by_name"],
                                           library.selected_equipment())
     rejected = pause_rejects + rejected
     days, days_bad = planedit.validate_days([c for c in ops if c.get("op") == "day"], today, selected_sports())
+    block, block_notes = planedit.validate_block(bdata, today, selected_sports(), readiness.status()) if bdata else (None, [])
     return {"reply": reply, "error": error, "rejected": rejected + days_bad,
-            "changes": [dict(c, label=planedit.label(c)) for c in changes + days]}
+            "changes": [dict(c, label=planedit.label(c)) for c in changes + days],
+            "block": planedit.block_preview(block, selected_sports()) if block else None, "block_notes": block_notes}
+
+
+class BlockPlan(BaseModel):
+    block: dict           # the preview the coach's reply showed (weeks of labelled days)
+
+
+def _block_input(preview):
+    """The page sends back the preview; turn it into what validate_block checks (days as dicts)."""
+    return {"start": preview.get("start"), "goal": preview.get("goal"),
+            "weeks": [{"phase": w.get("phase"), "focus": w.get("focus"), "days": w.get("days") or []}
+                      for w in (preview.get("weeks") or []) if isinstance(w, dict)]}
+
+
+@app.post("/api/plan/block")
+def apply_block(p: BlockPlan):
+    """Joe tapped Apply on the coach's 4-week plan. Checked again here, so only a valid block is ever saved."""
+    today = datetime.date.fromisoformat(history.local_today())
+    block, notes = planedit.validate_block(_block_input(p.block), today, selected_sports(), readiness.status())
+    if not block:
+        return {"ok": False, "applied": 0, "rejected": notes}
+    planner.save_block(block)
+    return {"ok": True, "applied": 1, "rejected": notes}
+
+
+@app.post("/api/block/clear")
+def clear_block():
+    planner.clear_block()
+    return {"ok": True}
 
 
 class PlanChanges(BaseModel):
@@ -848,9 +888,10 @@ def apply_changes(p: PlanChanges):
 
 @app.get("/api/week")
 def get_week(offset: int = 0):
-    """The week (Monday to Sunday). offset 0 = this week, 1 = next week."""
+    """The week (Monday to Sunday). offset 0 = this week, 1 = next week, up to 3 (the end of a 4-week block)."""
     today = datetime.date.fromisoformat(history.local_today())
-    start = planner.monday(today) + datetime.timedelta(days=7 * max(-1, min(offset, 2)))
+    offset = max(-1, min(offset, 3))
+    start = planner.monday(today) + datetime.timedelta(days=7 * offset)
     goals = selected_sports()
     done = {w["date"] for w in history.get_history(DB_PATH, 60) if (w.get("workout") or {}).get("session") != 2}
     days = planner.week(start, today, goals, done)
@@ -875,9 +916,18 @@ def get_week(offset: int = 0):
             weeks_left = max(0, (datetime.date.fromisoformat(season) - today).days // 7)
         except ValueError:
             pass
+    block = planner.block(today)
+    preview = planedit.block_preview(block, goals) if block else None
+    if preview:
+        for w in preview["weeks"]:
+            w["shown"] = w["start"] == start.isoformat()
+            w["current"] = w["start"] == planner.monday(today).isoformat()
+            w["offset"] = (datetime.date.fromisoformat(w["start"]) - planner.monday(today)).days // 7
+    found = planner.block_week(start)
     return {"start": start.isoformat(), "offset": offset, "days": days, "sports": goals, "phase": planner.phase(start),
             "season": _season(today), "replan": replan, "machines": readiness.status(today),
-            "season_start": season, "weeks_to_season": weeks_left}
+            "season_start": season, "weeks_to_season": weeks_left, "block": preview,
+            "block_week": {"n": found[0] + 1, **found[1]} if found and preview else None}
 
 
 @app.post("/api/week/reset")
@@ -1517,6 +1567,7 @@ def get_settings():
             "paused": [{"name": n, "since": p["since"], "until": p["until"]} for n, p in sorted(paused().items())],
             "machines": readiness.status() if "triathlon" not in selected_sports() else None,
             "gear_notes": library.load_settings().get("gear_notes", library.DEFAULT_GEAR_NOTES),
+            "weights": progression.owned_weights(),
             "garmin_adjust": bool(library.load_settings().get("garmin_adjust", False)),
             "pt_exercises": pt_exercises(),
             "biofeedback": insights.bio_settings(), "bio_units": insights.BIO_UNITS,
@@ -1550,6 +1601,7 @@ class Settings(BaseModel):
     garmin_adjust: bool | None = None
     equipment: list[str] | None = None
     gear_notes: str | None = None
+    weights: dict | None = None          # {"dumbbell": [5, 10...], "kettlebell": [15], "bar_step": 5, "cable_step": 5}
     media_base_url: str | None = None
     voice: str | None = None
     sports: list[str] | None = None
@@ -1587,6 +1639,8 @@ def put_settings(s: Settings):
         patch["equipment"] = sorted({e for e in s.equipment if e in library.EQUIPMENT_OPTIONS} | {"bodyweight"})
     if s.gear_notes is not None:
         patch["gear_notes"] = s.gear_notes.strip()[:2000]
+    if s.weights is not None:
+        patch["weights"] = progression.clean_weights(s.weights, progression.owned_weights())
     if s.garmin_adjust is not None:
         patch["garmin_adjust"] = s.garmin_adjust
     if s.sports is not None:

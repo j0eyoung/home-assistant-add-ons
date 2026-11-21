@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.0 - Smarter Weight Steps, 4-Week Plans from the Coach
+
+### 🌟 Features
+* **A 4-week plan from the coach.** Tap "Plan my next 4 weeks" on the Week tab (or ask the coach for a plan for the next few weeks). The coach lays out every day of the next four weeks: which days are strength and for which muscle group, cardio and rest, and whether each week is Base, Build, Build+ or an Easy week. You see the whole plan in the chat and apply it in one tap. The Week tab then shows the four weeks at the top (tap a week to see its days) and lets you look up to three weeks ahead. "End this plan" goes back to the usual week.
+* **The plan is checked before it's saved.** Every week keeps a rest or recovery day and at most 5 strength days, every plan has an Easy week, and there are never two Build+ weeks in a row. Anything that doesn't fit falls back to your usual plan, and the chat says what was changed. Days that have already gone keep what they were. The Peloton and rower are only used once they're unlocked (walking until then), the week before opening day still has no new leg work, and each day still follows your morning check-in.
+* **Weights you own (Settings › Gear details).** List your dumbbells and kettlebells, and the smallest jump on the barbell and the cable machine. Suggested weights only go up to one you have.
+
+### 🔧 Improvements
+* **Weight goes up only when every set reached the top of the rep range** (for example 12 reps on both sets of a 10-12), not just most of them. The suggestion says how many sets fell short.
+* **The next weight is the next one you own**, one step at a time. A big jump (like 10 to 15 lb dumbbells) starts you two reps lower.
+* **At your heaviest dumbbell or kettlebell,** you get more reps instead, then a slower 3-second lowering.
+* **If your reps fall well short of the range** (say after a jump that was too big), it suggests going back to the lighter weight.
+* **No increase for an exercise that bothered you recently.** It suggests the same load or lighter, for weights and for timed holds.
+
 ## 0.12.2 - Withings Connection Check, Pounds in the Sensor List
 
 ### 🌟 Features
