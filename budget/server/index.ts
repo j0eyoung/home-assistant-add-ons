@@ -8,6 +8,7 @@ import { authStatus, loginState, logout, sendLoginCode, startLogin } from './cla
 import { config } from './config.ts'
 import { NEEDS_REVIEW, backupDb, categoryIdByName, db, listBackups, meta, restoreBackup, runReadOnly } from './db.ts'
 import { debtSummary } from './debts.ts'
+import { mergeAccount, replacements } from './merge.ts'
 import { syncHealth } from './health.ts'
 import { importPlan, planBrief, planDebtOrder, planReport, resetPlan, savePlan } from './plan.ts'
 import { addMonths, budgetRows, currentMonth, today } from './queries.ts'
@@ -115,8 +116,17 @@ app.post('/api/categorize', async (req, res) => {
   res.json({ categorized: await categorizeWithAi(2000) })
 })
 
+// replaced_by: the account this one seems to have been reconnected as (see replacements()).
 app.get('/api/accounts', (_req, res) => {
-  res.json(db.prepare('SELECT * FROM accounts ORDER BY source, org_name, name').all())
+  const replaced = replacements()
+  const rows = db.prepare(`SELECT a.*, (SELECT COUNT(*) FROM transactions t WHERE t.account_id = a.id) AS transaction_count
+    FROM accounts a ORDER BY source, org_name, name`).all() as { id: string }[]
+  res.json(rows.map((a) => ({ ...a, replaced_by: replaced.get(a.id) ?? null })))
+})
+
+// Body: {into}. Folds this account into another one (see mergeAccount).
+app.post('/api/accounts/:id/merge', async (req, res) => {
+  res.json(await mergeAccount(req.params.id, String(req.body.into ?? '')))
 })
 
 // Manual accounts cover institutions SimpleFIN can't reach (e.g. a loan servicer).

@@ -63,6 +63,7 @@ Rules:
 - Dividends, reinvestments, and core/money-market sweeps inside investment or HSA accounts are "Investment Activity".
 - Debit card purchases from an HSA are normal spending (usually "Health").
 - Court, probation, monitoring, county government and attorney payments are "Legal".
+- Interest and finance charges posted to a credit card or loan account are "Interest".
 ${examples.length ? `How this user has categorized merchants before (follow these when a description is the same merchant):\n${examples.join('\n')}\n` : ''}Reply with only a JSON array of {"i": <index>, "category": "<one allowed category>"}, one entry per transaction, no other text.
 
 ${JSON.stringify(batch.map((t, idx) => ({ i: idx, description: t.merchant || t.name, raw: t.name, amount: t.amount, account: `${t.account} (${t.account_type})` })))}`

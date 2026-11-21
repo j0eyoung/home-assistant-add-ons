@@ -5,6 +5,7 @@ import { categoryIdByName, db } from './db.ts'
 // account type. First match wins; the AI only sees what's left.
 type Rule = { match: RegExp; category: string; accountTypes?: string[]; direction?: 'in' | 'out' }
 const RULES: Rule[] = [
+  { match: /interest charge|interest charged|purchase interest|interest on purchases|cash advance interest|finance charge/, category: 'Interest', accountTypes: ['credit', 'loan'], direction: 'out' },
   { match: /aj monitoring|idea forum|thorto|jeff ?co\b|jefferson county/, category: 'Legal', direction: 'out' },
   { match: /payroll|direct dep|salary/, category: 'Income', accountTypes: ['depository'], direction: 'in' },
   { match: /contribution|partic contr/, category: '401k Contribution', accountTypes: ['investment'], direction: 'in' },

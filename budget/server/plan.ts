@@ -123,7 +123,7 @@ function spendingHistory(): { average: number | null; lastMonth: { month: string
   if (!months.length) return { average: null, lastMonth: null }
   const totals = new Map((db.prepare(`
     SELECT substr(l.date, 1, 7) AS month, SUM(l.amount) AS total FROM ledger l JOIN categories c ON c.id = l.category_id
-    WHERE c.kind = 'expense' AND c.name != 'Debt Payments' AND l.pending = 0
+    WHERE c.kind = 'expense' AND c.name NOT IN ('Debt Payments', 'Interest') AND l.pending = 0
       AND substr(l.date, 1, 7) IN (${months.map(() => '?').join(', ')})
     GROUP BY 1`).all(...months) as { month: string; total: number }[]).map((r) => [r.month, r.total]))
   const sum = months.reduce((s, m) => s + (totals.get(m) ?? 0), 0)
@@ -334,7 +334,7 @@ export function planReport() {
     ? (db.prepare(`
         SELECT l.date, COALESCE(l.merchant, l.name) AS merchant, l.amount
         FROM ledger l JOIN categories c ON c.id = l.category_id
-        WHERE l.account_id = ? AND c.kind = 'expense' AND l.amount > 0 AND substr(l.date, 1, 7) = ?
+        WHERE l.account_id = ? AND c.kind = 'expense' AND c.name != 'Interest' AND l.amount > 0 AND substr(l.date, 1, 7) = ?
         ORDER BY l.date DESC, l.amount DESC`).all(focusDebt.id, month) as { date: string; merchant: string; amount: number }[])
     : []
   const focus = focusDebt
@@ -409,7 +409,7 @@ function planVsActual(plan: Plan, spending: number, debtIds: string[]) {
   const flows = new Map((db.prepare(`
     SELECT substr(l.date, 1, 7) AS month,
       -SUM(CASE WHEN c.kind = 'income' THEN l.amount ELSE 0 END) AS income,
-      SUM(CASE WHEN c.kind = 'expense' AND c.name != 'Debt Payments' THEN l.amount ELSE 0 END) AS spending
+      SUM(CASE WHEN c.kind = 'expense' AND c.name NOT IN ('Debt Payments', 'Interest') THEN l.amount ELSE 0 END) AS spending
     FROM ledger l JOIN categories c ON c.id = l.category_id
     WHERE l.pending = 0 AND substr(l.date, 1, 7) >= ? GROUP BY 1`).all(months[0]) as { month: string; income: number; spending: number }[]).map((f) => [f.month, f]))
   const paid = new Map(debtIds.length

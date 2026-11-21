@@ -20,7 +20,7 @@ export function safeToSpend() {
 
   // Gas, groceries and the like stay weekly spending even when they repeat.
   const bills = detectRecurring()
-    .filter((b) => !b.stopped && b.category !== 'Debt Payments' && !HABIT_CATEGORIES.has(b.category))
+    .filter((b) => !b.stopped && b.category !== 'Debt Payments' && b.category !== 'Interest' && !HABIT_CATEGORIES.has(b.category))
     .map((b) => ({ key: b.key, merchant: b.merchant, category: b.category, monthly: Math.round(b.monthly) }))
   const billKeys = new Set(bills.map((b) => b.key))
   const fixed = bills.reduce((s, b) => s + b.monthly, 0)
@@ -32,7 +32,7 @@ export function safeToSpend() {
   const charges = (db.prepare(`
     SELECT l.date, COALESCE(l.merchant, l.name) AS label, l.amount, c.name AS category
     FROM ledger l JOIN categories c ON c.id = l.category_id
-    WHERE c.kind = 'expense' AND c.name != 'Debt Payments' AND l.date >= ? AND l.date <= ?
+    WHERE c.kind = 'expense' AND c.name NOT IN ('Debt Payments', 'Interest') AND l.date >= ? AND l.date <= ?
     ORDER BY l.date DESC, l.amount DESC`).all(weekStart < monthStart ? weekStart : monthStart, date) as
     { date: string; label: string; amount: number; category: string }[])
     .filter((c) => !billKeys.has(normalize(c.label)))

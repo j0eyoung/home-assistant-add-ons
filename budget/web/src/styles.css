@@ -382,3 +382,8 @@ code { display: block; white-space: pre-wrap; font-size: 12px; margin-top: 6px; 
   .tx-table tr.split-row td.category { margin: 0 0 0 auto; }
   .tx-table tr.panel-row { display: block; padding: 0 2px 8px 32px; }
 }
+
+/* Accounts: an old copy of a reconnected account and its merge offer */
+.account-block + .account-block { border-top: 1px solid var(--border); margin-top: 8px; }
+.account-block .account { border-top: none; margin-top: 0; }
+.merge-hint { padding: 8px 12px; margin: 0 0 8px; border: 1px solid var(--bad); border-radius: 8px; }

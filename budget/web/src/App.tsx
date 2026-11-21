@@ -411,8 +411,22 @@ function Accounts({ status, onError, onStatus }: PageProps & { status: Status | 
   const setType = (a: any, type: string) => run('type', () => api(`accounts/${encodeURIComponent(a.id)}`, 'PATCH', { type }))
   const setBalance = (a: any, balance: string) => run('balance', () => api(`accounts/${encodeURIComponent(a.id)}`, 'PATCH', { balance }))
   const remove = (a: any) => {
-    if (window.confirm(`Delete ${a.name} and its transactions from this app?`)) run('delete', () => api(`accounts/${encodeURIComponent(a.id)}`, 'DELETE'))
+    const hint = a.replaced_by || a.source === 'simplefin' ? '\n\nIf this is the old copy of a reconnected account, use Merge instead: it keeps the history.' : ''
+    if (window.confirm(`Delete ${a.name} and its ${a.transaction_count} transactions from this app?${hint}`)) run('delete', () => api(`accounts/${encodeURIComponent(a.id)}`, 'DELETE'))
   }
+  // Merging an old copy of an account into its replacement (see server/merge.ts).
+  const [merging, setMerging] = useState<{ from: any; into: string } | null>(null)
+  const [merged, setMerged] = useState('')
+  const merge = (from: any, into: string) => run('merge', async () => {
+    const r = await api(`accounts/${encodeURIComponent(from.id)}/merge`, 'POST', { into })
+    setMerging(null)
+    setMerged(`Merged ${from.name}: ${r.moved} older transactions moved over, ${r.matched} the new account already had kept once${r.backfilled ? `, ${r.backfilled} more fetched from SimpleFIN` : ''}.${r.warning ? ` ${r.warning}` : ''}`)
+  })
+  const accountLabel = (id: string) => {
+    const a = accounts.find((x) => x.id === id)
+    return a ? `${a.org_name ? `${a.org_name} ` : ''}${a.name} (as of ${a.balance_date})` : id
+  }
+  const stale = (a: any) => a.source === 'simplefin' && a.balance_date && a.balance_date < new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10)
 
   const groups = Object.entries(
     accounts.reduce<Record<string, any[]>>((g, a) => ((g[a.org_name || (a.source === 'manual' ? 'Manual' : 'Other')] ??= []).push(a), g), {}),
@@ -442,26 +456,62 @@ function Accounts({ status, onError, onStatus }: PageProps & { status: Status | 
 
       <CsvImport accounts={accounts} onError={onError} onDone={load} />
 
+      {merged && <p className="toast" role="status" onClick={() => setMerged('')}>{merged}</p>}
+
       {groups.map(([org, list]) => (
         <section key={org}>
           <h2>{org}</h2>
           {list.map((a) => (
-            <div className="account" key={a.id}>
-              <div>
-                <div>{a.name}</div>
-                <div className="muted">
-                  <select value={a.type} onChange={(e) => setType(a, e.target.value)}>
-                    {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  {' '}as of {a.balance_date}
-                  {' '}<button className="link" onClick={() => remove(a)}>Delete</button>
+            <div className="account-block" key={a.id}>
+              <div className="account">
+                <div>
+                  <div>{a.name}</div>
+                  <div className="muted">
+                    <select value={a.type} onChange={(e) => setType(a, e.target.value)}>
+                      {ACCOUNT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    {' '}as of {a.balance_date} · {a.transaction_count} transactions
+                    {' '}<button className="link" onClick={() => remove(a)}>Delete</button>
+                  </div>
                 </div>
+                {a.source === 'manual' ? (
+                  <input className="amount" type="number" step="0.01" defaultValue={a.balance} key={a.balance}
+                    onBlur={(e) => Number(e.target.value) !== a.balance && setBalance(a, e.target.value)} />
+                ) : (
+                  <div className={`num ${a.balance < 0 ? 'over' : ''}`}>{money(a.balance)}</div>
+                )}
               </div>
-              {a.source === 'manual' ? (
-                <input className="amount" type="number" step="0.01" defaultValue={a.balance} key={a.balance}
-                  onBlur={(e) => Number(e.target.value) !== a.balance && setBalance(a, e.target.value)} />
-              ) : (
-                <div className={`num ${a.balance < 0 ? 'over' : ''}`}>{money(a.balance)}</div>
+              {stale(a) && merging?.from.id !== a.id && (
+                <div className="panel merge-hint">
+                  <span>
+                    {a.replaced_by
+                      ? <>Stopped updating. <strong>{accountLabel(a.replaced_by)}</strong> looks like the same account, reconnected at SimpleFIN.</>
+                      : 'Stopped updating. If the bank was reconnected and this account now shows twice, merge this old copy into the new one.'}
+                  </span>
+                  <span className="panel-actions">
+                    {a.replaced_by ? (
+                      <button className="primary" onClick={() => setMerging({ from: a, into: a.replaced_by })}>Merge into it…</button>
+                    ) : (
+                      <select value="" onChange={(e) => e.target.value && setMerging({ from: a, into: e.target.value })}>
+                        <option value="">Merge into…</option>
+                        {accounts.filter((x) => x.id !== a.id).map((x) => <option key={x.id} value={x.id}>{accountLabel(x.id)}</option>)}
+                      </select>
+                    )}
+                  </span>
+                </div>
+              )}
+              {merging && merging.from.id === a.id && (
+                <div className="panel merge-hint">
+                  <span>
+                    Merge this account ({a.transaction_count} transactions) into <strong>{accountLabel(merging.into)}</strong>? Its transactions, balance history and
+                    debt settings move over; any the new account already has are kept once, with your categories, splits and notes. Then this copy disappears.
+                    A copy of everything is saved first as before-merge.db in the backups folder.
+                  </span>
+                  <span className="panel-actions">
+                    <button className="primary" onClick={() => merge(a, merging.into)} disabled={Boolean(busy)}>{busy === 'merge' ? 'Merging…' : 'Merge'}</button>
+                    <button onClick={() => setMerging(null)} disabled={busy === 'merge'}>Cancel</button>
+                  </span>
+                </div>
               )}
             </div>
           ))}

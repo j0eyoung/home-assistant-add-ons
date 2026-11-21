@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.1 - Merge Reconnected Accounts, Interest Category
+
+### 🌟 Features
+* **Merge an account into its replacement.** Reconnecting a bank at SimpleFIN gives its accounts new ids, so each one showed twice and the old copy stopped updating. Accounts now spots the old copy and offers **Merge into it**: its older transactions, balance history, debt settings and plan goals move to the new account, and charges both copies have are kept once with your categories, splits and notes. A copy of everything is saved first as before-merge.db.
+* **Interest** category for interest and finance charges on cards and loans, picked automatically for charges like "INTEREST CHARGE ON PURCHASES". Like loan payments, it stays out of the Plan's spending and the weekly safe-to-spend, because the Plan already counts interest on your debts.
+
+### 🔧 Improvements
+* A newly connected or reconnected account now brings in its last 90 days of history instead of only the last week.
+* "Needs attention" says when an account shows twice because of a reconnect, and the Delete prompt points to Merge instead.
+* Accounts shows how many transactions each account has.
+
+### 🐞 Fixes
+* An American Express Blue Cash card connected from now on is set up as a credit card instead of a bank account.
+
+If you already deleted an old copy, restore last night's backup in Accounts → Backups, click **Sync now**, then merge.
+
 ## 0.6.0 - Review New Charges, Better on Your Phone
 
 ### 🌟 Features

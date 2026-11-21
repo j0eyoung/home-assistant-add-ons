@@ -221,6 +221,9 @@ const SEED_CATEGORIES: [string, string][] = [
   ['Services', 'expense'],
   ['Taxes & Giving', 'expense'],
   ['Fees', 'expense'],
+  // Interest on cards and loans. Like Debt Payments, the Plan leaves it out of
+  // spending because it models debts (and their interest) itself.
+  ['Interest', 'expense'],
   ['Legal', 'expense'],
   ['Other', 'expense'],
 ]
