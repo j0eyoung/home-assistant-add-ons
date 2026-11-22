@@ -1,0 +1,53 @@
+# Home Assistant add-on definition; installed from the GitHub repo (see ../README.md).
+name: Claude Chat
+version: "0.1.0"
+slug: claude_chat
+description: Chat with Claude Code about your Home Assistant, like the Claude desktop app
+url: https://github.com/j0eyoung/home-assistant-add-ons/tree/master/claude_chat
+image: "ghcr.io/j0eyoung/{arch}-ha-claude-chat"
+arch:
+  - amd64
+  - aarch64
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:creation
+panel_title: Claude
+panel_admin: true
+# Same access as Claude Terminal: Home Assistant's configuration at /config,
+# other add-ons' configuration at /addon_configs, and /share.
+map:
+  - config:rw
+  - all_addon_configs:rw
+  - share:rw
+# Supervisor API (logs, backups, add-ons; manager is needed to list add-ons and
+# make the optional backup before edits) and the Home Assistant API (states,
+# services, configuration check, notifications).
+hassio_api: true
+hassio_role: manager
+homeassistant_api: true
+# Downloads that come back on their own stay out of Home Assistant backups:
+# uv's cache and the Python ha-mcp runs on. Chats, settings and the sign-in are kept.
+backup_exclude:
+  - "*_claude_chat/.cache"
+  - "*_claude_chat/.local/share/uv"
+options:
+  claude_code_oauth_token: ""
+  model: sonnet
+  effort: high
+  permission_mode: default
+  working_directory: ""
+  enable_ha_mcp: true
+  ha_mcp_version: "7.11.0"
+schema:
+  # Optional. Normally you sign in from the page (Settings › Account), or the
+  # token is picked up from addon_secrets.json. Made with `claude setup-token`.
+  claude_code_oauth_token: password?
+  # Model for new chats: sonnet, opus, haiku or a full model id
+  model: str?
+  effort: list(low|medium|high|xhigh|max)?
+  permission_mode: list(default|acceptEdits|plan|bypassPermissions)?
+  # Folder Claude works in; blank means /config
+  working_directory: str?
+  enable_ha_mcp: bool?
+  ha_mcp_version: str?
