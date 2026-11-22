@@ -1,86 +1,102 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="origin">
-<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0b3d2b">
 <title>Ski Assistant</title>
-<link rel="stylesheet" href="static/app.css?v=0.7.0">
+<link rel="preload" href="static/fonts/overpass-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="static/app.css?v=0.8.0">
 <link rel="icon" type="image/png" href="static/icon-192.png">
 <link rel="apple-touch-icon" href="static/icon-192.png">
 </head><body>
-<h1 class="sr-only">Ski Assistant</h1>
+<header class="masthead"><h1>Ski Assistant</h1><span id="today"></span></header>
 <nav id="nav" aria-label="Sections"></nav>
 <div id="tip" role="tooltip"></div>
 
+<main>
 <section id="forecast">
- <div id="flist">
-  <div class="card hero" id="hero" aria-live="polite"><p class="mute">Working out the best day…</p></div>
-  <div class="card" id="dailysnow" hidden></div>
-  <div class="card">
-   <div class="row spread"><h3>Snow forecast <span class="small">(mid-mountain, ECMWF + GFS blend)</span></h3>
-    <label class="inline">Sort <select id="fsort" onchange="renderForecast()">
-     <option value="next5_in">Next 5 days</option><option value="days6_10_in">Days 6-10</option>
-     <option value="days11_15_in">Days 11-15</option><option value="last5_in">Last 5 days</option><option value="name">Name</option></select></label></div>
-   <div class="legend"><span><i class="box" style="background:var(--snow-past)"></i>Last 5 days (modelled)</span>
-    <span><i class="box" style="background:var(--snow)"></i>Days 1-10</span><span><i class="box" style="background:var(--snow-low)"></i>Days 11-15 (low confidence)</span><span><i class="box wkend"></i>Weekend</span></div>
-   <div id="frows"><p class="mute">Loading forecasts…</p></div>
-   <p class="small" id="fasof"></p>
-   <p class="small">Snow is worked out from each elevation's temperature and humidity, not the model's own snowfall.
-    Trail data &copy; OpenSkiMap.org and OpenStreetMap contributors (ODbL).</p>
+ <div id="flist" class="split">
+  <div class="col-a">
+   <div id="hero" aria-live="polite"><div class="sign"><div class="sign-in"><p class="dim">Working out the best day…</p></div></div></div>
+   <div class="panel" id="dailysnow" hidden></div>
+   <p class="fine" id="dsoff" hidden></p>
   </div>
-  <p class="small" id="dsoff" hidden></p>
+  <div class="col-b">
+   <div class="panel">
+    <div class="row spread nowrap"><h2 class="legend-h"><span id="fhead">Next 5 days</span></h2>
+     <label class="inline">Sort <select id="fsort" onchange="renderForecast()">
+      <option value="next5_in">Next 5 days</option><option value="days6_10_in">Days 6-10</option>
+      <option value="days11_15_in">Days 11-15</option><option value="last5_in">Last 5 days</option><option value="name">Name</option></select></label></div>
+    <div id="frows"><p class="dim">Loading forecasts…</p></div>
+    <div class="legend after"><span><i class="box" style="background:var(--snow-past)"></i>Last 5 days</span>
+     <span><i class="box" style="background:var(--snow)"></i>Days 1-10</span><span><i class="box" style="background:var(--snow-low)"></i>Days 11-15, less sure</span><span><i class="box wkend"></i>Weekend</span></div>
+    <p class="fine" id="fasof"></p>
+    <p class="fine">Mid-mountain snow from a blend of the ECMWF and GFS models, worked out from each elevation's temperature and humidity, not the model's own snowfall.
+     Trail data &copy; OpenSkiMap.org and OpenStreetMap contributors (ODbL).</p>
+   </div>
+  </div>
  </div>
  <div id="fdetail" hidden></div>
 </section>
 
 <section id="plan">
- <div class="card" id="roads"><p class="mute">Checking the roads…</p></div>
- <div class="row">
-  <input type="date" id="d" aria-label="Day"> <select id="dep" aria-label="Leaving from"></select>
-  <label class="inline"><input type="checkbox" id="skis"> Skis day</label>
-  <button onclick="rank()">Rank</button>
+ <div class="panel" id="roads"><p class="dim">Checking the roads…</p></div>
+ <div class="panel">
+  <h2 class="legend-h">Rank the resorts</h2>
+  <div class="row controls">
+   <input type="date" id="d" aria-label="Day"> <select id="dep" aria-label="Leaving from"></select>
+   <label class="inline check"><input type="checkbox" id="skis"> Skis day</label>
+   <button class="primary" onclick="rank()">Rank</button>
+  </div>
+  <div class="wrap"><table id="t"></table></div>
  </div>
- <div class="card wrap"><table id="t"></table></div>
- <div class="card" id="pick"></div>
- <div class="card"><h3>Ask Claude</h3>
-  <div class="row"><input id="q" style="flex:1;min-width:200px" placeholder="Where should I go Saturday?" aria-label="Question for Claude" autocomplete="off"><button onclick="askClaude()">Ask</button></div>
+ <div id="pick"></div>
+ <div class="panel"><h2 class="legend-h">Ask Claude</h2>
+  <div class="row"><input id="q" class="grow" placeholder="Where should I go Saturday?" aria-label="Question for Claude" autocomplete="off"><button class="primary" onclick="askClaude()">Ask</button></div>
   <p id="ans" aria-live="polite"></p></div>
 </section>
 
 <section id="radar">
- <div class="row spread"><h3>Radar</h3>
-  <div class="row"><button id="rplay" onclick="toggleRadar()">Pause</button><span id="rtime" class="mute"></span></div></div>
- <div id="map"></div>
- <p class="small">Radar: NEXRAD composite via Iowa Environmental Mesonet. Pins show the next 5 days of snow. Map &copy; OpenStreetMap contributors.</p>
+ <div class="panel">
+  <div class="row spread"><h2 class="legend-h">Radar <span class="dim" id="rtime"></span></h2>
+   <button id="rplay" onclick="toggleRadar()">Pause</button></div>
+  <div id="map"></div>
+  <p class="fine">Radar: NEXRAD composite via Iowa Environmental Mesonet. Tabs show the next 5 days of snow. Map &copy; OpenStreetMap contributors.</p>
+ </div>
 </section>
 
 <section id="log">
- <div class="card" id="statsbox"></div>
- <div class="card"><h3>Add a day</h3><div class="row">
+ <div class="panel" id="statsbox"></div>
+ <div class="panel"><h2 class="legend-h">Add a day</h2><div class="row controls">
   <input type="date" id="ld" aria-label="Date"><select id="lr" aria-label="Resort"></select>
   <select id="le" aria-label="Board or skis"><option value="board">Board</option><option value="ski">Skis</option></select>
-  <input id="lv" type="number" placeholder="Vertical ft (optional)" aria-label="Vertical feet" inputmode="numeric" autocomplete="off" style="width:180px">
-  <input id="ln" placeholder="Notes…" aria-label="Notes" autocomplete="off" style="flex:1;min-width:160px"><button onclick="addDay()">Save</button></div></div>
- <div class="card wrap"><table id="days"></table></div>
+  <input id="lv" type="number" placeholder="Vertical ft (optional)" aria-label="Vertical feet" inputmode="numeric" autocomplete="off">
+  <input id="ln" class="grow" placeholder="Notes…" aria-label="Notes" autocomplete="off"><button class="primary" onclick="addDay()">Save</button></div></div>
+ <div class="panel wrap"><table id="days"></table></div>
 </section>
 
-<section id="gear">
- <div class="card" id="upkeep"></div>
- <div class="card"><h3>Log a wax or tune</h3><div class="row">
-  <input type="date" id="gd" aria-label="Date"><select id="ge" aria-label="Board or skis"><option value="board">Board</option><option value="ski">Skis</option></select>
-  <select id="gk" aria-label="Wax or tune"><option value="wax">Wax</option><option value="tune">Tune</option></select><button onclick="addService()">Save</button></div></div>
- <div class="card"><h3>Shopping list</h3><div class="row"><input id="shop" placeholder="Hand warmers…" aria-label="Shopping list item" autocomplete="off"><button onclick="addShop()">Add to Home Assistant</button></div><p id="shopmsg" class="mute" role="status"></p></div>
+<section id="more">
+ <div class="split even">
+  <div class="col-a">
+   <div class="panel" id="upkeep"></div>
+   <div class="panel"><h2 class="legend-h">Log a wax or tune</h2><div class="row controls">
+    <input type="date" id="gd" aria-label="Date"><select id="ge" aria-label="Board or skis"><option value="board">Board</option><option value="ski">Skis</option></select>
+    <select id="gk" aria-label="Wax or tune"><option value="wax">Wax</option><option value="tune">Tune</option></select><button class="primary" onclick="addService()">Save</button></div></div>
+   <div class="panel"><h2 class="legend-h">Shopping list</h2><div class="row"><input id="shop" class="grow" placeholder="Hand warmers…" aria-label="Shopping list item" autocomplete="off"><button onclick="addShop()">Add to Home Assistant</button></div><p id="shopmsg" class="dim" role="status"></p></div>
+   <div class="panel" id="claudebox"></div>
+   <div class="panel" id="garminbox"></div>
+  </div>
+  <div class="col-b"><div class="panel" id="setbox"></div></div>
+ </div>
 </section>
+</main>
 
 <dialog id="recapdlg" aria-label="Season recap">
  <canvas id="recapcv" width="1080" height="1920" role="img" aria-label="Season recap"></canvas>
  <div class="row"><button onclick="Recap.play()">Replay</button><button class="primary" id="recapsave" onclick="Recap.save()">Save video</button>
-  <button onclick="Recap.close()">Close</button><span class="mute" id="recapmsg" role="status"></span></div>
+  <button onclick="Recap.close()">Close</button><span class="dim" id="recapmsg" role="status"></span></div>
 </dialog>
 
-<section id="settings"><div class="card" id="claudebox"></div><div class="card" id="garminbox"></div><div class="card" id="setbox"></div></section>
-
-<script src="static/charts.js?v=0.7.0"></script>
-<script src="static/recap.js?v=0.7.0"></script>
-<script src="static/app.js?v=0.7.0"></script>
+<script src="static/charts.js?v=0.8.0"></script>
+<script src="static/recap.js?v=0.8.0"></script>
+<script src="static/app.js?v=0.8.0"></script>
 </body></html>

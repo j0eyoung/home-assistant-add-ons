@@ -4,9 +4,9 @@
 //        11.5-13.5 against last season · 13.5-15 end card (held about 1.2 s).
 const Recap = (() => {
   const W = 1080, H = 1920, DUR = 15, M = 108;  // 10% side margin keeps text in the safe area
-  // Fixed dark look (the app's dark tokens) so a saved video looks the same whatever the page theme
-  const C = { bg: '#0d0d0d', ink: '#f0efec', ink2: '#c3c2b7', muted: '#898781', board: '#3987e5', ski: '#d95926', track: '#2c2c2a', accent: '#3987e5' };
-  const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+    // The app's guide-sign world: green field, white sheeting, board white and skis pale blue
+  const C = { bg: '#0b3d2b', ink: '#f2f4ef', ink2: '#c9d6cc', muted: '#a9bfb2', board: '#f2f4ef', ski: '#9cc9f5', track: '#0f5137', accent: '#f2f4ef' };
+  const FONT = 'Overpass, "Segoe UI", system-ui, sans-serif';
   const EVEREST_FT = 29032;
   let D = null, ctx = null, raf = 0, rec = null, keep = false;
 

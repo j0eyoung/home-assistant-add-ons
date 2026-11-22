@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 - The Guide-Sign Redesign
+
+### 🌟 Features
+* **A whole new look, taken from the signs on the drive up.** Guide-sign green day and night, each resort on a brown recreation-sign tab, big white snow totals, and an amber message board that says when to leave. Amber only ever marks your next move: the leave time and live road alerts.
+* **The Forecast tab opens on a sign.** The resort and day worth it, how much fresh snow, the high and the gusts, then the amber board with the leave time and an "I'm going" button. Tap a day underneath and the board flips to that day.
+* **Two columns on a computer:** the sign and the days on the left, every resort's 15-day snow on the right.
+
+### 🔧 Improvements
+* Five tabs instead of six: Forecast, Plan, Radar, Season and More. Gear and Settings now live together under More.
+* On the Plan tab the top pick is a sign with its leave time on the board, and CDOT road alerts show on the amber board.
+* Resort pages lead with the elevation switch and big totals, then the snow chart and getting there.
+* On a phone, tables keep the columns that matter and the season's days stack into rows.
+* The season recap video uses the new colours and type.
+* The sign lettering (Overpass) is built into the add-on, so it looks right even with a weak signal.
+
 ## 0.7.0 - Season Recap, Clearer Charts
 
 ### 🌟 Features
