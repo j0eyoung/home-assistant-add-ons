@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - Health Check Takeover
+
+### 🐞 Fixes
+* **Act on the health check in its own chat.** The scheduled health check still only reads. Once you reply in its chat, Claude can make the changes you ask for there, and each one shows the usual approval card. Before, every change in that chat was refused with "This is an unattended health check: read only".
+
 ## 0.1.0 - Claude Chat
 
 ### 🌟 Features

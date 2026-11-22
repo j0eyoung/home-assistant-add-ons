@@ -186,6 +186,14 @@ export class Chat {
 
   // ---- sending ----
 
+  // The scheduled health check runs read only. Once the user replies in its chat they are there to approve, so
+  // changes go through the usual approval cards from then on, and Claude is told the "only read" rule is lifted.
+  takeOver(): void {
+    if (!this.unattended) return
+    this.unattended = false
+    this.notes.push('Note: the user has taken over this health check chat. The health check\'s "only read" rule no longer applies: you may make the changes they ask for, and each one goes through the usual approval card.')
+  }
+
   async send(text: string, images: { data: string; mediaType: string }[] = [], mentions: Mention[] = []): Promise<void> {
     this.lastActive = Date.now()
     if (!this.persisted && this.title === 'New chat') this.title = titleFrom(text)

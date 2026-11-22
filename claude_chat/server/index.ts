@@ -171,6 +171,7 @@ async function handle(client: ReturnType<Hub['addClient']>, msg: ClientMsg): Pro
       } else if (msg.model || msg.effort || msg.mode) {
         await chat.applySettings({ model: msg.model, effort: msg.effort, mode: msg.mode })
       }
+      chat.takeOver()
       await chat.send(text, msg.images ?? [], msg.mentions ?? [])
       hub.pushChats()
       return

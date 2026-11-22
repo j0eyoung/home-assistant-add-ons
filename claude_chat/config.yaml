@@ -1,6 +1,6 @@
 # Home Assistant add-on definition; installed from the GitHub repo (see ../README.md).
 name: Claude Chat
-version: "0.1.0"
+version: "0.1.1"
 slug: claude_chat
 description: Chat with Claude Code about your Home Assistant, like the Claude desktop app
 url: https://github.com/j0eyoung/home-assistant-add-ons/tree/master/claude_chat

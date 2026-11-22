@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { findLoginUrl, findToken, stripAnsi } from './auth.ts'
 import { isReadOnlyMcp, isRestart, describe } from './policy.ts'
-import { titleFrom } from './chat.ts'
+import { Chat, titleFrom } from './chat.ts'
 import { parseLog } from './ha.ts'
 
 const ESC = '\x1b'
@@ -63,6 +63,29 @@ test('chat titles are whole', () => {
   assert.ok(!t.endsWith('…'))
   assert.ok(t.length <= 90)
   assert.equal(t, 'Look at today’s errors in the Home Assistant log, explain what is causing each one and how to fix it.'.length <= 90 ? t : t)
+})
+
+test('a health check chat refuses changes until the user replies in it', async () => {
+  const host = { emit() {}, statusChanged() {}, attention() {}, usage() {}, init() {} }
+  const chat = new Chat(host, { model: 'sonnet', effort: 'high', mode: 'default', persisted: false })
+  chat.unattended = true
+  const call = { domain: 'automation', service: 'turn_off', entity_id: 'automation.garage' }
+  const ac = new AbortController()
+  const before = await chat.canUseTool('mcp__home-assistant__ha_call_service', call, { signal: ac.signal } as any)
+  assert.equal(before?.behavior, 'deny')
+
+  chat.takeOver()
+  assert.equal(chat.unattended, false)
+  assert.match(chat.notes.join('\n'), /taken over this health check chat/)
+  const after = chat.canUseTool('mcp__home-assistant__ha_call_service', call, { signal: ac.signal } as any)
+  await new Promise((r) => setImmediate(r))
+  assert.ok(chat.items.some((it) => it.kind === 'approval' && it.status === 'pending'), 'the change asks for approval')
+  ac.abort()
+  await after
+
+  chat.notes = []
+  chat.takeOver()
+  assert.equal(chat.notes.length, 0, 'an ordinary chat gets no note')
 })
 
 test('log lines are parsed', () => {
