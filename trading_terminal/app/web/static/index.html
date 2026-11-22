@@ -3,29 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#000000">
-<title>Terminal</title>
+<meta name="theme-color" content="#16181B">
+<title>Trading Terminal</title>
 <link rel="icon" type="image/png" href="static/icon.png?v={{V}}">
 <link rel="apple-touch-icon" href="static/icon.png?v={{V}}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="static/app.css?v={{V}}">
 </head>
 <body>
+<nav id="rail" aria-label="Sections">
+  <a class="brand" href="#/PORT" aria-label="Trading Terminal, home">
+    <svg viewBox="0 0 28 28" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="6" fill="#2B3FB0"/><path d="M8 11h12M8 17.5h12M8 20.5h12" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>Trading Terminal</span>
+  </a>
+  <div id="nav"></div>
+</nav>
 <header id="top">
-  <a class="brand" href="#/PORT" title="Home (PORT)"><span>▮</span><b>TERMINAL</b></a>
+  <a class="brand-sm" href="#/PORT" aria-label="Trading Terminal, home"><svg viewBox="0 0 28 28" aria-hidden="true"><rect x="2" y="2" width="24" height="24" rx="6" fill="#2B3FB0"/><path d="M8 11h12M8 17.5h12M8 20.5h12" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></a>
   <div class="cmd">
-    <span class="prompt">&gt;</span>
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
     <input id="cmd" autocomplete="off" autocapitalize="characters" spellcheck="false"
-           placeholder="Ticker or function, e.g. NVDA GP" aria-label="Command">
-    <div id="suggest" hidden></div>
+           placeholder="Search a ticker or type a code, e.g. NVDA GP" aria-label="Search a ticker or type a code">
+    <kbd>/</kbd>
+    <div id="suggest" role="listbox" hidden></div>
   </div>
-  <span id="mode" class="mode"></span>
   <span id="mkt" class="mkt" hidden></span>
-  <span id="clock" class="clock"></span>
+  <span id="mode" class="mode"></span>
 </header>
-<nav id="rail" aria-label="Functions"></nav>
 <main id="main"></main>
 <aside id="side" aria-label="Watchlist"></aside>
 <nav id="tabs" aria-label="Sections"></nav>

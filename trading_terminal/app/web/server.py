@@ -38,7 +38,7 @@ from terminal import (alerts, backtest, cache, collector, config, data, exits, g
 from terminal import indicators as ind  # noqa: E402
 from terminal.brokers import OrderRequest, connect_all  # noqa: E402
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 STATIC = Path(__file__).resolve().parent / "static"
 NY, LOCAL_TZ = "America/New_York", "America/Denver"
 SLOW = 1.0
@@ -577,7 +577,8 @@ def portfolio_api(p, b, pp):
     out = {"brokers": list(bs), "broker": name, "errors": errors, "mode": config.MODE_LABEL, "range": rng}
     out["account"] = a = account(name)
     if a.get("last_equity") and a.get("equity") is not None:  # Alpaca: today's change, closed trades included
-        out["day"] = {"pl": a["equity"] - a["last_equity"], "pct": (a["equity"] / a["last_equity"] - 1) * 100}
+        out["day"] = {"pl": a["equity"] - a["last_equity"], "pct": (a["equity"] / a["last_equity"] - 1) * 100,
+                      "last": a["last_equity"]}
     pos = positions(name)
     syms = [x["symbol"] for x in pos if not OrderRequest(x["symbol"], "buy", 1).is_option]
     qs = quotes(syms) if syms else {}
@@ -1541,14 +1542,14 @@ def warm():
 
 
 # ---------- boot ----------
-FUNCTIONS = {
-    "Home": {"PORT": "Portfolio", "ORD": "Trade", "JRNL": "Journal", "GAIN": "Gains & dividends", "ALRT": "Alerts"},
+FUNCTIONS = {  # five sections; plain names lead, the codes stay as addresses for the command bar
+    "Desk": {"PORT": "Portfolio", "ORD": "Trade", "JRNL": "Journal", "GAIN": "Gains & dividends", "ALRT": "Alerts"},
     "Stock": {"DES": "Overview", "GP": "Chart", "N": "News", "FA": "Financials", "VAL": "Valuation",
               "ANR": "Analysts", "ERN": "Earnings", "SEC": "Filings & insiders", "OMON": "Options", "BT": "Backtest"},
-    "Market": {"WEI": "World markets", "MON": "Watchlists", "SPX": "S&P 500", "IDEA": "Ideas", "CAL": "Earnings calendar",
-               "PRED": "Predictions", "SCR": "Screens", "ECO": "Economy"},
-    "AI": {"AI": "Ask AI", "BRF": "Morning brief", "PLAN": "My trading plan", "CLD": "Connect Claude",
-           "DATA": "Data collection", "HELP": "Help"},
+    "Markets": {"WEI": "World markets", "MON": "Watchlists", "SPX": "S&P 500", "IDEA": "Ideas", "SCR": "Screens",
+                "CAL": "Earnings calendar", "ECO": "Economy", "PRED": "Predictions"},
+    "Research": {"AI": "Ask AI", "BRF": "Morning brief"},
+    "Settings": {"PLAN": "Trading plan", "CLD": "Connect Claude", "DATA": "Data collection", "HELP": "Help"},
 }
 
 

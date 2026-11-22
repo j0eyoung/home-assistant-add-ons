@@ -2,8 +2,10 @@
    a crosshair readout, grouped bars, sparklines and a treemap. No libraries, so pages load fast. */
 (function () {
   "use strict";
-  const C = { grid: "#15181c", axis: "#6f767f", text: "#a7adb5", cross: "#5c6168", up: "#2fd36b", dn: "#ff4f4f",
-              amber: "#ffa62b", bg: "#0a0b0d" };
+  // Colours match app.css (paper world): ink text, light rules, gain green, loss red, violet for the owner's marks.
+  const C = { grid: "#ECEEE8", axis: "#686D75", text: "#44494F", ink: "#16181B", cross: "#9AA0A8", up: "#0A7A43", dn: "#BF2A1F",
+              cobalt: "#2B3FB0", pencil: "#7A3FC2", base: "#B9BDB5", zero: "#C4C8BF", bg: "#FFFFFF" };
+  const FONT = "500 11px Archivo, system-ui, sans-serif";
   const NY = "America/New_York";
   const fmtCache = {};
   function dfmt(opts) {
@@ -84,12 +86,13 @@
       if (!n) { this.lg.textContent = "No data for this range"; return; }
       const axes = cfg.axes !== false;
       const fmt = cfg.yfmt || defFmt;
-      g.font = "10.5px 'IBM Plex Mono', monospace";
+      g.font = FONT;
       g.textBaseline = "middle";
       const candle = cfg.kind === "candle" && cfg.o;
       const ov = cfg.overlays || [];
+      const marks = (cfg.marks || []).filter(m => m && isFinite(m.v));
       const [lo, hi] = range([candle ? cfg.h : cfg.c, candle ? cfg.l : null, ...ov.map(o => o.v),
-                              cfg.baseline != null ? [cfg.baseline] : null]);
+                              cfg.baseline != null ? [cfg.baseline] : null, marks.length ? marks.map(m => m.v) : null]);
       // The price gutter is as wide as its widest label, so a value like $100,000 isn't clipped at the edge
       const widest = axes ? Math.max(...[lo, hi, ...cfg.c.filter(v => v != null).slice(-1)].map(v => g.measureText(fmt(v)).width)) : 0;
       const right = axes ? Math.max(W < 500 ? 46 : 58, Math.ceil(widest) + 10) : 0, bottom = axes ? 18 : 0, top = cfg.legend === false ? 4 : 20;
@@ -105,12 +108,12 @@
       // ---- main pane ----
       const y0 = top, y1 = top + mainH;
       const Y = v => y1 - (v - lo) / (hi - lo) * (y1 - y0);
-      this.grid(g, lo, hi, y0, y1, Y, W, right, axes, fmt);
       const first = cfg.c.find(v => v != null), last = [...cfg.c].reverse().find(v => v != null);
+      this.grid(g, lo, hi, y0, y1, Y, W, right, axes, fmt, last != null ? Y(last) : null);
       const base = cfg.baseline != null ? cfg.baseline : first;
       const color = cfg.color || (last >= base ? C.up : C.dn);
       if (cfg.baseline != null) {
-        g.strokeStyle = "#4a4f56"; g.setLineDash([2, 3]); g.lineWidth = 1;
+        g.strokeStyle = C.base; g.setLineDash([2, 3]); g.lineWidth = 1;
         g.beginPath(); g.moveTo(left, Y(cfg.baseline)); g.lineTo(left + plotW, Y(cfg.baseline)); g.stroke(); g.setLineDash([]);
       }
       if (candle) {
@@ -134,11 +137,11 @@
           if (!started) { g.moveTo(x, y); started = true; } else g.lineTo(x, y);
           lastX = x;
         }
-        g.strokeStyle = color; g.lineWidth = cfg.width || 1.6; g.lineJoin = "round"; g.stroke();
+        g.strokeStyle = color; g.lineWidth = cfg.width || 2; g.lineJoin = "round"; g.stroke();
         if (cfg.kind === "area" && started) {
           g.lineTo(lastX, y1); g.lineTo(X(cfg.c.findIndex(v => v != null)), y1); g.closePath();
           const gr = g.createLinearGradient(0, y0, 0, y1);
-          gr.addColorStop(0, alpha(color, 0.22)); gr.addColorStop(1, alpha(color, 0));
+          gr.addColorStop(0, alpha(color, 0.16)); gr.addColorStop(1, alpha(color, 0));
           g.fillStyle = gr; g.fill();
         }
       }
@@ -159,10 +162,19 @@
         else { g.moveTo(x, y - 4); g.lineTo(x - 5, y - 12); g.lineTo(x + 5, y - 12); }
         g.fill();
       }
+      // The owner's own levels (entry, alerts, stops) in the reserved violet, labelled on the left
+      for (const m of marks) {
+        const ym = Math.round(Y(m.v)) + .5;
+        g.strokeStyle = C.pencil; g.lineWidth = 1; g.setLineDash([5, 4]);
+        g.beginPath(); g.moveTo(0, ym); g.lineTo(plotW, ym); g.stroke(); g.setLineDash([]);
+        const lab = `${m.label} ${fmt(m.v)}`, lw = g.measureText(lab).width + 10;
+        g.fillStyle = "#F1EAFA"; g.fillRect(4, ym - 9, lw, 18);
+        g.fillStyle = C.pencil; g.textAlign = "left"; g.fillText(lab, 9, ym);
+      }
       if (axes && last != null) {  // last-price tag on the axis
         const yl = Y(last);
-        g.fillStyle = color; g.fillRect(W - right + 1, yl - 8, right - 1, 16);
-        g.fillStyle = "#000"; g.textAlign = "left"; g.fillText(fmt(last), W - right + 4, yl);
+        g.fillStyle = color; g.fillRect(W - right + 1, yl - 9, right - 1, 18);
+        g.fillStyle = "#fff"; g.textAlign = "left"; g.fillText(fmt(last), W - right + 5, yl);
       }
 
       // ---- volume ----
@@ -178,7 +190,7 @@
           const hh = v / vmax * (volH - 2);
           g.fillRect(X(i) - bw / 2, vy1 - hh, bw, hh);
         }
-        extra.push({ y0: yy, y1: vy1, name: "VOL", vals: [{ name: "Vol", v: cfg.v, color: C.text, big: true }] });
+        extra.push({ y0: yy, y1: vy1, name: "VOL", vals: [{ name: "Vol", v: cfg.v, color: C.text, big: true }] });  // legend reads it
         yy = vy1 + 6;
       }
       // ---- indicator panes ----
@@ -189,7 +201,7 @@
         g.strokeStyle = C.grid; g.lineWidth = 1;
         g.beginPath(); g.moveTo(0, py0 - 3); g.lineTo(W - right, py0 - 3); g.stroke();
         for (const lv of p.levels || []) {
-          g.strokeStyle = "#3a3f46"; g.setLineDash([2, 3]);
+          g.strokeStyle = C.zero; g.setLineDash([2, 3]);
           g.beginPath(); g.moveTo(0, PY(lv)); g.lineTo(plotW, PY(lv)); g.stroke(); g.setLineDash([]);
           if (axes) { g.fillStyle = C.axis; g.textAlign = "left"; g.fillText(String(lv), W - right + 4, PY(lv)); }
         }
@@ -207,7 +219,7 @@
               const v = s.v[i]; if (v == null) { st = false; continue; }
               if (!st) { g.moveTo(X(i), PY(v)); st = true; } else g.lineTo(X(i), PY(v));
             }
-            g.strokeStyle = s.color; g.lineWidth = 1.2; g.stroke();
+            g.strokeStyle = s.color; g.lineWidth = 1.5; g.stroke();
           }
         }
         if (axes && !p.levels) { g.fillStyle = C.axis; g.textAlign = "left"; g.fillText(fmt2(phi), W - right + 4, py0 + 6); g.fillText(fmt2(plo), W - right + 4, py1 - 6); }
@@ -241,8 +253,8 @@
           g.beginPath(); g.moveTo(0, this.pointer.y); g.lineTo(plotW, this.pointer.y); g.stroke();
           if (axes) {
             const v = lo + (y1 - this.pointer.y) / (y1 - y0) * (hi - lo);
-            g.setLineDash([]); g.fillStyle = "#2b3036"; g.fillRect(W - right + 1, this.pointer.y - 8, right - 1, 16);
-            g.fillStyle = "#fff"; g.textAlign = "left"; g.fillText(fmt(v), W - right + 4, this.pointer.y);
+            g.setLineDash([]); g.fillStyle = C.ink; g.fillRect(W - right + 1, this.pointer.y - 9, right - 1, 18);
+            g.fillStyle = "#fff"; g.textAlign = "left"; g.fillText(fmt(v), W - right + 5, this.pointer.y);
           }
         }
         g.setLineDash([]);
@@ -251,30 +263,30 @@
         if (axes) {
           const s = cfg.intraday ? fFullTime(cfg.t[i]) : fFull(cfg.t[i]);
           const w = g.measureText(s).width + 10, bx = Math.min(Math.max(x - w / 2, 0), plotW - w);
-          g.fillStyle = "#2b3036"; g.fillRect(bx, H - bottom, w, bottom);
+          g.fillStyle = C.ink; g.fillRect(bx, H - bottom, w, bottom);
           g.fillStyle = "#fff"; g.textAlign = "center"; g.fillText(s, bx + w / 2, H - bottom / 2);
         }
       }
       if (cfg.legend !== false) {
         const parts = [];
         const when = cfg.intraday ? fFullTime(cfg.t[i]) : fFull(cfg.t[i]);
-        parts.push(`<i style="color:#e6e6e6">${when}</i>`);
-        if (candle) parts.push(`<i>O <b style="color:#fff">${fmt(cfg.o[i])}</b> H <b style="color:#fff">${fmt(cfg.h[i])}</b> L <b style="color:#fff">${fmt(cfg.l[i])}</b> C <b style="color:#fff">${fmt(cfg.c[i])}</b></i>`);
-        else parts.push(`<i style="color:${color}">${cfg.name || ""} <b>${fmt(cfg.c[i])}</b>${cfg.pctOf != null && cfg.c[i] != null ? ` (${((cfg.c[i] / cfg.pctOf - 1) * 100).toFixed(2)}%)` : ""}</i>`);
-        for (const o of ov) if (o.v[i] != null) parts.push(`<i style="color:${o.color}">${o.name} ${fmt(o.v[i])}</i>`);
+        parts.push(`<i style="color:${C.ink}">${when}</i>`);
+        if (candle) parts.push(`<i>O <b>${fmt(cfg.o[i])}</b> H <b>${fmt(cfg.h[i])}</b> L <b>${fmt(cfg.l[i])}</b> C <b>${fmt(cfg.c[i])}</b></i>`);
+        else parts.push(`<i><i class="sw" style="--c:${color}"></i>${cfg.name || ""} <b>${fmt(cfg.c[i])}</b>${cfg.pctOf != null && cfg.c[i] != null ? ` (${((cfg.c[i] / cfg.pctOf - 1) * 100).toFixed(2)}%)` : ""}</i>`);
+        for (const o of ov) if (o.v[i] != null) parts.push(`<i><i class="sw${o.dash ? " d" : ""}" style="--c:${o.color}"></i>${o.name} ${fmt(o.v[i])}</i>`);
         for (const p of extra) for (const s of p.vals) if (s.v && s.v[i] != null)
           parts.push(`<i style="color:${s.color || C.text}">${s.name} ${s.big ? big(s.v[i]) : fmt2(s.v[i])}</i>`);
         this.lg.innerHTML = parts.join("");
       } else this.lg.innerHTML = "";
     }
 
-    grid(g, lo, hi, y0, y1, Y, W, right, axes, fmt) {
+    grid(g, lo, hi, y0, y1, Y, W, right, axes, fmt, avoid = null) {
       const st = niceStep(hi - lo, Math.max(2, Math.floor((y1 - y0) / 48)));
       g.lineWidth = 1; g.textAlign = "left";
       for (let v = Math.ceil(lo / st) * st; v <= hi; v += st) {
         const y = Math.round(Y(v)) + .5;
         g.strokeStyle = C.grid; g.beginPath(); g.moveTo(0, y); g.lineTo(W - right, y); g.stroke();
-        if (axes) { g.fillStyle = C.axis; g.fillText(fmt(v), W - right + 4, y); }
+        if (axes && (avoid == null || Math.abs(y - avoid) > 14)) { g.fillStyle = C.axis; g.fillText(fmt(v), W - right + 4, y); }
       }
     }
   }
@@ -308,10 +320,10 @@
       if (lo === hi) hi = lo + 1;
       const Y = v => top + (hi - v) / (hi - lo) * (H - top - bottom);
       this.gw = plotW / Math.max(1, n);
-      g.font = "10.5px 'IBM Plex Mono', monospace"; g.textBaseline = "middle";
+      g.font = FONT; g.textBaseline = "middle";
       const st = niceStep(hi - lo, 4);
       for (let v = Math.ceil(lo / st) * st; v <= hi; v += st) {
-        g.strokeStyle = v === 0 ? "#3a3f46" : C.grid; g.beginPath(); g.moveTo(0, Y(v)); g.lineTo(plotW, Y(v)); g.stroke();
+        g.strokeStyle = v === 0 ? C.zero : C.grid; g.beginPath(); g.moveTo(0, Y(v)); g.lineTo(plotW, Y(v)); g.stroke();
         g.fillStyle = C.axis; g.textAlign = "left"; g.fillText(fmt(v), plotW + 4, Y(v));
       }
       const bw = Math.min(26, this.gw * 0.8 / series.length);
@@ -328,7 +340,7 @@
         if (n <= 16 || i % Math.ceil(n / 12) === 0) { g.fillStyle = C.axis; g.textAlign = "center"; g.fillText(String(lab).slice(0, 10), cx, H - bottom / 2); }
       });
       const i = this.hover != null && this.hover < n ? this.hover : n - 1;
-      this.lg.innerHTML = `<i style="color:#e6e6e6">${labels[i] ?? ""}</i>` + series.map(s => `<i style="color:${typeof s.color === "string" ? s.color : C.text}">${s.name} ${fmt(s.v[i])}</i>`).join("");
+      this.lg.innerHTML = `<i style="color:${C.ink}">${labels[i] ?? ""}</i>` + series.map(s => `<i style="color:${typeof s.color === "string" ? s.color : C.text}">${s.name} ${fmt(s.v[i])}</i>`).join("");
     }
   }
 
@@ -340,8 +352,8 @@
     const y = v => (h - 2 - (v - lo) / sp * (h - 4)).toFixed(1);
     const d = vals.map((v, i) => `${(i * w / (vals.length - 1)).toFixed(1)},${y(v)}`).join(" ");
     const col = vals[vals.length - 1] >= (base != null ? base : vals[0]) ? C.up : C.dn;
-    const bl = base != null ? `<line x1="0" x2="${w}" y1="${y(base)}" y2="${y(base)}" stroke="#3a3f46" stroke-dasharray="1 3"/>` : "";
-    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${bl}<polyline fill="none" stroke="${col}" stroke-width="1.4" points="${d}"/></svg>`;
+    const bl = base != null ? `<line x1="0" x2="${w}" y1="${y(base)}" y2="${y(base)}" stroke="${C.zero}" stroke-dasharray="1 3"/>` : "";
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${bl}<polyline fill="none" stroke="${col}" stroke-width="1.5" points="${d}"/></svg>`;
   }
 
   // Squarified treemap: groups (sectors) holding items (stocks); colour from each item's value.
@@ -378,7 +390,9 @@
       const head = gb.h > 40 && gb.w > 60 ? 13 : 0;
       for (const c of layout(gb.it.items, gb.x, gb.y + head, gb.w, gb.h - head)) {
         const d = document.createElement("div");
-        Object.assign(d.style, { left: c.x + "px", top: c.y + "px", width: c.w + "px", height: c.h + "px", background: color(c.it.value) });
+        const bg = color(c.it.value);
+        Object.assign(d.style, { left: c.x + "px", top: c.y + "px", width: c.w + "px", height: c.h + "px", background: bg });
+        if (Math.abs(c.it.value) < 1.5) d.classList.add("lt");  // pale tile: ink text
         if (c.w > 34 && c.h > 22) d.innerHTML = `${c.it.label}<small>${c.it.sub || ""}</small>`;
         d.title = `${c.it.label} ${c.it.sub || ""}`;
         d.onclick = () => onClick && onClick(c.it);

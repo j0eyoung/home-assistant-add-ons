@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 - A New Look: Your Desk as an Annual Report
+
+### 🌟 Features
+* **A complete redesign.** The black-and-orange terminal is replaced by a bright, easier-to-read desk styled like an annual report: white statement sheets on a light page, a dark side bar, and one cobalt highlights panel. The text is larger and there's more room between figures.
+* **Five sections instead of 33 codes.** Everything now lives in Desk (portfolio, trade, journal, gains, alerts), Stock, Markets, Research (Ask AI, morning brief) and Settings. On a computer the open section lists its screens with plain names; on a phone the five sections are the bottom bar and the screens are tabs at the top. The codes still work: type `NVDA GP`, `PORT` or `WEI` in the search box, and each screen shows its code beside its name.
+* **Today, reconciled.** The Portfolio opens with your equity, today's change and open P/L in large figures, and explains today's change line by line: last close, moves on your holdings, closed trades, cash and fees, then equity now under a double line (Alpaca accounts).
+* **Statements.** Positions read like a statement: losses in brackets, and a total row under a double line. Totals redraw their double line when the figures change.
+* **Your own marks in violet.** What you paid and your waiting price alerts are drawn as violet lines on a stock's charts, and alerts are noted beside your holdings, so your levels never get mixed up with market data. Watching a stock also shows in violet.
+* **Clearer company facts.** Key facts are grouped (company, valuation, results, balance sheet, shares and dividends, price and analysts) with plain names such as Price / sales and EV / EBITDA.
+
+### 🔧 Improvements
+* Chart legends show a colour sample for each line, and price labels make room for the last-price tag.
+* The stock header shows only the figures that exist (a closed market has no day range yet) and adds the 52-week range.
+* LIVE mode is marked across the page: a red line under the top bar and a red edge on the highlights panel, as well as the LIVE badge.
+* Proper icons replace the text symbols on buttons, and loading screens show a progress line.
+
+### 🐞 Fixes
+* Company margins, growth and ownership showed as tiny percentages (0.75% instead of 75%) in Key facts.
+
 ## 0.5.0 - Market Clock, a Ticket That Knows Your Position
 
 ### 🌟 Features
