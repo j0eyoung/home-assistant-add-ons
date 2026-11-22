@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, dollars, money } from './api.ts'
+import { Icon } from './Icon.tsx'
 
 type Recurring = {
   key: string
@@ -48,11 +49,13 @@ export function RecurringPage({ onError }: { onError: (message: string) => void 
 
   return (
     <>
-      <div className="cards">
-        <div className="card"><div className="muted">Recurring per month</div><div className="big">{dollars(monthly)}</div><div className="muted">{active.length} bills and subscriptions</div></div>
-        <div className="card"><div className="muted">Per year</div><div className="big">{dollars(monthly * 12)}</div><div className="muted">at current prices</div></div>
-        <div className="card"><div className="muted">Price increases</div><div className="big">{increases.length}</div><div className="muted">{increases.length ? increases.map((r) => r.merchant).join(', ') : 'none detected'}</div></div>
-      </div>
+      <section>
+        <dl className="figures">
+          <div><dt>Recurring per month</dt><dd>{dollars(monthly)}<small>{active.length} bills and subscriptions</small></dd></div>
+          <div><dt>Per year</dt><dd>{dollars(monthly * 12)}<small>at current prices</small></dd></div>
+          <div><dt>Price increases</dt><dd>{increases.length}<small>{increases.length ? increases.map((r) => r.merchant).join(', ') : 'none detected'}</small></dd></div>
+        </dl>
+      </section>
       <section>
         <h2>Bills and subscriptions</h2>
         <p className="muted">
@@ -74,7 +77,7 @@ export function RecurringPage({ onError }: { onError: (message: string) => void 
           {data.ignored.map((i) => (
             <div className="account" key={i.key}>
               <div>{i.label}</div>
-              <button className="link" onClick={() => actions.reset(i.key)}>Undo</button>
+              <button className="link quiet" onClick={() => actions.reset(i.key)}>Undo</button>
             </div>
           ))}
         </section>
@@ -105,8 +108,8 @@ function RecurringTable({ rows, cadences, actions }: { rows: Recurring[]; cadenc
             <tr key={`${r.key}-${r.amount}-${r.cadence}`}>
               <td title={r.merchant}>
                 {r.merchant}
-                {r.confirmed && <span className="badge" title="You confirmed this one">✓ yours</span>}
-                {r.increase && <span className="badge up" title={`Was ${money(r.increase.from)}`}>▲ from {money(r.increase.from)}</span>}
+                {r.confirmed && <span className="badge" title="You confirmed this one"><Icon name="check" size={12} />yours</span>}
+                {r.increase && <span className="badge up" title={`Was ${money(r.increase.from)}`}><Icon name="up" size={12} />from {money(r.increase.from)}</span>}
                 {r.variable && <span className="badge">varies</span>}
               </td>
               <td className="opt muted">{r.category}</td>

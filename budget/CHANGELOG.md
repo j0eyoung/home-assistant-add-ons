@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.0 - New Look
+
+### 🌟 Features
+* **A new look, built around a highway guide sign.** The dashboard opens on one green sign with the month: what's left of your budget, then each budgeted category with what's left, closest to running out first. A small marker on each bar shows how far through the month you are, so you can see at a glance which categories are ahead of pace.
+* **Yellow only means over budget.** A category that's over turns sign-yellow with a diamond; categories you haven't spent in yet print grey; spending with no budget is listed separately so it doesn't make the month look over.
+
+### 🔧 Improvements
+* Safe to spend and charges to check sit in blue panels beside the sign on a computer and right under it on a phone.
+* Income, pre-tax savings, net worth and tracked categories are one "in figures" row instead of four boxes. The Recurring tab's totals got the same treatment.
+* Transactions: each day has a header that stays pinned at the top while you scroll, instead of a date on every row.
+* Warnings are orange and errors red, like road signs; several warnings fold into one line with Details.
+* A new typeface (Overpass, from the highway-sign family) ships with the app, so it works without the internet. Drawn icons replace the text arrows and ticks.
+* The numbers no longer flash as $0 while a month loads.
+
 ## 0.6.1 - Merge Reconnected Accounts, Interest Category
 
 ### 🌟 Features

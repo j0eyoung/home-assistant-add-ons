@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { estimateMinimum, promoDeadline, simulatePayoff } from '../../shared/payoff.ts'
 import type { DebtState, Payoff, Strategy } from '../../shared/payoff.ts'
 import { addMonths, api, dollars, money, monthLabel, pref, thisMonth } from './api.ts'
+import { Icon } from './Icon.tsx'
 
 type Debt = {
   id: string
@@ -42,8 +43,8 @@ function currentPace(d: Debt): string {
   if (paying < 1) return charging > 1 ? `no payments seen · charging ${dollars(charging)}/mo` : 'no payments seen'
   const plan = simulatePayoff([toState(d, paying)], 0, 'avalanche', thisMonth())
   const charges = d.type === 'credit' && charging > 1 ? ` · charging ${dollars(charging)}/mo` : ''
-  const when = plan.months == null ? 'never at this payment' : `${dateIn(plan.months)}${charges ? ' if new charges stop' : ''}`
-  return `paying ${dollars(paying)}/mo${charges} → ${when}`
+  const when = plan.months == null ? 'never paid off at this payment' : `paid off ${dateIn(plan.months)}${charges ? ' if new charges stop' : ''}`
+  return `paying ${dollars(paying)}/mo${charges} · ${when}`
 }
 
 const STRATEGY_TITLES: Record<Strategy, string> = {
@@ -172,7 +173,7 @@ export function DebtPage({ onError }: { onError: (message: string) => void }) {
           {missingApr && <p className="notice">Some debts have no APR yet; they count as 0% interest, so dates are optimistic.</p>}
           {promoMisses.map((d) => (
             <p className="notice warn" key={d.id}>
-              ⚠ {d.org_name || d.name}: the {d.promo_apr ?? 0}% promo ends {d.promo_end}, but this order pays it off {dateIn(chosen.payoff[d.id] ?? null)}.
+              <Icon name="warning" size={16} /> {d.org_name || d.name}: the {d.promo_apr ?? 0}% promo ends {d.promo_end}, but this order pays it off {dateIn(chosen.payoff[d.id] ?? null)}.
               {strategy === 'avalanche' ? ' Avalanche saves a 0% balance for last; put it earlier in your plan.' : ''}
             </p>
           ))}

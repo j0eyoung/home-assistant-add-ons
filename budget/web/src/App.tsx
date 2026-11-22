@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { addMonths, api, dollars, money, monthLabel, thisMonth } from './api.ts'
+import { api, dollars, money, monthLabel, thisMonth } from './api.ts'
 import type { BudgetRow, Status } from './api.ts'
 import { Backups } from './Backups.tsx'
-import { Card } from './Card.tsx'
 import { CashFlow } from './CashFlow.tsx'
 import { CsvImport } from './CsvImport.tsx'
 import { DebtPage } from './Debt.tsx'
+import { Icon } from './Icon.tsx'
 import { PlanPage, PlanStrip } from './Plan.tsx'
 import { RecurringPage } from './Recurring.tsx'
 import { SafeToSpend } from './SafeToSpend.tsx'
+import { Sign } from './Sign.tsx'
 import { Transactions } from './Transactions.tsx'
 
 const TABS = ['Dashboard', 'Transactions', 'Budget', 'Recurring', 'Debt', 'Plan', 'Accounts', 'Ask'] as const
@@ -36,31 +37,36 @@ export function App() {
   const toReview = status?.toReview ?? 0
   const issues = status?.health?.issues ?? []
   return (
-    <div className="app">
-      <header>
-        <h1><img className="logo" src="./icon.svg" alt="" />Budget</h1>
-        <nav>
-          {TABS.map((t) => (
-            <button key={t} ref={t === tab ? activeTab : undefined} className={t === tab ? 'active' : ''} onClick={() => setTab(t)}>
-              {t}{t === 'Transactions' && toReview > 0 && <span className="count" aria-label={`${toReview} to review`}>{toReview}</span>}
-            </button>
-          ))}
-        </nav>
-        <input type="month" value={month} aria-label="Month" onChange={(e) => setMonth(e.target.value || thisMonth())} />
+    <>
+      <header className="shell-bar">
+        <div className="shell-in">
+          <h1><img className="logo" src="./icon.svg" alt="" />Budget</h1>
+          <nav aria-label="Sections">
+            {TABS.map((t) => (
+              <button key={t} ref={t === tab ? activeTab : undefined} className={t === tab ? 'active' : ''} aria-current={t === tab ? 'page' : undefined}
+                onClick={() => setTab(t)}>
+                {t}{t === 'Transactions' && toReview > 0 && <span className="count" aria-label={`${toReview} to review`}>{toReview}</span>}
+              </button>
+            ))}
+          </nav>
+          <input type="month" value={month} aria-label="Month" onChange={(e) => setMonth(e.target.value || thisMonth())} />
+        </div>
       </header>
-      {error && <p className="error" onClick={() => setError('')}>{error}</p>}
+      <div className="app">
+      {error && <p className="error" role="alert" onClick={() => setError('')}>{error}</p>}
       {status && !status.connected && tab !== 'Accounts' && (
         <p className="notice">No bank connection yet. Go to Accounts and paste a SimpleFIN setup token.</p>
       )}
       {issues.length > 0 && (
-        <div className="notice warn">
-          <strong>⚠ Needs attention</strong>
+        <details className="notice warn" open={issues.length === 1}>
+          <summary><strong><Icon name="warning" size={18} />Needs attention{issues.length > 1 ? `: ${issues.length} things` : ''}</strong><span className="sum-toggle">Details</span></summary>
           <ul>{issues.map((i) => <li key={i}>{i}</li>)}</ul>
-        </div>
+        </details>
       )}
       <main>
         {tab === 'Dashboard' && (
-          <Dashboard month={month} status={status} onError={setError} onOpenPlan={() => setTab('Plan')} onOpenReview={() => setTab('Transactions')} />
+          <Dashboard month={month} status={status} onError={setError} onOpenPlan={() => setTab('Plan')}
+            onOpenReview={() => setTab('Transactions')} onOpenBudget={() => setTab('Budget')} />
         )}
         {tab === 'Transactions' && (
           <Transactions month={month} toReview={toReview} startInReview={toReview > 0} onError={setError} onReviewCount={setReviewCount} />
@@ -72,39 +78,41 @@ export function App() {
         {tab === 'Accounts' && <Accounts status={status} onError={setError} onStatus={loadStatus} />}
         {tab === 'Ask' && <Ask status={status} onError={setError} />}
       </main>
-    </div>
+      </div>
+    </>
   )
 }
 
 type PageProps = { onError: (message: string) => void }
 type Tracked = { id: number; name: string; total: number; since: string; thisMonth: number }
 
-function Dashboard({ month, status, onError, onOpenPlan, onOpenReview }: PageProps & {
+function Dashboard({ month, status, onError, onOpenPlan, onOpenReview, onOpenBudget }: PageProps & {
   month: string
   status: Status | null
   onOpenPlan: () => void
   onOpenReview: () => void
+  onOpenBudget: () => void
 }) {
-  const [rows, setRows] = useState<BudgetRow[]>([])
+  // null while the month loads, so nothing shows as $0 in the meantime.
+  const [rows, setRows] = useState<BudgetRow[] | null>(null)
   const [worth, setWorth] = useState<{ date: string; assets: number; debts: number }[]>([])
   const [tracked, setTracked] = useState<Tracked[]>([])
   const [insight, setInsight] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [allCategories, setAllCategories] = useState(false)
 
   useEffect(() => {
+    setRows(null)
     api<BudgetRow[]>(`budget?month=${month}`).then(setRows).catch((e) => onError(e.message))
     api(`insights?month=${month}`).then((r) => setInsight(r?.content ?? null)).catch((e) => onError(e.message))
     api<Tracked[]>(`tracked?month=${month}`).then(setTracked).catch((e) => onError(e.message))
     api('networth').then(setWorth).catch((e) => onError(e.message))
   }, [month, onError])
 
-  const expenses = rows.filter((r) => r.kind === 'expense')
-  const spent = expenses.reduce((sum, r) => sum + r.spent, 0)
-  const budgeted = expenses.reduce((sum, r) => sum + r.budget, 0)
-  const prevSpent = expenses.reduce((sum, r) => sum + r.prev, 0)
-  const income = -rows.filter((r) => r.kind === 'income').reduce((sum, r) => sum + r.spent, 0) || 0
-  const saved = -rows.filter((r) => r.kind === 'savings').reduce((sum, r) => sum + r.spent, 0) || 0
+  const all = rows ?? []
+  const spent = all.filter((r) => r.kind === 'expense').reduce((sum, r) => sum + r.spent, 0)
+  const income = -all.filter((r) => r.kind === 'income').reduce((sum, r) => sum + r.spent, 0) || 0
+  const saved = -all.filter((r) => r.kind === 'savings').reduce((sum, r) => sum + r.spent, 0) || 0
+  const shown = (n: number) => (rows ? dollars(n) : '…')
   const latest = worth.at(-1)
 
   const generate = async () => {
@@ -119,47 +127,46 @@ function Dashboard({ month, status, onError, onOpenPlan, onOpenReview }: PagePro
 
   const toReview = status?.toReview ?? 0
   const current = month === thisMonth()
-  // Categories with spending this month first; budgeted or last-month-only ones behind "Show".
-  const withSpending = expenses.filter((r) => r.spent > 0).sort((a, b) => b.spent - a.spent)
-  const quiet = expenses.filter((r) => r.spent <= 0 && (r.budget > 0 || r.prev > 0)).sort((a, b) => b.budget + b.prev - (a.budget + a.prev))
+  const side = current || toReview > 0
 
   return (
     <>
-      {current && <SafeToSpend onError={onError} onOpenPlan={onOpenPlan} />}
-      {toReview > 0 && (
-        <button className="nudge" onClick={onOpenReview}>
-          <span>
-            <strong>{toReview} {toReview === 1 ? 'charge' : 'charges'} to check</strong>
-            <span className="muted"> · their categories are a guess</span>
-          </span>
-          <span className="nudge-go">Review →</span>
-        </button>
-      )}
-      {current && <Today status={status} onError={onError} />}
-      {current && <PlanStrip onError={onError} onOpen={onOpenPlan} />}
-      <div className="cards">
-        <Card label="Spent" value={dollars(spent)} sub={`${budgeted ? `of ${dollars(budgeted)} budgeted · ` : ''}${dollars(prevSpent)} last month`} />
-        <Card label="Income" value={dollars(income)} sub={`${dollars(income - spent)} net`} />
-        <Card label="Pre-tax savings" value={dollars(saved)} sub="401k, HSA, investment activity" />
-        <Card label="Net worth" value={latest ? dollars(latest.assets - latest.debts) : '—'} sub={latest ? `${dollars(latest.debts)} owed` : 'connect an account'} />
-        {tracked.map((t) => {
-          const months = Math.max(1, monthsBetween(t.since.slice(0, 7), thisMonth()) + 1)
-          return (
-            <Card key={t.id} label={`${t.name} (to date)`} value={dollars(t.total)}
-              sub={`${dollars(t.thisMonth)} in ${monthLabel(month, false)} · ${dollars(t.total / months)}/mo since ${monthLabel(t.since.slice(0, 7))}`} />
-          )
-        })}
+      <div className="dash" style={side ? undefined : { gridTemplateColumns: 'minmax(0, 1fr)' }}>
+        <Sign month={month} rows={rows} onOpenBudget={onOpenBudget} />
+        {side && (
+          <div className="dash-side">
+            {current && <SafeToSpend onError={onError} onOpenPlan={onOpenPlan} />}
+            {toReview > 0 && (
+              <button className="service" onClick={onOpenReview}>
+                <span>
+                  <span className="svc-title">To review</span>
+                  <strong>{toReview} new</strong>
+                  <span className="svc-small">{toReview === 1 ? 'charge whose category is a guess' : 'charges whose category is a guess'}</span>
+                </span>
+                <span className="go">Review <Icon name="arrow-right" size={18} /></span>
+              </button>
+            )}
+            {current && <Today status={status} onError={onError} />}
+            {current && <PlanStrip onError={onError} onOpen={onOpenPlan} />}
+          </div>
+        )}
       </div>
       <section>
-        <h2>Spending by category <span className="muted">vs {monthLabel(addMonths(month, -1), false)}</span></h2>
-        {withSpending.map((r) => <CategoryBar key={r.id} row={r} />)}
-        {allCategories && quiet.map((r) => <CategoryBar key={r.id} row={r} />)}
-        {quiet.length > 0 && (
-          <button className="link left" onClick={() => setAllCategories(!allCategories)}>
-            {allCategories ? 'Hide categories with no spending' : `Show ${quiet.length} with no spending yet`}
-          </button>
-        )}
-        {!withSpending.length && <p className="muted">No spending recorded for this month.</p>}
+        <h2>{monthLabel(month)} in figures</h2>
+        <dl className="figures">
+          <div><dt>Income</dt><dd>{shown(income)}<small>{income - spent >= 0 ? '+' : '−'}{dollars(Math.abs(income - spent))} after spending</small></dd></div>
+          <div><dt>Pre-tax savings</dt><dd>{shown(saved)}<small>401k, HSA, investments</small></dd></div>
+          <div><dt>Net worth</dt><dd>{latest ? dollars(latest.assets - latest.debts) : '—'}<small>{latest ? `${dollars(latest.debts)} owed` : 'connect an account'}</small></dd></div>
+          {tracked.map((t) => {
+            const months = Math.max(1, monthsBetween(t.since.slice(0, 7), thisMonth()) + 1)
+            return (
+              <div key={t.id}>
+                <dt>{t.name} to date</dt>
+                <dd>{dollars(t.total)}<small>{dollars(t.thisMonth)} this month · {dollars(t.total / months)}/mo since {monthLabel(t.since.slice(0, 7))}</small></dd>
+              </div>
+            )
+          })}
+        </dl>
       </section>
       <CashFlow onError={onError} />
       {worth.length > 1 && (
@@ -212,32 +219,6 @@ function Today({ status, onError }: PageProps & { status: Status | null }) {
       </div>
       {text ? <p className="insight">{text}</p> : <p className="muted">Not checked yet today.</p>}
     </section>
-  )
-}
-
-function CategoryBar({ row }: { row: BudgetRow }) {
-  const pct = row.budget ? Math.min(100, (row.spent / row.budget) * 100) : 100
-  const over = row.budget > 0 && row.spent > row.budget
-  const delta = row.spent - row.prev
-  return (
-    <div className="bar-row">
-      <div className="bar-label">
-        <span>
-          {row.name}
-          {row.prev > 0 || row.spent > 0 ? (
-            <span className={`delta ${delta > 0.5 ? 'up' : delta < -0.5 ? 'down' : ''}`}>
-              {delta > 0.5 ? '▲' : delta < -0.5 ? '▼' : '='} {dollars(row.prev)} last month
-            </span>
-          ) : null}
-        </span>
-        <span className={over ? 'over' : ''}>
-          {money(row.spent)}{row.budget ? ` / ${money(row.budget)}` : ''}
-        </span>
-      </div>
-      <div className="bar">
-        <div className={`bar-fill ${over ? 'over-fill' : row.budget ? '' : 'unbudgeted'}`} style={{ width: `${Math.max(0, pct)}%` }} />
-      </div>
-    </div>
   )
 }
 
@@ -362,7 +343,7 @@ function Rules({ onError }: PageProps) {
       {!rules.length && <p className="muted">No rules yet.</p>}
       {rules.map((r) => (
         <div className="account" key={r.pattern}>
-          <div>{r.pattern} <span className="muted">→ {r.category}</span></div>
+          <div>{r.pattern} <span className="muted"><Icon name="arrow-right" size={14} /> {r.category}</span></div>
           <button className="link" onClick={() => remove(r.pattern)}>Delete</button>
         </div>
       ))}

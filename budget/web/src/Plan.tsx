@@ -3,6 +3,7 @@ import { goalMonth, monthsBetween, project } from '../../shared/plan-math.ts'
 import type { Context, Goal, GoalItem, Income, MonthRow, Plan, PlanEvent, PlanState, Projection, Raise, Schedule } from '../../shared/plan-math.ts'
 import { api, dollars, money, monthLabel } from './api.ts'
 import type { Status } from './api.ts'
+import { Icon } from './Icon.tsx'
 
 // Shapes from server/plan.ts (planReport).
 type GoalStatus = Goal & {
@@ -73,8 +74,9 @@ function FocusCharges({ report }: { report: Report }) {
   const f = report.focus
   if (f?.type !== 'credit' || !f.count) return null
   return (
-    <p className="over small">
-      {money(f.chargesThisMonth)} of new charges on {f.name} this month ({f.count}). That's the card you're paying off, so these push its payoff later.
+    <p className="caution">
+      <Icon name="warning" size={16} />
+      <span>{money(f.chargesThisMonth)} of new charges on {f.name} this month ({f.count}). That's the card you're paying off, so these push its payoff later.</span>
     </p>
   )
 }
@@ -182,8 +184,7 @@ export function PlanPage({ status, onError }: { status: Status | null; onError: 
     <>
       {!report.saved && (
         <div className="notice">
-          This is a starting point built from your accounts. Put a target date on each debt below, or use <strong>Edit plan</strong> to import a written plan
-          and set your income, raises and bonuses.
+          This is a starting point built from your accounts. Use <strong>Edit plan</strong> to import a written plan and set your income, raises and bonuses.
         </div>
       )}
       <Windfalls report={report} />
@@ -674,8 +675,8 @@ function PlanEditor({ report, aiReady, onError, onDone }: { report: Report; aiRe
               </select>
               {g.kind === 'savings' && <label>Target <NumInput value={g.target} placeholder="amount" onChange={(v) => setGoal(i, { target: v })} /></label>}
               <label>By <input type="month" value={g.by ?? ''} onChange={(e) => setGoal(i, { by: e.target.value || null })} /></label>
-              <button className="toggle" title="Move up" onClick={() => moveGoal(i, -1)} disabled={i === 0}>↑</button>
-              <button className="toggle" title="Move down" onClick={() => moveGoal(i, 1)} disabled={i === plan.goals.length - 1}>↓</button>
+              <button className="toggle" title="Move up" onClick={() => moveGoal(i, -1)} disabled={i === 0}><Icon name="up" size={14} label="Move up" /></button>
+              <button className="toggle" title="Move down" onClick={() => moveGoal(i, 1)} disabled={i === plan.goals.length - 1}><Icon name="down" size={14} label="Move down" /></button>
               <button className="link" onClick={() => setPlan((p) => ({ ...p, goals: p.goals.filter((_, j) => j !== i) }))}>Remove</button>
             </div>
             {g.kind === 'savings' && (

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { api, money, monthLabel } from './api.ts'
 import type { Category, Transaction } from './api.ts'
+import { Icon } from './Icon.tsx'
 import { photoToJpeg } from './photo.ts'
 import { SplitEditor } from './SplitEditor.tsx'
 import type { Proposal } from './SplitEditor.tsx'
@@ -22,6 +23,7 @@ type Panel =
 
 const label = (t: Transaction) => t.merchant || t.name
 const day = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+const longDay = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 // Whether a transaction is in the review queue (same test as NEEDS_REVIEW on the server).
@@ -31,7 +33,7 @@ function needsReview(t: Transaction) {
 }
 
 function sourceTag(t: Transaction) {
-  if (t.category_source === 'ai') return t.reviewed ? 'AI ✓' : 'AI guess'
+  if (t.category_source === 'ai') return t.reviewed ? 'AI, checked' : 'AI guess'
   if (t.category_source === 'none') return 'not categorized'
   return t.category_source === 'rule' ? 'rule' : 'you'
 }
@@ -376,7 +378,7 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
               </span>
             </div>
           ) : loaded && !visible.length ? (
-            <p className="empty">✓ All caught up. New charges show up here after each bank sync.</p>
+            <p className="empty"><Icon name="check" size={18} />All caught up. New charges show up here after each bank sync.</p>
           ) : null}
           <div className="review-list">
             {visible.map((t) => (
@@ -411,7 +413,7 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
           </div>
         </>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap flow">
           <table className="tx-table">
             <thead>
               <tr>
@@ -419,31 +421,34 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
                   <input type="checkbox" checked={allSelected} aria-label="Select all"
                     onChange={() => setSelected(allSelected ? new Set() : new Set(rows.map((t) => t.id)))} />
                 </th>
-                <th className="date">Date</th><th>Description</th><th className="acct">Account</th><th className="category">Category</th><th className="num">Amount</th>
+                <th>Description</th><th className="acct">Account</th><th className="category">Category</th><th className="num">Amount</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((t) => {
+              {rows.map((t, i) => {
                 const splitTotal = t.splits.reduce((s, p) => s + p.amount, 0)
                 return (
                   <Fragment key={t.id}>
+                    {/* Guide words: each day's header stays pinned while its rows scroll by. */}
+                    {(i === 0 || rows[i - 1].date !== t.date) && (
+                      <tr className="day-row"><th colSpan={5} scope="colgroup">{longDay(t.date)}</th></tr>
+                    )}
                     <tr className={[t.pending ? 'pending' : '', focus === t.id ? 'focused' : '', selected.has(t.id) ? 'selected' : ''].join(' ')}>
                       <td className="sel"><input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} aria-label={`Select ${label(t)}`} /></td>
-                      <td className="date">{t.date}</td>
                       <td className="desc-cell">
                         <div className="desc">
                           <span className="desc-text" title={t.name !== label(t) ? t.name : undefined}>{label(t)}{t.pending ? ' (pending)' : ''}</span>
-                          <button className="mini more" aria-label="Actions" onClick={() => setFocus(focus === t.id ? null : t.id)}>⋯</button>
+                          <button className="mini more" aria-label="Actions" aria-expanded={focus === t.id} onClick={() => setFocus(focus === t.id ? null : t.id)}><Icon name="more" size={18} /></button>
                           <span className={`row-actions ${reading === t.id ? 'busy' : ''}`}>{actions(t)}</span>
                         </div>
-                        <div className="tx-meta muted">{day(t.date)}{t.account_name ? ` · ${t.account_name}` : ''}</div>
+                        {t.account_name && <div className="tx-meta muted">{t.account_name}</div>}
                         {t.notes && <div className="note">{t.notes}</div>}
                       </td>
                       <td className="acct muted">{t.account_name}</td>
                       <td className="category">
                         {t.splits.length ? (
                           <button className="mini split-label" onClick={() => togglePanel(t, { kind: 'split' })}>
-                            Split into {t.splits.length}{Math.abs(splitTotal - t.amount) > 0.005 ? ' ⚠' : ''}
+                            Split into {t.splits.length}{Math.abs(splitTotal - t.amount) > 0.005 && <Icon name="warning" size={14} label="Parts don't add up" />}
                           </button>
                         ) : (
                           <>
@@ -457,8 +462,7 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
                     {t.splits.map((s) => (
                       <tr className="split-row" key={`${t.id}-${s.id}`}>
                         <td className="sel" />
-                        <td className="date" />
-                        <td className="muted">↳ part</td>
+                        <td className="muted"><span className="part"><Icon name="split" size={14} />part</span></td>
                         <td className="acct" />
                         <td className="category">{categoryName(s.category_id)}</td>
                         <td className="num muted">{money(-s.amount)}</td>
@@ -466,7 +470,7 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
                     ))}
                     {open?.id === t.id && (
                       <tr className="panel-row">
-                        <td colSpan={6}>{panelFor(t)}</td>
+                        <td colSpan={5}>{panelFor(t)}</td>
                       </tr>
                     )}
                   </Fragment>

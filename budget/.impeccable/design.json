@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-22T00:17:02.846070+00:00",
+  "title": "Design System: Budget",
+  "extensions": {
+    "colorMeta": {
+      "sign-green": {
+        "role": "primary",
+        "displayName": "Sign Green",
+        "canonical": "#0b5d3b"
+      },
+      "service-blue": {
+        "role": "secondary",
+        "displayName": "Service Blue",
+        "canonical": "#1d4f91"
+      },
+      "sign-yellow": {
+        "role": "tertiary",
+        "displayName": "Sign Yellow",
+        "canonical": "#ffcc00"
+      },
+      "construction-orange": {
+        "role": "tertiary",
+        "displayName": "Construction Orange",
+        "canonical": "#f08a24"
+      },
+      "stop-red": {
+        "role": "tertiary",
+        "displayName": "Stop Red",
+        "canonical": "#b3261e"
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Green-Tinted Ground",
+        "canonical": "#eef2ef"
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Sign Ink",
+        "canonical": "#101614"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The sign's month total."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "App title and sign category lines."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Running text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase table column headings."
+      }
+    },
+    "shadows": [
+      {
+        "name": "float",
+        "value": "0 6px 20px rgba(0,0,0,0.22)",
+        "purpose": "Toast and sticky bulk-action bar only."
+      },
+      {
+        "name": "sign-hairline",
+        "value": "0 1px 2px rgba(0,0,0,0.25)",
+        "purpose": "The dashboard sign."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 3px rgba(11,93,59,0.2)",
+        "purpose": "Input focus."
+      }
+    ],
+    "motion": [
+      {
+        "name": "control",
+        "value": "150ms ease-out",
+        "purpose": "Button background and border."
+      },
+      {
+        "name": "toast-in",
+        "value": "200ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Toast entrance; all motion is off under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "dashboard",
+        "value": "900px"
+      },
+      {
+        "name": "tables",
+        "value": "800px"
+      },
+      {
+        "name": "phone",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Sign green action.",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary{font:600 16px/1.45 'Overpass Variable', system-ui, sans-serif;background:#0b5d3b;color:#fff;border:1px solid #0b5d3b;border-radius:8px;padding:8px 14px;cursor:pointer;transition:background-color 150ms ease-out}.ds-btn-primary:hover{background:#08452c;border-color:#08452c}.ds-btn-primary:focus-visible{outline:2px solid #1d4f91;outline-offset:2px}.ds-btn-primary:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "Standard button on white panels.",
+      "html": "<button class=\"ds-btn\">Sync now</button>",
+      "css": ".ds-btn{font:600 16px/1.45 'Overpass Variable', system-ui, sans-serif;background:#fff;color:#101614;border:1px solid #b4c1b9;border-radius:8px;padding:8px 14px;cursor:pointer}.ds-btn:hover{background:#f5f8f6;border-color:#5f6c65}.ds-btn:focus-visible{outline:2px solid #1d4f91;outline-offset:2px}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Text field with a soft green focus ring.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search\">",
+      "css": ".ds-input{font:16px 'Overpass Variable', system-ui, sans-serif;min-height:40px;padding:8px 10px;background:#fff;color:#101614;border:1px solid #b4c1b9;border-radius:8px}.ds-input:focus{outline:none;border-color:#0b5d3b;box-shadow:0 0 0 3px rgba(11,93,59,.2)}"
+    },
+    {
+      "name": "Shell Bar Tabs",
+      "kind": "nav",
+      "refersTo": "shell-bar",
+      "description": "Green bar, white title, active tab underlined.",
+      "html": "<div class=\"ds-bar\"><b>Budget</b><span>Dashboard</span><span class=\"on\">Transactions</span><span>Budget</span></div>",
+      "css": ".ds-bar{display:flex;gap:16px;align-items:center;background:#0b5d3b;color:#c9ddd2;font:600 16px 'Overpass Variable', system-ui, sans-serif;padding:12px 20px 0}.ds-bar b{color:#fff;font-weight:800;font-size:23px}.ds-bar span{padding:12px 10px 14px}.ds-bar span:hover{color:#fff}.ds-bar .on{color:#fff;box-shadow:inset 0 -3px 0 #fff}"
+    },
+    {
+      "name": "Count Pill",
+      "kind": "chip",
+      "refersTo": "count-pill",
+      "description": "Service blue count for items to review.",
+      "html": "<span class=\"ds-count\">7</span>",
+      "css": ".ds-count{display:inline-block;min-width:22px;padding:0 7px;border-radius:11px;background:#1d4f91;color:#fff;font:700 13px/20px 'Overpass Variable', system-ui, sans-serif;text-align:center}"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "White panel, one border, no shadow.",
+      "html": "<section class=\"ds-panel\"><h2>Recurring</h2><p>Plain panel content.</p></section>",
+      "css": ".ds-panel{background:#fff;color:#101614;border:1px solid #d6ded9;border-radius:12px;padding:18px 20px;font:16px/1.45 'Overpass Variable', system-ui, sans-serif}.ds-panel h2{font-size:19px;font-weight:700;margin:0 0 12px}"
+    },
+    {
+      "name": "The Sign",
+      "kind": "custom",
+      "refersTo": "sign-panel",
+      "description": "Month total and category lines with pace rules; the over line is yellow with a diamond.",
+      "html": "<div class=\"ds-sign\"><div class=\"t\">$526 <span>left of $3,400</span></div><div class=\"r\"><div class=\"l\"><b>Groceries</b><strong>$84</strong></div><div class=\"p\"><i style=\"width:70%\"></i><u style=\"left:45%\"></u></div></div><div class=\"r over\"><div class=\"l\"><b><em></em>Dining</b><strong>-$32</strong></div><div class=\"p\"><i style=\"width:100%\"></i><u style=\"left:45%\"></u></div></div></div>",
+      "css": ".ds-sign{background:#0b5d3b;color:#fff;border-radius:12px;padding:22px 24px 16px;outline:2px solid #fff;outline-offset:-7px;font:16px/1.45 'Overpass Variable', system-ui, sans-serif}.ds-sign .t{font-size:48px;font-weight:800;line-height:1.05;letter-spacing:-.02em}.ds-sign .t span{font-size:19px;font-weight:600;color:#c9ddd2;letter-spacing:0}.ds-sign .r{padding:10px 0 9px;border-top:1px solid rgba(255,255,255,.16)}.ds-sign .l{display:flex;justify-content:space-between;align-items:baseline}.ds-sign b{font-size:23px;display:inline-flex;align-items:center;gap:12px}.ds-sign strong{font-size:23px;font-weight:800}.ds-sign .p{position:relative;height:6px;border-radius:3px;background:rgba(255,255,255,.2);margin:8px 0 4px}.ds-sign .p i{position:absolute;inset:0 auto 0 0;border-radius:3px;background:rgba(255,255,255,.62)}.ds-sign .p u{position:absolute;top:-4px;bottom:-4px;width:3px;margin-left:-1px;border-radius:2px;background:#fff}.ds-sign .over b,.ds-sign .over strong{color:#ffcc00}.ds-sign .over .p i{background:#ffcc00}.ds-sign em{width:15px;height:15px;background:#ffcc00;border:2px solid #101614;transform:rotate(45deg);border-radius:2px}"
+    },
+    {
+      "name": "Service Panel",
+      "kind": "card",
+      "refersTo": "service-panel",
+      "description": "Blue information panel with a white keyline.",
+      "html": "<section class=\"ds-svc\"><h2>Safe to spend this week</h2><div class=\"f\">$212<span>left of $300</span></div><div class=\"bar\"><div></div></div></section>",
+      "css": ".ds-svc{background:#1d4f91;color:#fff;border-radius:12px;padding:18px 20px;outline:2px solid #fff;outline-offset:-6px;font:16px/1.45 'Overpass Variable', system-ui, sans-serif}.ds-svc h2{color:#d3e0f2;font-size:16px;font-weight:700;margin:0 0 2px}.ds-svc .f{font-size:34px;font-weight:800;line-height:1.1}.ds-svc .f span{font-size:16px;font-weight:600;color:#d3e0f2;margin-left:6px}.ds-svc .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.22);margin:10px 0 8px;overflow:hidden}.ds-svc .bar div{width:30%;height:100%;background:#fff}"
+    },
+    {
+      "name": "Warning Notice",
+      "kind": "custom",
+      "refersTo": "notice-warn",
+      "description": "Construction orange with an ink keyline.",
+      "html": "<div class=\"ds-warn\"><strong>Needs attention</strong><p>Claude is not connected.</p></div>",
+      "css": ".ds-warn{background:#f08a24;color:#101614;border-radius:10px;padding:14px 18px;outline:2px solid currentColor;outline-offset:-6px;font:16px/1.45 'Overpass Variable', system-ui, sans-serif}.ds-warn p{margin:4px 0 0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Guide Sign",
+    "overview": "The month reads like the green guide sign before an exit: each category with what is left, set large and right-aligned like mileage. Sign green carries the shell and the one sign; yellow means over budget; blue carries information; orange warns; red marks errors. Overpass is the only face; panels are flat with one border.",
+    "keyCharacteristics": [
+      "One sign per screen at most",
+      "Reserved colour roles",
+      "Overpass only, tabular figures",
+      "Flat panels, keyline as depth",
+      "Drawn SVG icon set only"
+    ],
+    "rules": [
+      {
+        "name": "The One Reserved Ink Rule",
+        "body": "Yellow means over budget and nothing else. It appears only on green or blue grounds. On white surfaces \"over\" is stop red.",
+        "section": "colors"
+      },
+      {
+        "name": "The Idle Grey Rule",
+        "body": "Categories with nothing spent print in Sign Legend at weight 600, never in yellow or green emphasis.",
+        "section": "colors"
+      },
+      {
+        "name": "The Sign Family Rule",
+        "body": "Notices borrow the sign families: orange for attention, red for errors, each with a 2px inner keyline (an outline at a negative offset); blue and green panels likewise.",
+        "section": "colors"
+      },
+      {
+        "name": "The Right-Aligned Mileage Rule",
+        "body": "Figures sit at the right edge of their line, bold, never wrapped; the name wraps at spaces on the left.",
+        "section": "typography"
+      },
+      {
+        "name": "The Never Truncate Rule",
+        "body": "Text in tables and lists is never cut with an ellipsis or a fixed width; it wraps at spaces, and short values stay on one line.",
+        "section": "layout"
+      },
+      {
+        "name": "The Guide Words Rule",
+        "body": "In Transactions the day header is sticky at the top of the scroll, on the ground colour with a 2px sign-green rule under it and that day's total at the right.",
+        "section": "layout"
+      },
+      {
+        "name": "The Keyline Rule",
+        "body": "The inner white or ink keyline is the sign's border. Draw it with an outline at a negative offset, not a second element.",
+        "section": "elevation"
+      },
+      {
+        "name": "The In-Place State Rule",
+        "body": "A state restyles the row where it stands. Rows do not move to another list to show state.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Pace Tick Rule",
+        "body": "Each pace rule has a 3px tick that marks today's day of the month, shown only for the current month.",
+        "section": "components"
+      }
+    ],
+    "dos": [
+      "Do keep yellow (#ffcc00) for over budget only, and only on green or blue grounds.",
+      "Do right-align figures at the line's edge, bold, on one line.",
+      "Do use the drawn SVG icons in Icon.tsx for arrows, checks, warnings and more.",
+      "Do let a state restyle the row in place.",
+      "Do wrap text at spaces and size columns to content; check new tables at 375px.",
+      "Do build light and dark from the same tokens; sign green stays the same in both."
+    ],
+    "donts": [
+      "Don't use yellow for emphasis, hover, selection or decoration.",
+      "Don't add a second sign to a screen or use green panels for ordinary content.",
+      "Don't truncate text with ellipses, clips or fixed widths, or hide it in a tooltip.",
+      "Don't use glyph or emoji icons, kickers above headings, or hard offset shadows.",
+      "Don't use a donut chart or a row of hero-metric cards for the month."
+    ]
+  }
+}

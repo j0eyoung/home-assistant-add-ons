@@ -29,12 +29,10 @@ export function SafeToSpend({ onError, onOpenPlan }: { onError: (m: string) => v
 
   if (s.weekly == null) {
     return (
-      <section className="allowance">
-        <div className="chart-head">
-          <h2>Safe to spend this week</h2>
-          <button onClick={onOpenPlan}>Open plan</button>
-        </div>
-        <p className="muted">Give your debts target dates in the Plan tab (or set a planned spending amount) and this shows how much you can spend each week and still stay on track.</p>
+      <section className="service allowance">
+        <h2>Safe to spend this week</h2>
+        <p className="small">Give your debts target dates in the Plan tab (or set a planned spending amount) and this shows how much you can spend each week and still stay on track.</p>
+        <button onClick={onOpenPlan}>Open plan</button>
       </section>
     )
   }
@@ -43,24 +41,21 @@ export function SafeToSpend({ onError, onOpenPlan }: { onError: (m: string) => v
   const over = left < 0
   const used = s.weekly > 0 ? Math.min(100, (s.spent / s.weekly) * 100) : 100
   return (
-    <section className="allowance">
-      <div className="chart-head">
-        <h2>Safe to spend this week <span className="muted">{day(s.weekStart)} – {day(s.weekEnd)}</span></h2>
-      </div>
-      <div className="allowance-main">
-        <span className={`hero-number ${over ? 'over' : ''}`}>{dollars(Math.abs(left))}</span>
-        <span className="muted"> {over ? 'over' : 'left'} of {dollars(s.weekly)}</span>
-      </div>
+    <section className="service allowance">
+      <h2>Safe to spend this week</h2>
+      <div className={`figure ${over ? 'over' : ''}`}>{dollars(Math.abs(left))}<span>{over ? 'over' : 'left'} of {dollars(s.weekly)}</span></div>
       <div className="bar"><div className={`bar-fill ${over ? 'over-fill' : ''}`} style={{ width: `${used}%` }} /></div>
-      <p className="muted">
-        {dollars(s.spent)} spent · {s.daysLeft} {s.daysLeft === 1 ? 'day' : 'days'} left
-        {!over && s.daysLeft > 0 ? ` · about ${dollars(left / s.daysLeft)} a day` : ''}
-        {s.monthly != null && <> · <span className={s.monthSpent > s.monthly ? 'over' : ''}>this month {dollars(s.monthSpent)} of {dollars(s.monthly)}</span></>}
+      <p className="small">
+        {day(s.weekStart)} – {day(s.weekEnd)} · {dollars(s.spent)} spent · {s.daysLeft} {s.daysLeft === 1 ? 'day' : 'days'} left
+        {!over && s.daysLeft > 0 ? `, about ${dollars(left / s.daysLeft)} a day` : ''}
       </p>
+      {s.monthly != null && (
+        <p className="small">This month <span className={s.monthSpent > s.monthly ? 'over' : ''}>{dollars(s.monthSpent)} of {dollars(s.monthly)}</span></p>
+      )}
       {s.weekly === 0 && <p className="over small">Regular bills ({dollars(s.fixed)}/mo) already use up the whole {dollars(s.limit)} monthly limit.</p>}
       <details>
-        <summary className="muted">How it's worked out</summary>
-        <p className="muted">
+        <summary>How it's worked out</summary>
+        <p className="small">
           {s.basis === 'deadlines' ? `Spending under ${dollars(s.limit)}/mo makes every payoff date in your plan.` : `Your plan's spending is ${dollars(s.limit)}/mo.`}{' '}
           Regular bills take {dollars(s.fixed)} of that, leaving {dollars(s.monthly)}/mo, or {dollars(s.weekly)} a week, for everything else. Bills and loan payments
           don't count against the week; mark a charge as recurring (or not) in the Recurring tab to move it.
@@ -69,13 +64,13 @@ export function SafeToSpend({ onError, onOpenPlan }: { onError: (m: string) => v
           <div>
             <h3>This week</h3>
             {s.charges.length ? s.charges.map((c, i) => (
-              <div className="line" key={i}><span>{c.merchant}<span className="muted"> · {c.category}</span></span><span className={c.amount < 0 ? 'inflow' : ''}>{money(c.amount)}</span></div>
-            )) : <p className="muted">Nothing yet.</p>}
+              <div className="line" key={i}><span>{c.merchant}<span className="small"> · {c.category}</span></span><span className={c.amount < 0 ? 'inflow' : ''}>{money(c.amount)}</span></div>
+            )) : <p className="small">Nothing yet.</p>}
           </div>
           <div>
-            <h3>Regular bills <span className="muted">{dollars(s.fixed)}/mo</span></h3>
+            <h3>Regular bills <span className="small">{dollars(s.fixed)}/mo</span></h3>
             {s.bills.map((b) => (
-              <div className="line" key={`${b.key}${b.monthly}`}><span>{b.merchant}<span className="muted"> · {b.category}</span></span><span>{dollars(b.monthly)}/mo</span></div>
+              <div className="line" key={`${b.key}${b.monthly}`}><span>{b.merchant}<span className="small"> · {b.category}</span></span><span>{dollars(b.monthly)}/mo</span></div>
             ))}
           </div>
         </div>
