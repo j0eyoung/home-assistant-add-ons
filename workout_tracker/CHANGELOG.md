@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.14.0 - A New Look: Your Home Program
+
+### 🌟 Features
+* **A complete redesign.** The app now looks like the home exercise program your PT hands you: a teal letterhead at the top and a teal tab bar at the bottom, paper-white pages (a dark slate in dark mode), ruled sections numbered in the order you do them, and new drawn icons throughout. It still follows your phone's light or dark setting.
+* **Today reads like the sheet.** Each strength exercise is a numbered row (2.1, 2.2…) with its picture, its dose in a box (2 × 10–12), last time, and today's target. The numbers you log show in ballpoint blue, and the next set to do is highlighted yellow. Each section heading shows how many items you've done ("3 of 5").
+* **Your check-in scores sit on the letterhead.** Today's header shows the date, the kind of day, the week's phase (and which week of a 4-week plan), and your kidney and pelvic floor scores. Tap a score to change this morning's check-in.
+* **Holds and rests drawn to length.** Wall sits, planks and other holds are bars as long as the hold, with a thin line for the rest after each, so a 45 s hold looks longer than a 20 s one. Cardio minutes get a bar too.
+* **Paused exercises stay in view.** An exercise sitting out because it bothered you shows greyed out at the end of the strength list, with the date it comes back.
+
+### 🔧 Improvements
+* **Easier to find things.** Every page has its name in the header, and History, PT report, Library and Settings have a "‹ More" link back. More is a clear list that says what's on each page, and the long pages (Settings, History, PT report) start with links that jump to each section.
+* Water and the snow-day link take less room, so the program starts higher up the screen.
+* Easier to read at arm's length: a typeface designed for legibility, with numbers that line up.
+* The four week buttons on the Week tab sit in two rows on a phone, so their labels don't squeeze.
+
 ## 0.13.1 - More Yoga Pictures
 
 ### 🔧 Improvements

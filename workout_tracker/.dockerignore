@@ -7,3 +7,8 @@ __pycache__/
 *.pyc
 .git/
 .github/
+
+# Design notes and review captures stay out of the image
+PRODUCT.md
+DESIGN.md
+.impeccable/

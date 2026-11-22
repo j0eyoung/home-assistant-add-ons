@@ -40,7 +40,7 @@ from engine import WorkoutEngine
 from exercises import CARDIO_IMAGES, GUIDES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "0.13.1"
+VERSION = "0.14.0"
 
 app = FastAPI(title="AI Workout Tracker")
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
@@ -326,6 +326,14 @@ def _cooldown_for(w, last, today):
     return day_focus, cards
 
 
+def _day_line(today):
+    d = datetime.date.fromisoformat(today)
+    day = planner.day_plan(d, selected_sports())
+    found = planner.block_week(d) if planner.block(d) else None
+    return {"focus": day["focus"], "label": day.get("theme_label") if day["focus"] == "strength" else planner.LABELS[day["focus"]],
+            "block_week": found[0] + 1 if found else None}
+
+
 @app.get("/api/plan")
 def plan():
     today = history.local_today()
@@ -362,6 +370,10 @@ def plan():
         # a ski readiness check every two weeks until opening day
         "ski_due": bool(season and season.get("days", 0) > 0 and insights.ski_status(DB_PATH, datetime.date.fromisoformat(today))["due"]),
         "phase": phase,
+        # for the letterhead: what kind of day this is, and which week of a coach's 4-week plan
+        "day": _day_line(today),
+        # exercises sitting out because they bothered you, shown greyed at the end of the strength list
+        "paused": [{"name": n, "until": p["until"]} for n, p in sorted(paused(today).items())],
         "coach_changes": len(planedit.overrides_for(today)),
         "checkin": history.get_checkin(DB_PATH, today),
         "snow_today": history.snow_days(DB_PATH, 5).get(today),

@@ -6,6 +6,29 @@ const $view = document.getElementById("view");
 const $date = document.getElementById("date");
 const $save = document.getElementById("save-state");
 const $toast = document.getElementById("toast");
+const $title = document.getElementById("page-title");
+const $lhSub = document.getElementById("lh-sub");
+const $lhScores = document.getElementById("lh-scores");
+const $back = document.getElementById("back");
+
+// One drawn icon set, one stroke (styled by .ico in app.css)
+const svg = (d) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const I = {
+  play: svg('<path d="M8 5.5v13l10-6.5z"/>'),
+  check: svg('<path d="M4.5 12.5l5 5 10-11"/>'),
+  down: svg('<path d="M6 9.5l6 6 6-6"/>'),
+  up: svg('<path d="M6 14.5l6-6 6 6"/>'),
+  next: svg('<path d="M9.5 6l6 6-6 6"/>'),
+  close: svg('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
+  plus: svg('<path d="M12 5.5v13M5.5 12h13"/>'),
+  again: svg('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3.7h3.7"/>'),
+  star: svg('<path d="M12 3.8l2.5 5.1 5.6.8-4 3.9.9 5.6-5-2.6-5 2.6.9-5.6-4-3.9 5.6-.8z"/>'),
+  pin: svg('<path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>'),
+  history: svg('<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3.5 4v4h4M12 7.5V12l3 2"/>'),
+  report: svg('<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8.5 8h7M8.5 11.5h7M8.5 15h4"/>'),
+  library: svg('<path d="M5 4.5h4v15H5zM10 4.5h4v15h-4zM15.2 5.2l3.8-1 3 14.5-3.8 1z"/>'),
+  settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/>'),
+};
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -96,7 +119,7 @@ function howTo(ex) {
 
 function toggleButton(key, label = "How to") {
   return `<button type="button" class="btn link" data-act="toggle" data-key="${esc(key)}" aria-expanded="${state.open.has(key)}">
-    ${label} ${state.open.has(key) ? "▴" : "▾"}</button>`;
+    ${label} ${state.open.has(key) ? I.up : I.down}</button>`;
 }
 
 function formatDate(iso) {
@@ -130,6 +153,45 @@ function loadPlan(plan) {
     state.finish.pf = plan.checkin.pelvic_floor;
   }
   $date.textContent = formatDate(plan.date);
+  letterhead();
+}
+
+// The teal letterhead: page name and date; on Today also the kind of day and this morning's two scores
+const TAB_TITLES = { today: "Today", week: "Week", coach: "Coach", mind: "Mind & Body", more: "More",
+  history: "History", report: "PT report", library: "Library", settings: "Settings" };
+
+function letterhead() {
+  const p = state.plan;
+  $back.hidden = !MORE_TABS.includes(state.tab);
+  if (state.tab !== "today" || !p) {
+    $title.textContent = TAB_TITLES[state.tab] || "Workouts";
+    $date.textContent = p ? formatDate(p.date) : "";
+    $lhSub.textContent = "";
+    $lhScores.innerHTML = "";
+    return;
+  }
+  // On Today the date is the headline, as at the top of the printed program (the tab bar already says "Today")
+  $title.textContent = new Date(`${p.date}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
+  $date.textContent = "";
+  const day = p.day || {};
+  const bits = [day.label, day.block_week ? `${p.phase}, week ${day.block_week} of your 4-week plan` : p.phase];
+  $lhSub.textContent = bits.filter(Boolean).join(" · ");
+  const ck = p.checkin;
+  // a skiing or snowboarding day replaces the workout, so its prompt sits with the day's status, not in the program
+  const snow = p.snow_sport && !p.snow_today && !state.snowOpen && !p.done?.["1"]
+    ? `<button type="button" class="score snow" data-act="snow-toggle">Snow day?</button>` : "";
+  $lhScores.innerHTML = (ck ? `<button type="button" class="score" data-act="checkin-edit" aria-label="Kidney ${esc(ck.kidney)} of 10. Change this morning's check-in">
+      <b>${esc(ck.kidney)}</b><span>/10 kidney</span></button>
+    <button type="button" class="score" data-act="checkin-edit" aria-label="Pelvic floor ${esc(ck.pelvic_floor)} of 10. Change this morning's check-in">
+      <b>${esc(ck.pelvic_floor)}</b><span>/10 pelvic floor</span></button>` : "") + snow;
+}
+
+// "2 x 10-12, light and slow. Stop if..." -> a boxed dose ("2 × 10–12") and the rest as a note
+function splitDose(dose) {
+  const m = String(dose || "").match(/^\s*(\d+\s*[x×]\s*\d+(?:\s*[-–]\s*\d+)?(?:\s*(?:s|sec|min|reps?))?(?:\s+each (?:side|leg|way))?(?:\s*hold)?)[,.;:]?\s*(.*)$/i);
+  if (!m) return String(dose || "").length <= 26 ? { box: dose || "", note: "" } : { box: "", note: dose };
+  const note = m[2].charAt(0).toUpperCase() + m[2].slice(1);
+  return { box: m[1].replace(/\s*[x×]\s*/i, " × ").replace(/\s*[-–]\s*/, "–"), note };
 }
 
 async function refreshPlan() {
@@ -161,7 +223,7 @@ async function saveDraft() {
       method: "PUT",
       body: JSON.stringify({ date: state.plan.date, tracker: draftRows(), checks: state.checks }),
     });
-    setSaveState("Saved ✓");
+    setSaveState("Saved");
   } catch (err) {
     if (err.status === 409) {
       toast("A new day has started: loading today's plan");
@@ -178,61 +240,109 @@ function exerciseFor(name) {
     || { name, dose: null, sets: 1, why: null, images: [], steps: [], tips: [], warning: null };
 }
 
-function strengthCard(ex) {
+// One numbered row of the program: picture, name, the boxed dose, last time and today's target in ballpoint, set boxes
+function strengthCard(ex, idx) {
   const sets = state.sets[ex.name] || [];
   const done = sets.filter((s) => s.done).length;
   const key = `s:${ex.name}`;
   const sameLast = ex.progress?.sets?.length && !ex.hold && sets.some((s) => !s.done);
+  const dose = splitDose(ex.dose);
+  // the box shows today's dose: an easy week's one set fewer matches the set boxes below it
+  if (sets.length && /^\d+ ×/.test(dose.box)) dose.box = dose.box.replace(/^\d+/, String(sets.length));
+  const thumb = ex.images?.[0];
+  const next = sets.findIndex((s) => !s.done);
   return `<div class="card" data-card="${esc(key)}">
-    <h3>${esc(ex.name)}${ex.pt ? ` <span class="badge">PT</span>` : ""}</h3>
-    <div class="sub">${esc(ex.dose || "Your own exercise")}${sets.length ? ` · ${done}/${plural(sets.length, "set")} done` : ""}</div>
+    <div class="ex-head${thumb ? " has-thumb" : ""}">
+      <span class="idx">${esc(idx || "")}</span>
+      ${thumb ? `<img class="thumb" src="${esc(thumb)}" alt="" loading="lazy">` : ""}
+      <div><div class="ex-name">${esc(ex.name)}${ex.pt ? ` <span class="badge pt">PT</span>` : ""}</div>
+        ${dose.box ? `<span class="dose">${esc(dose.box)}</span>` : ""}${sets.length ? ` <span class="small muted">${done} of ${plural(sets.length, ex.hold ? "hold" : "set")} done</span>` : ""}
+        ${dose.note ? `<div class="dose-note">${esc(dose.note)}</div>` : ""}
+        ${!ex.dose ? `<div class="dose-note">Your own exercise</div>` : ""}</div>
+    </div>
     ${ex.why ? `<div class="why">${esc(ex.why)}</div>` : ""}
-    ${ex.bothered ? `<div class="warning" style="margin-top:6px">${esc(ex.bothered)}</div>` : ""}
-    ${ex.progress ? `<div class="progress"><span class="muted">Last time (${esc(formatDate(ex.progress.date))}):</span> ${esc(ex.progress.last)}<br>
+    ${ex.bothered ? `<div class="warning" style="margin-top:8px">${esc(ex.bothered)}</div>` : ""}
+    ${ex.progress ? `<div class="progress"><span class="last">Last time, ${esc(formatDate(ex.progress.date))}: <span class="pen">${esc(ex.progress.last)}</span></span>
       <strong>${esc(ex.progress.note)}</strong></div>` : ""}
     ${hasHowTo(ex) ? toggleButton(key) + (state.open.has(key) ? howTo(ex) : "") : ""}
-    ${ex.hold ? `<p class="small muted" style="margin:6px 0">Tap a number to start a ${esc(ex.hold_secs || 30)} s hold. It ticks itself off and starts your rest.</p>` : ""}
-    <div class="sets">${ex.hold ? holdRow(ex.name, sets) : sets.map((s, i) => setRow(ex.name, s, i)).join("")}</div>
-    <div class="row-actions">${sameLast ? `<button type="button" class="btn small" data-act="same-last" data-name="${esc(ex.name)}">↺ Same as last time</button>` : ""}
-      <button type="button" class="btn small" data-act="add-set" data-name="${esc(ex.name)}">${ex.hold ? "+ Add hold" : "+ Add set"}</button>
+    ${ex.hold ? `<p class="small muted" style="margin:6px 0">Tap a hold to start its ${esc(ex.hold_secs || 30)} s timer. It ticks itself off and starts your rest.</p>` : ""}
+    <div class="sets">${ex.hold ? holdRow(ex, sets) : sets.map((s, i) => setRow(ex.name, s, i, i === next)).join("")}</div>
+    <div class="row-actions">${sameLast ? `<button type="button" class="btn small" data-act="same-last" data-name="${esc(ex.name)}">${I.again}Same as last time</button>` : ""}
+      <button type="button" class="btn small" data-act="add-set" data-name="${esc(ex.name)}">${I.plus}${ex.hold ? "Add hold" : "Add set"}</button>
       ${ex.hold && sets.length > 1 ? `<button type="button" class="btn link small" data-act="remove-set" data-name="${esc(ex.name)}" data-i="${sets.length - 1}">Remove last</button>` : ""}
       ${ex.dose && !(state.plan.session2 || []).includes(ex.name) ? `<button type="button" class="btn link small muted-link" data-act="swap" data-name="${esc(ex.name)}">Swap</button>` : ""}
       ${ex.dose ? `<button type="button" class="btn link small muted-link" data-act="bothered" data-name="${esc(ex.name)}">Bothered me</button>` : ""}</div>
   </div>`;
 }
 
-// Timed holds (wall sits, planks, stretches): one check mark per hold, no reps to type
-function holdRow(name, sets) {
-  return `<div class="holds">${sets.map((s, i) => `<button type="button" class="holdbtn${s.done ? " on" : ""}" data-act="done"
-    data-name="${esc(name)}" data-i="${i}" aria-pressed="${s.done}" aria-label="Hold ${i + 1} done">${s.done ? "✓" : i + 1}</button>`).join("")}</div>`;
+// Timed holds drawn to length (a 45 s hold is longer than a 20 s one), with the rest after each as a thin line
+function holdRow(ex, sets) {
+  const len = (secs) => `${Math.max(28, Math.min(100, Math.round((secs / 120) * 100)))}%`;
+  const hold = Number(ex.hold_secs) || 30, rest = Number(ex.rest_secs) || 45;
+  const next = sets.findIndex((s) => !s.done);
+  return `<div class="holds">${sets.map((s, i) => `<button type="button" class="holdbtn${s.done ? " on" : i === next ? " next" : ""}" style="--len:${len(hold)}"
+    data-act="done" data-name="${esc(ex.name)}" data-i="${i}" aria-pressed="${s.done}" aria-label="Hold ${i + 1}, ${hold} seconds${s.done ? ", done" : ""}">
+    <span>${i + 1}</span><span>${fmtSecs(hold)}</span></button>
+    ${i < sets.length - 1 ? `<div class="rest-line" style="--len:${len(rest)}" title="${rest} s rest"></div>` : ""}`).join("")}</div>`;
 }
 
-function setRow(name, s, i) {
+function setRow(name, s, i, isNext) {
   const attrs = `data-name="${esc(name)}" data-i="${i}"`;
   // Bodyweight moves, bands and the like only track reps; your own added exercises keep the weight box
   const weighted = exerciseFor(name).weighted !== false;
-  return `<div class="set${weighted ? "" : " noweight"}">
-    <button type="button" class="done${s.done ? " on" : ""}" data-act="done" ${attrs} aria-pressed="${s.done}" aria-label="Set ${i + 1} done">✓</button>
+  return `<div class="set${weighted ? "" : " noweight"}${isNext ? " next" : ""}${s.done ? " isdone" : ""}">
+    <button type="button" class="done${s.done ? " on" : ""}" data-act="done" ${attrs} aria-pressed="${s.done}" aria-label="Set ${i + 1} done"></button>
     <span class="n">${i + 1}</span>
-    ${weighted ? `<label><input type="number" inputmode="decimal" min="0" step="2.5" value="${esc(s.weight)}" data-field="weight" ${attrs} aria-label="Set ${i + 1} weight in pounds"><span class="unit">lbs</span></label>` : ""}
+    ${weighted ? `<label><input type="number" inputmode="decimal" min="0" step="2.5" value="${esc(s.weight)}" data-field="weight" ${attrs} aria-label="Set ${i + 1} weight in pounds"><span class="unit">lb</span></label>` : ""}
     <label><input type="number" inputmode="numeric" min="0" step="1" value="${esc(s.reps)}" data-field="reps" ${attrs} aria-label="Set ${i + 1} reps"><span class="unit">reps</span></label>
-    <button type="button" class="remove" data-act="remove-set" ${attrs} aria-label="Remove set ${i + 1}">×</button>
+    <button type="button" class="remove" data-act="remove-set" ${attrs} aria-label="Remove set ${i + 1}">${I.close}</button>
   </div>`;
 }
 
+// Cardio minutes as a measured rule, drawn to the same scale every day (45 min fills the line): a tick every
+// 5 minutes, longer ticks every 15, the warm-up's first 5 minutes highlighted, the length written at the end
+function minutesRule(min, warmup) {
+  const MAX = 45, W = 250;   // with the label room this draws at about 1:1 in a phone card, so the labels stay 12px
+  const len = Math.max(24, Math.round((W * Math.min(min, MAX)) / MAX));
+  const per = len / Math.min(min, MAX);
+  const ticks = [];
+  for (let m = 0; m <= Math.min(min, MAX); m += 5) {
+    const x = Math.round(m * per);
+    ticks.push(`<line class="tick" x1="${x}" y1="${m % 15 === 0 ? 6 : 11}" x2="${x}" y2="18"/>`);
+  }
+  const warm = warmup && min >= 10 ? `<rect class="warm" x="0" y="13" width="${Math.round(5 * per)}" height="5"/><text x="0" y="32">warm-up</text>` : "";
+  return `<svg class="min-rule" viewBox="0 0 ${W + 60} 34" preserveAspectRatio="xMinYMid meet" role="img" aria-label="${min} minutes">
+    ${warm}<line class="base" x1="0" y1="18" x2="${len}" y2="18"/>${ticks.join("")}<text class="end" x="${len + 6}" y="22">${min} min</text></svg>`;
+}
+
+// An exercise sitting out because it bothered you: printed as a greyed row so the plan stays honest about it
+function pausedRow(p, idx) {
+  return `<div class="card ex-paused"><div class="ex-head"><span class="idx">${esc(idx || "")}</span>
+    <div><div class="ex-name">${esc(p.name)}</div><div class="dose-note">Sitting out until ${esc(formatDate(p.until))} because it bothered you.</div></div></div></div>`;
+}
+
+// A daily non-negotiable is one ruled line: tick box, name and dose, a timer box when it's timed, and the how-to
 function warmupCard(ex) {
   const key = `w:${ex.name}`;
   const on = Boolean(state.checks[ex.name]);
-  return `<div class="card" data-card="${esc(key)}">
-    <button type="button" class="check${on ? " on" : ""}" data-act="check" data-name="${esc(ex.name)}" aria-pressed="${on}">
-      <span class="box">✓</span>
-      <span><span class="name">${esc(ex.name)}</span>${ex.pt ? ` <span class="badge">PT</span>` : ""}<span class="sub" style="display:block">${esc(ex.dose || "")}</span></span>
-    </button>
-    ${ex.hold && !on ? `<button type="button" class="btn small" data-act="warmup-timer" data-name="${esc(ex.name)}">▶ Start ${fmtSecs(ex.hold_secs || 60)} timer</button>` : ""}
-    ${/leaky can/i.test(ex.name) && !on ? `<div class="row-actions" style="margin-top:4px">
-      <button type="button" class="btn small" data-act="breathe" data-v="calm">▶ Guided, 4 in / 6 out</button>
-      <button type="button" class="btn small" data-act="breathe" data-v="quicker">▶ 3 in / 5 out</button></div>` : ""}
-    ${hasHowTo(ex) ? toggleButton(key) + (state.open.has(key) ? howTo(ex) : "") : ""}
+  const leaky = /leaky can/i.test(ex.name);
+  const open = state.open.has(key);
+  const start = on ? "" : leaky
+    ? `<button type="button" class="timer-box" data-act="breathe" data-v="calm" aria-label="Guided breathing, 4 in, 6 out">${I.play}Guided</button>`
+    : ex.hold ? `<button type="button" class="timer-box" data-act="warmup-timer" data-name="${esc(ex.name)}" aria-label="Start a ${fmtSecs(ex.hold_secs || 60)} timer">${I.play}${fmtSecs(ex.hold_secs || 60)}</button>` : "";
+  return `<div class="card tick-row" data-card="${esc(key)}">
+    <div class="tick-line">
+      <button type="button" class="check${on ? " on" : ""}" data-act="check" data-name="${esc(ex.name)}" aria-pressed="${on}">
+        <span class="box" aria-hidden="true"></span>
+        <span><span class="name">${esc(ex.name)}</span>${ex.pt ? ` <span class="badge pt">PT</span>` : ""}<span class="sub" style="display:block">${esc(ex.dose || "")}</span></span>
+      </button>
+      ${start || "<span></span>"}
+      ${hasHowTo(ex) || leaky ? `<button type="button" class="chev" data-act="toggle" data-key="${esc(key)}" aria-expanded="${open}" aria-label="How to do ${esc(ex.name)}">${open ? I.up : I.down}</button>` : "<span></span>"}
+    </div>
+    ${open && leaky && !on ? `<div class="row-actions" style="margin:0 0 6px">
+      <button type="button" class="btn small" data-act="breathe" data-v="calm">${I.play}Guided, 4 in / 6 out</button>
+      <button type="button" class="btn small" data-act="breathe" data-v="quicker">${I.play}Quicker, 3 in / 5 out</button></div>` : ""}
+    ${open && hasHowTo(ex) ? howTo(ex) : ""}
   </div>`;
 }
 
@@ -242,10 +352,10 @@ function waterCard(p) {
   if (!w) return "";
   const pct = Math.min(100, w.pct || 0);
   return `<div class="card water" data-card="water">
-    <div class="water-head"><strong>💧 Water</strong><span><strong>${esc(w.total)}</strong> / ${esc(w.goal)} oz</span></div>
-    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${esc(w.goal)}" aria-valuenow="${esc(w.total)}" aria-label="Water today"><i style="width:${pct}%"></i></div>
-    <div class="row-actions">${[8, 12, 16, 24].map((oz) => `<button type="button" class="btn small" data-act="water" data-v="${oz}">+${oz}</button>`).join("")}
+    <div class="water-line"><strong class="water-label">Water <span class="pen">${esc(w.total)}</span> / ${esc(w.goal)} oz</strong>
+      ${[8, 12, 16, 24].map((oz) => `<button type="button" class="btn small" data-act="water" data-v="${oz}" aria-label="Add ${oz} ounces">+${oz}</button>`).join("")}
       ${w.total ? `<button type="button" class="btn link small muted-link" data-act="water-undo">Undo</button>` : ""}</div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="${esc(w.goal)}" aria-valuenow="${esc(w.total)}" aria-label="Water today"><i style="width:${pct}%"></i></div>
   </div>`;
 }
 
@@ -273,10 +383,9 @@ function ckSlider(key, label) {
 function checkinCard(p) {
   const saved = p.checkin;
   if (saved && !state.ckEdit) {
-    const rec = p.cardio?.type === "recovery";
-    return `<div class="card"><div><strong>Today's check-in:</strong> kidney ${esc(saved.kidney)}/10 · pelvic floor ${esc(saved.pelvic_floor)}/10
-      <button type="button" class="btn link small" data-act="checkin-edit">Change</button></div>
-      ${rec ? `<div class="sub">Your scores made today a recovery day.</div>` : ""}</div>`;
+    // the scores sit on the letterhead (tap them to change); only say so when they turned the day into recovery
+    return p.cardio?.type === "recovery"
+      ? `<div class="card season"><strong>Recovery day</strong><div class="sub">This morning's scores made today gentle recovery work.</div></div>` : "";
   }
   state.ck ||= { kidney: saved?.kidney ?? p.last_scores?.kidney ?? 1, pelvic_floor: saved?.pelvic_floor ?? p.last_scores?.pelvic_floor ?? 1 };
   return `<div class="card"><h3>How do you feel today?</h3>
@@ -290,12 +399,10 @@ function checkinCard(p) {
 // Snow days: a day skiing or snowboarding is logged as that day's workout (legs and cardio)
 function snowCard(p) {
   if (p.snow_today) {
-    return `<div class="card"><strong>Snow day logged: ${esc(p.snow_today)} ✓</strong>
+    return `<div class="card"><strong>Snow day logged: ${esc(p.snow_today)}</strong>
       <div class="sub">It counts as today's workout. Tomorrow's leg work becomes core so your legs can recover.</div></div>`;
   }
-  if (!state.snowOpen) {
-    return `<div class="card"><button type="button" class="btn small" data-act="snow-toggle">⛷️🏂 On the slopes today? Log a snow day</button></div>`;
-  }
+  if (!state.snowOpen) return "";   // the "Snow day?" button is on the letterhead
   const s = state.snow ||= { sport: "snowboarding", hours: 3, rpe: 6, kidney: p.checkin?.kidney ?? 1,
     pelvic_floor: p.checkin?.pelvic_floor ?? 1, notes: "" };
   const sl = (key, label) => `<div class="slider"><div class="lbl"><span>${label}</span><span class="val" id="snowval-${key}">${s[key]}/10</span></div>
@@ -321,6 +428,7 @@ function renderToday() {
   }
   const cardio = p.cardio;
   const cardioText = (cardio.text || "").replace(/^\d+ min:\s*/, "");
+  const main = p.strength.filter((e) => !(p.session2 || []).includes(e.name));
   if (p.done?.["1"]) return renderTodayDone(p);
   $view.innerHTML = `
     ${checkinCard(p)}
@@ -334,29 +442,33 @@ function renderToday() {
     ${bioDueCard(p)}
     ${skiDueCard(p)}
     ${p.coach_changes ?`<div class="small muted">Today's plan has added sessions or coach changes. <button type="button" class="btn link small" data-act="reset-plan">Undo them</button></div>` : ""}
-    <h2>1. Daily non-negotiables</h2>
-    ${p.warmup.map(warmupCard).join("")}
-    <button type="button" class="btn link small" data-act="pt-add-go">+ Add an exercise from my PT</button>
+    <h2 class="sec"><span class="n">1</span>Daily non-negotiables<span class="meta" id="meta-warmup">${warmupCount(p)}</span></h2>
+    <div class="sheet">${p.warmup.map((e) => warmupCard(e)).join("")}</div>
 
-    <h2>2. Strength &amp; stability</h2>
-    ${p.strength.filter((e) => !(p.session2 || []).includes(e.name)).map(strengthCard).join("")}
-    ${state.extras.map((n) => strengthCard(exerciseFor(n))).join("")}
-    <button type="button" class="btn small" data-act="add-exercise">+ Add another exercise</button>
+    <h2 class="sec"><span class="n">2</span>Strength &amp; stability<span class="meta" id="meta-strength">${strengthCount(p)}</span></h2>
+    <div class="sheet">
+    ${main.map((e, i) => strengthCard(e, `2.${i + 1}`)).join("")}
+    ${state.extras.map((n, i) => strengthCard(exerciseFor(n), `2.${main.length + i + 1}`)).join("")}
+    ${(p.paused || []).map((x, i) => pausedRow(x, `2.${main.length + state.extras.length + i + 1}`)).join("")}
+    </div>
+    <div class="row-actions"><button type="button" class="btn small" data-act="add-exercise">${I.plus}Add another exercise</button>
+      <button type="button" class="btn small" data-act="pt-add-go">${I.plus}Add one from my PT</button></div>
 
-    <h2>3. Cardio</h2>
+    <h2 class="sec"><span class="n">3</span>Cardio</h2>
     <div class="card">
       <div class="minutes">${esc(cardio.minutes ?? "")} <small>min</small></div>
+      ${cardio.minutes ? minutesRule(cardio.minutes, cardio.type !== "recovery") : ""}
       <p>${esc(cardioText)}</p>
       ${cardio.note ? `<div class="sub">Why this length: ${esc(cardio.note)}</div>` : ""}
       ${pictures(cardio.images)}
     </div>
 
-    ${p.cooldown?.cards?.length ? `<h2>4. ${esc(p.cooldown.title || "Cool-down")} <span class="muted">(optional)</span></h2>
+    ${p.cooldown?.cards?.length ? `<h2 class="sec"><span class="n">4</span>${esc(p.cooldown.title || "Cool-down")}<span class="meta">optional</span></h2>
     <p class="small muted" style="margin-top:0">${esc(p.cooldown.note)}</p>
-    <div class="row-actions" style="margin:0 0 10px"><button type="button" class="btn small" data-act="guided-cooldown" data-v="45">▶ Play guided cool-down</button></div>
+    <div class="row-actions" style="margin:0 0 10px"><button type="button" class="btn small" data-act="guided-cooldown" data-v="45">${I.play}Play guided cool-down</button></div>
     ${p.cooldown.cards.map(mindCard).join("")}` : ""}
 
-    <h2>${p.cooldown?.cards?.length ? "5" : "4"}. Finish</h2>
+    <h2 class="sec"><span class="n">${p.cooldown?.cards?.length ? "5" : "4"}</span>Finish</h2>
     <div class="card">
       ${slider("rpe", "Overall effort")}
       ${slider("pf", "Pelvic floor tightness", "Higher numbers reduce impact cardio (running) next time.")}
@@ -371,17 +483,17 @@ function renderToday() {
 
 function atPtCard(p) {
   if (!p.at_pt) return "";
-  return `<div class="card season"><strong>🏥 You're at the PT office</strong>
+  return `<div class="card season"><strong>You're at the PT office</strong>
     <div class="sub">Ask your PT: any new exercises, or changes to the ones you do now? Add them here so they show up every day.</div>
     ${p.questions?.length ? `<div class="sub" style="margin-top:8px"><strong>Your questions:</strong></div>${questionList(p.questions, true)}` : ""}
-    <div class="row-actions"><button type="button" class="btn small" data-act="pt-add-go">+ Add a PT exercise</button>
+    <div class="row-actions"><button type="button" class="btn small" data-act="pt-add-go">${I.plus}Add a PT exercise</button>
       ${p.bio?.enabled ? `<button type="button" class="btn small" data-act="bio-go">Log biofeedback</button>` : ""}
       <button type="button" class="btn small" data-act="goto" data-v="report">Show my PT report</button></div></div>`;
 }
 
 function bioDueCard(p) {
   if (!p.bio?.due) return "";
-  return `<div class="card season"><strong>🎯 Pelvic floor biofeedback</strong>
+  return `<div class="card season"><strong>Pelvic floor biofeedback</strong>
     <div class="sub">${p.bio.last ? "About time for your next session with your pelvic PT." : "Log your next session with your pelvic PT."}
       Add the readings afterwards to see your progress.</div>
     <div class="row-actions"><button type="button" class="btn small" data-act="bio-go">Log my results</button>
@@ -390,13 +502,13 @@ function bioDueCard(p) {
 
 function skiDueCard(p) {
   if (!p.ski_due) return "";
-  return `<div class="card season"><strong>⛷️ Ski readiness check due</strong>
+  return `<div class="card season"><strong>Ski readiness check due</strong>
     <div class="sub">Six quick tests (wall sit, balance, skater steps, side plank), about 10 minutes. Best before a workout, when you're fresh.</div>
     <div class="row-actions"><button type="button" class="btn small" data-act="ski-go">Open the check</button></div></div>`;
 }
 
 function prList(prs) {
-  return prs?.length ? `<ul class="prs">${prs.map((x) => `<li>🏆 <strong>${esc(x.exercise)}</strong>: ${esc(x.text)}</li>`).join("")}</ul>` : "";
+  return prs?.length ? `<ul class="prs">${prs.map((x) => `<li><span class="pr-mark">Record</span><span><strong>${esc(x.exercise)}</strong>: ${esc(x.text)}</span></li>`).join("")}</ul>` : "";
 }
 
 function doneSummary(d) {
@@ -411,7 +523,7 @@ function doneSummary(d) {
 function renderTodayDone(p) {
   const d = p.done["1"];
   $view.innerHTML = `
-    <div class="card done-card"><h3>✅ Today's workout is done</h3>
+    <div class="card done-card"><h3>${I.check}Today's workout is done</h3>
       <p class="sub">${esc(doneSummary(d) || "Saved to History.")}</p>
       ${prList(d.prs)}
       <div class="row-actions"><button type="button" class="btn small" data-act="goto" data-v="history">View in History</button></div></div>
@@ -420,9 +532,9 @@ function renderTodayDone(p) {
     ${atPtCard(p)}
     ${bioDueCard(p)}
     ${skiDueCard(p)}
-    ${p.cooldown?.cards?.length ? `<h2>${esc(p.cooldown.title || "Cool-down")} <span class="muted">(optional)</span></h2>
+    ${p.cooldown?.cards?.length ? `<h2 class="sec">${esc(p.cooldown.title || "Cool-down")}<span class="meta">optional</span></h2>
     <p class="small muted" style="margin-top:0">${esc(p.cooldown.note)}</p>
-    <div class="row-actions" style="margin:0 0 10px"><button type="button" class="btn small" data-act="guided-cooldown" data-v="45">▶ Play guided cool-down</button></div>
+    <div class="row-actions" style="margin:0 0 10px"><button type="button" class="btn small" data-act="guided-cooldown" data-v="45">${I.play}Play guided cool-down</button></div>
     ${p.cooldown.cards.map(mindCard).join("")}` : ""}
     ${secondSessionSection(p)}`;
 }
@@ -430,7 +542,7 @@ function renderTodayDone(p) {
 // A second workout on the same day, logged on its own (its own effort rating and its own History entry)
 function secondSessionSection(p) {
   if (p.done?.["2"]) {
-    return `<h2>Second session</h2><div class="card done-card"><h3>✅ Second session done</h3>
+    return `<h2 class="sec">Second session</h2><div class="card done-card"><h3>${I.check}Second session done</h3>
       <p class="sub">${esc(doneSummary(p.done["2"]) || "Saved to History.")}</p>${prList(p.done["2"].prs)}</div>`;
   }
   const names = p.session2 || [];
@@ -448,7 +560,7 @@ function secondSessionSection(p) {
         <button type="button" class="btn primary" data-act="complete" data-session="2">Complete second session</button>
       </div>` : ""}
     <div class="card">
-      <button type="button" class="btn small" data-act="second-toggle">${state.secondOpen ? "Cancel" : "+ Add a second session"}</button>
+      <button type="button" class="btn small" data-act="second-toggle">${state.secondOpen ? "Cancel" : I.plus + "Add a second session"}</button>
       ${state.secondOpen ? `<p class="sub" style="margin:10px 0 6px">What would you like to add today?</p>
         <div class="chips wrap">${[["strength", "Strength (different group)"], ["core", "Core"], ["mobility", "Mobility"], ["cardio", "Easy cardio"]].map(([k, l]) =>
           `<button type="button" class="chip" data-act="second-add" data-v="${k}">${l}</button>`).join("")}</div>
@@ -460,9 +572,28 @@ function rerenderCard(key) {
   const el = $view.querySelector(`[data-card="${CSS.escape(key)}"]`);
   if (!el) return render();
   const name = key.slice(2);
+  const idx = el.querySelector(".idx")?.textContent || "";   // keep the row's number (2.3) as it was drawn
   el.outerHTML = key.startsWith("w:")
     ? warmupCard(state.plan.warmup.find((e) => e.name === name))
-    : strengthCard(exerciseFor(name));
+    : strengthCard(exerciseFor(name), idx);
+  sectionCounts();
+}
+
+// "4 of 5" beside the section headings, kept current as you tick things off
+function warmupCount(p) {
+  return `${p.warmup.filter((e) => state.checks[e.name]).length} of ${p.warmup.length}`;
+}
+function strengthCount(p) {
+  const names = p.strength.filter((e) => !(p.session2 || []).includes(e.name)).map((e) => e.name).concat(state.extras);
+  const full = names.filter((n) => (state.sets[n] || []).length && state.sets[n].every((s) => s.done)).length;
+  return `${full} of ${names.length} done`;
+}
+function sectionCounts() {
+  const p = state.plan;
+  if (!p) return;
+  const w = document.getElementById("meta-warmup"), s = document.getElementById("meta-strength");
+  if (w) w.textContent = warmupCount(p);
+  if (s) s.textContent = strengthCount(p);
 }
 
 async function completeWorkout(btn, session = 1) {
@@ -493,7 +624,7 @@ async function completeWorkout(btn, session = 1) {
     }
     state.history = null;
     stopTimer(false);   // no rest timer once the workout is saved
-    toast(session === 2 ? "Second session saved to History 💪" : "Workout saved to History 💪 Done for today.");
+    toast(session === 2 ? "Second session saved to History" : "Workout saved to History. Done for today.");
     await refreshPlan();
     window.scrollTo({ top: 0 });
     if (res.prs?.length) showTrophies(res.prs);
@@ -682,7 +813,7 @@ function bioCompare(results, measures) {
     const a = have[0].values[m.id], z = have[have.length - 1].values[m.id];
     const d = Math.round((z - a) * 10) / 10;
     const good = m.better === "lower" ? d < 0 : d > 0;
-    const change = have.length < 2 ? "" : d === 0 ? "same" : `${d > 0 ? "+" : ""}${bioFmt(m, d, unit)} · ${good ? "better ✓" : "not yet"}`;
+    const change = have.length < 2 ? "" : d === 0 ? "same" : `${d > 0 ? "+" : ""}${bioFmt(m, d, unit)} · ${good ? "better" : "not yet"}`;
     return `<tr><td>${esc(m.name)}<div class="small muted">${m.better} is better</div></td><td>${esc(bioFmt(m, a, unit))}</td>
       <td>${esc(bioFmt(m, z, unit))}</td><td>${esc(change)}</td></tr>`;
   }).join("");
@@ -742,7 +873,7 @@ async function loadProgress(exercise) {
 function workoutCard(w) {
   const key = `h:${w.id}`;
   const open = state.open.has(key);
-  const sets = w.sets.map((s) => `<tr><td>${esc(s.exercise)}</td><td>${s.set_number ?? ""}</td><td>${s.weight_lbs ?? ""}</td><td>${s.reps ?? ""}</td><td>${s.done ? "✓" : ""}</td></tr>`).join("");
+  const sets = w.sets.map((s) => `<tr><td>${esc(s.exercise)}</td><td>${s.set_number ?? ""}</td><td>${s.weight_lbs ?? ""}</td><td>${s.reps ?? ""}</td><td>${s.done ? "Yes" : ""}</td></tr>`).join("");
   return `<div class="card">
     <button type="button" class="result" data-act="toggle" data-key="${esc(key)}" aria-expanded="${open}">
       <h3>${esc(formatDate(w.date))}</h3>
@@ -751,20 +882,20 @@ function workoutCard(w) {
         <span class="pill">Flank ${w.kidney_flank_pain ?? "?"}/10</span>
         <span class="pill">Pelvic floor ${w.pelvic_floor_tightness ?? "?"}/10</span>
         ${w.sets.length ? `<span class="pill">${plural(w.sets.filter((s) => s.done).length, "set")}</span>` : ""}
-        ${w.workout?.prs?.length ? `<span class="pill">🏆 ${plural(w.workout.prs.length, "record")}</span>` : ""}
+        ${w.workout?.prs?.length ? `<span class="pill pr">${plural(w.workout.prs.length, "record")}</span>` : ""}
       </div>
     </button>
     ${open ? `<div class="howto">
       ${prList(w.workout?.prs)}
       ${w.workout?.strength?.length ? `<div class="small"><strong>Exercises:</strong> ${esc(w.workout.strength.join(", "))}</div>` : ""}
       ${w.workout?.cardio ? `<div class="small"><strong>Cardio:</strong> ${esc(w.workout.cardio)}</div>` : ""}
-      ${sets ? `<table><thead><tr><th>Exercise</th><th>Set</th><th>lbs</th><th>Reps</th><th>✓</th></tr></thead><tbody>${sets}</tbody></table>` : ""}
+      ${sets ? `<table><thead><tr><th>Exercise</th><th>Set</th><th>lbs</th><th>Reps</th><th>Done</th></tr></thead><tbody>${sets}</tbody></table>` : ""}
       ${w.notes ? `<pre class="notes">${esc(w.notes)}</pre>` : ""}
     </div>` : ""}
   </div>`;
 }
 
-async function renderHistory() {
+async function renderHistoryPage() {
   if (!state.history) {
     $view.innerHTML = `<div class="spinner">Loading history…</div>`;
     state.history = await api("api/history");
@@ -930,8 +1061,8 @@ function waterHistory() {
 function questionList(list, compact) {
   if (!list?.length) return compact ? "" : `<p class="sub">No questions yet.</p>`;
   return `<ul class="questions">${list.map((q) => `<li>
-    <button type="button" class="qtick" data-act="q-asked" data-v="${q.id}" aria-label="Asked">✓</button>
-    <span>${q.source === "ai" ? "✨ " : ""}${esc(q.text)}</span>
+    <button type="button" class="qtick" data-act="q-asked" data-v="${q.id}" aria-label="Asked"></button>
+    <span>${q.source === "ai" ? '<span class="tag-ai">Suggested</span>' : ""}${esc(q.text)}</span>
     ${compact ? "" : `<button type="button" class="btn link small muted-link noprint" data-act="q-del" data-v="${q.id}">Remove</button>`}</li>`).join("")}</ul>`;
 }
 
@@ -944,7 +1075,7 @@ function questionsSection() {
       <div class="composer noprint" style="position:static;padding:0"><input id="q-new" class="code-input" maxlength="300" placeholder="e.g. Can I add weight to the wall sits?" aria-label="New question">
         <button type="button" class="btn small" style="width:auto" data-act="q-add">Add</button></div>
       ${questionList(q.open, false)}
-      <div class="row-actions noprint"><button type="button" class="btn small" data-act="q-suggest" ${s?.busy ? "disabled" : ""}>${s?.busy ? "Thinking…" : "✨ Suggest questions from my data"}</button></div>
+      <div class="row-actions noprint"><button type="button" class="btn small" data-act="q-suggest" ${s?.busy ? "disabled" : ""}>${s?.busy ? "Thinking…" : "Suggest questions from my data"}</button></div>
       ${s?.error ? `<div class="small warning noprint" style="margin-top:8px">${esc(s.error)}</div>` : ""}
       ${s?.items?.length ? `<div class="suggest noprint"><div class="sub">The coach suggests (tap to add):</div>
         ${s.items.map((x, i) => `<button type="button" class="btn small suggest-item" data-act="q-add-ai" data-i="${i}">+ ${esc(x)}</button>`).join("")}</div>` : ""}
@@ -959,7 +1090,7 @@ function questionsSection() {
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const ptDays = (days) => (!days?.length ? "every day" : days.map((d) => DAY_NAMES[d]).join(", "));
 
-async function renderReport() {
+async function renderReportPage() {
   const days = state.reportDays;
   if (!state.report || state.report.days !== days) {
     $view.innerHTML = `<div class="spinner">Putting your report together…</div>`;
@@ -1010,7 +1141,7 @@ async function renderReport() {
       </tbody></table><p class="small muted">First and latest = heaviest weight with its reps, most reps, or longest hold in that session. ↑ = better than the first.</p>`
       : `<p class="sub">No sets logged in this period.</p>`}</div>
     ${r.prs.length ? `<h2>Personal records</h2><div class="card"><ul class="prs">${r.prs.map((x) =>
-      `<li>🏆 ${esc(formatDate(x.date))}: <strong>${esc(x.exercise)}</strong>, ${esc(x.text)}</li>`).join("")}</ul></div>` : ""}
+      `<li><span class="pr-mark">Record</span><span>${esc(formatDate(x.date))}: <strong>${esc(x.exercise)}</strong>, ${esc(x.text)}</span></li>`).join("")}</ul></div>` : ""}
     <h2>Exercises that bothered me</h2>
     <div class="card">${r.bothered.length ? `<ul class="plain">${r.bothered.map((b) =>
       `<li><strong>${esc(b.name)}</strong>: marked ${esc(formatDate(b.since))}, ${esc(b.status)}${b.status === "sitting out" ? ` until ${esc(formatDate(b.until))}` : ""}</li>`).join("")}</ul>`
@@ -1028,11 +1159,11 @@ const $trophy = document.getElementById("trophy");
 
 function showTrophies(prs) {
   const bits = Array.from({ length: 18 }, (_, i) =>
-    `<span style="left:${Math.round(Math.random() * 100)}%;animation-delay:${(Math.random() * 0.8).toFixed(2)}s">${["🎉", "✨", "🏆", "💪"][i % 4]}</span>`).join("");
+    `<span style="left:${Math.round(Math.random() * 100)}%;animation-delay:${(Math.random() * 0.8).toFixed(2)}s"></span>`).join("");
   $trophy.innerHTML = `<div class="confetti" aria-hidden="true">${bits}</div>
-    <div class="trophy-inner"><div class="trophy-cup" aria-hidden="true">🏆</div>
+    <div class="trophy-inner"><div class="trophy-cup" aria-hidden="true">${I.star}</div>
       <h3>New personal record${prs.length > 1 ? "s" : ""}!</h3>${prList(prs)}
-      <button type="button" class="btn primary" data-trophy="close">Nice 💪</button></div>`;
+      <button type="button" class="btn primary" data-trophy="close">Nice</button></div>`;
   $trophy.hidden = false;
   try { navigator.vibrate?.([80, 60, 80, 60, 160]); } catch { /* not supported */ }
 }
@@ -1168,7 +1299,7 @@ async function playQigong() {
     <audio id="qg-audio" controls autoplay src="api/tts/${esc(qg.key)}/audio" style="width:100%"></audio>
     <div class="row-actions" style="justify-content:${breath ? "center" : "space-between"}">
       ${breath ? "" : `<button type="button" class="btn small" data-qg="prev">◀ Back</button>
-      <button type="button" class="btn small" data-qg="next">Next ▶</button>`}
+      <button type="button" class="btn small" data-qg="next">Next ${I.next}</button>`}
       <button type="button" class="btn small" data-qg="close">Close</button></div>`);
   const audio = document.getElementById("qg-audio");
   if (breath) {
@@ -1181,7 +1312,7 @@ async function playQigong() {
   audio.addEventListener("play", async () => { try { qg.lock = await navigator.wakeLock?.request("screen"); } catch { /* not allowed */ } });
   audio.addEventListener("ended", () => {
     qg.lock?.release();
-    if (qg.onEnd) qg.onEnd(); else toast("Session complete 🙏");
+    if (qg.onEnd) qg.onEnd(); else toast("Session complete");
   });
   if (breath) drawBreath(audio); else drawQigong(0);
 }
@@ -1217,7 +1348,7 @@ function drawQigong(t) {
   const stage = document.getElementById("qg-stage");
   if (stage) {
     stage.innerHTML = `<div class="small muted">${esc(label)}</div><h3 style="margin:4px 0 10px">${esc(step.name || "")}</h3>
-      ${step.image ? `<img src="${esc(step.image)}" alt="${esc(step.name || "")}">` : `<div class="qg-breathe">🫁</div>`}
+      ${step.image ? `<img src="${esc(step.image)}" alt="${esc(step.name || "")}">` : `<div class="qg-breathe"></div>`}
       ${step.note ? `<p class="sub">${esc(step.note)}</p>` : ""}`;
   }
 }
@@ -1266,16 +1397,16 @@ function skiCard() {
         ${res.length > 1 ? `<td>${ch == null ? "" : `${ch > 0 ? "+" : ""}${skiFmt(t, ch)}${ch > 0 ? " ↑" : ""}`}</td>` : ""}</tr>`;
     }).join("")}</tbody></table>` : "";
   const form = state.skiOpen ? `<div class="ski-form">
-    <p class="small muted">Warm up first (the daily non-negotiables). Tap ▶ to start a timer, then <strong>Done now</strong> the moment your form breaks: it fills in your time.</p>
+    <p class="small muted">Warm up first (the daily non-negotiables). Tap Timer to start one, then <strong>Done now</strong> the moment your form breaks: it fills in your time.</p>
     ${s.tests.map((t) => `<div class="ski-test">
       <div><strong>${esc(t.name)}</strong><div class="small muted">${esc(t.how)}</div></div>
       <div class="ski-row">
         <label><input type="number" inputmode="numeric" min="0" step="1" id="ski-${t.id}" data-ski="${t.id}" value="${esc(state.skiVals[t.id] ?? "")}" aria-label="${esc(t.name)}"><span class="unit">${esc(t.unit)}</span></label>
-        <button type="button" class="btn small" data-act="ski-timer" data-v="${t.id}">▶ ${t.count ? "30 s timer" : "Timer"}</button>
+        <button type="button" class="btn small" data-act="ski-timer" data-v="${t.id}">${I.play}${t.count ? "30 s timer" : "Timer"}</button>
       </div></div>`).join("")}
     <div class="row-actions"><button type="button" class="btn primary" style="width:auto" data-act="ski-save">Save results</button>
       <button type="button" class="btn link small" data-act="ski-toggle">Cancel</button></div></div>` : "";
-  return `<div class="card${s.due ? " season" : ""}"><strong>⛷️ Ski readiness</strong>
+  return `<div class="card${s.due ? " season" : ""}"><strong>Ski readiness</strong>
     <div class="sub">${s.due ? "A check is due now." : `Next check ${esc(formatDate(s.next))}.`} Every ${s.every_days} days: wall sit, single-leg balance, skater steps and side plank.</div>
     ${table}
     ${state.skiOpen ? form : `<div class="row-actions"><button type="button" class="btn small" data-act="ski-toggle">${s.due ? "Do the check now (about 10 min)" : "Do a check anyway"}</button></div>`}
@@ -1286,7 +1417,7 @@ async function renderWeek() {
   const off = state.weekOffset;
   if (!state.week || state.week.offset !== off) state.week = await api(`api/week?offset=${off}`);
   const w = state.week;
-  const badge = { done: "✓ done", today: "today", missed: "missed", past: "", upcoming: "" };
+  const badge = { done: "done", today: "today", missed: "missed", past: "", upcoming: "" };
   const range = `${formatDate(w.days[0].date)} – ${formatDate(w.days[6].date)}`;
   const navs = [[0, "This week"], [1, "Next week"], [2, "In 2 weeks"], [3, "In 3 weeks"]];
   $view.innerHTML = `
@@ -1301,7 +1432,7 @@ async function renderWeek() {
     ${w.replan ? `<div class="card season"><strong>You skipped a day, so I re-planned the week</strong>
       <div class="sub">Moved up: ${esc(w.replan.missed.join(", "))}.${w.replan.dropped.length ? ` Left out to keep your rest day: ${esc(w.replan.dropped.join(", "))}.` : ""}</div></div>` : ""}
     ${w.machines && !w.sports?.includes("triathlon") ? `<div class="card"><strong>Cardio machines</strong>
-      ${Object.values(w.machines).map((m) => `<div class="sub" style="margin-top:4px">${m.ok ? "✅" : m.stepped_back ? "⏸️" : "🔒"} <strong>${esc(m.name)}</strong>:
+      ${Object.values(w.machines).map((m) => `<div class="sub" style="margin-top:4px"><span class="badge${m.ok ? " pt" : ""}">${m.ok ? "Open" : m.stepped_back ? "Paused" : "Locked"}</span> <strong>${esc(m.name)}</strong>:
         ${m.ok ? `in your plan, ${esc(m.minutes)} easy minutes` : esc(m.why)}</div>`).join("")}</div>` : ""}
     ${w.season ? `<div class="card season"><strong>${esc(w.season.phase)}</strong>${w.season.days > 0 ? ` · ${w.season.days} day${w.season.days === 1 ? "" : "s"} to opening day` : ""}
       <div class="sub">${esc(w.season.text)}</div></div>` : ""}
@@ -1519,7 +1650,7 @@ function ptVisitCard() {
   const d = state.ptv ||= { enabled: v.enabled, address: v.address || "", label: v.label || "", lat: v.lat, lon: v.lon,
     radius: v.radius || 150, person: v.person || h.persons[0]?.id || "", service: v.service || h.services[0] || "", matches: null, msg: "" };
   const where = d.lat != null
-    ? `<div class="small" style="margin-top:6px">📍 ${esc(d.label || `${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}`)}
+    ? `<div class="small" style="margin-top:6px">${I.pin} ${esc(d.label || `${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}`)}
         <a href="https://www.openstreetmap.org/?mlat=${d.lat}&mlon=${d.lon}#map=17/${d.lat}/${d.lon}" target="_blank" rel="noopener">map</a></div>`
     : "";
   return `<div class="card"><h3>Reminder at the PT office</h3>
@@ -1532,7 +1663,7 @@ function ptVisitCard() {
       ${d.matches.map((m, i) => `<button type="button" class="btn small" style="display:block;width:100%;text-align:left;margin-top:6px;height:auto;padding:8px 12px"
         data-act="ptv-pick" data-i="${i}">${esc(m.label)}</button>`).join("")}`
       : `<div class="small" style="margin-top:6px">No match. Try adding the town or postcode, or use your location while you're there.</div>`) : ""}
-    <button type="button" class="btn link small" data-act="ptv-here">📍 I'm at the office now: use my current location</button>
+    <button type="button" class="btn link small" data-act="ptv-here">${I.pin}I'm at the office now: use my current location</button>
     ${where}
     <div class="sub" style="margin-top:8px">Counts as "there" within</div>
     <div class="chips wrap">${[100, 150, 300].map((r) => `<button type="button" class="chip${d.radius === r ? " on" : ""}" data-act="ptv-radius" data-v="${r}">${r} m</button>`).join("")}</div>
@@ -1607,7 +1738,7 @@ function ptSection(list) {
         <span class="small muted" style="display:block">${esc(p.dose || "no dose set")} · ${esc(ptDays(p.days))} · ${p.section === "strength" ? `${p.sets} sets with strength` : "daily non-negotiables"}</span></span>
         <span style="white-space:nowrap"><button type="button" class="btn link small" data-act="pt-edit" data-i="${i}">Edit</button>
         <button type="button" class="btn link small muted-link" data-act="pt-remove" data-i="${i}">Remove</button></span></div>`).join("")}
-      ${f ? form : `<div class="row-actions"><button type="button" class="btn small" data-act="pt-edit" data-i="-1">+ Add an exercise from my PT</button></div>`}
+      ${f ? form : `<div class="row-actions"><button type="button" class="btn small" data-act="pt-edit" data-i="-1">${I.plus}Add an exercise from my PT</button></div>`}
     </div>`;
 }
 
@@ -1657,7 +1788,7 @@ function bodySensorsCard() {
   const st = b.status || {};
   const when = (ts) => { if (!ts) return "none yet"; const d = new Date(ts); return `${formatDate(ts.slice(0, 10))}, ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`; };
   const linkedNow = c.weight_entity || c.sys_entity;
-  const statusLine = !linkedNow ? "" : `<div class="small" style="margin:8px 0 0"><strong>${st.weight || st.bp ? "✓ Connected" : "⏳ Linked, waiting for a reading"}</strong>
+  const statusLine = !linkedNow ? "" : `<div class="small" style="margin:8px 0 0"><strong>${st.weight || st.bp ? "Connected" : "Linked, waiting for a reading"}</strong>
       · last weigh-in copied: ${esc(when(st.weight))} · last blood pressure: ${esc(when(st.bp))}${st.last_check ? ` · checked ${esc(when(st.last_check))}` : ""}</div>`;
   return `<h2>Scale and blood pressure</h2>
     <div class="card">
@@ -1678,7 +1809,7 @@ function bodySensorsCard() {
 const isInstalled = () => window.matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
 
 function installCard() {
-  if (isInstalled()) return `<div class="card"><h3>Installed ✓</h3><p class="sub">You're using the home-screen app.</p></div>`;
+  if (isInstalled()) return `<div class="card"><h3>Installed</h3><p class="sub">You're using the home-screen app.</p></div>`;
   const a = state.install;
   if (!a) {
     api("api/install").then((r) => { state.install = r; if (state.tab === "settings") renderSettings(); }).catch(() => { state.install = { url: null }; if (state.tab === "settings") renderSettings(); });
@@ -1700,7 +1831,12 @@ function installCard() {
   </div>`;
 }
 
-async function renderSettings() {
+// Settings, History and the PT report re-render from several places; each time, add their links to sections
+async function renderSettings() { await renderSettingsPage(); addContents(); }
+async function renderHistory() { await renderHistoryPage(); addContents(); }
+async function renderReport() { await renderReportPage(); addContents(); }
+
+async function renderSettingsPage() {
   if (!state.garmin) loadGarmin();
   if (!state.claude) loadClaude();
   if (!state.settings) state.settings = await api("api/settings");
@@ -1838,10 +1974,10 @@ function speakScript(text) {
 function voicePicker() {
   const v = state.voices;
   if (!v) return "";
-  return `<div class="two-col" style="margin-bottom:8px">
+  return `<div class="voice-pick">
     <select id="voice" aria-label="Voice" data-act-change="voice">${v.voices.map((o) =>
       `<option value="${esc(o.id)}"${o.id === state.voice ? " selected" : ""}>${esc(o.label)} · ${esc(o.blurb)}${o.ready ? "" : " (downloads first time)"}</option>`).join("")}</select>
-    <button type="button" class="btn small" data-act="voice-preview">▶ Hear this voice</button>
+    <button type="button" class="btn small" data-act="voice-preview">${I.play}Hear this voice</button>
   </div>`;
 }
 
@@ -1895,7 +2031,7 @@ function meditationSection() {
       </div>
       <div class="row-actions">
         <button type="button" class="btn small" data-act="med-script" ${state.medBusy ? "disabled" : ""}>${state.medBusy ? "Writing…" : "Write my session"}</button>
-        ${state.medScript && state.audio?.status === "error" ? `<button type="button" class="btn small" data-act="med-read">▶ Read with phone voice</button>
+        ${state.medScript && state.audio?.status === "error" ? `<button type="button" class="btn small" data-act="med-read">${I.play}Read with phone voice</button>
           <button type="button" class="btn small" data-act="med-stop">■ Stop</button>` : ""}
       </div>
       ${audioBlock()}
@@ -1935,7 +2071,7 @@ async function renderMindBody() {
       <h3>Guided Baduanjin session</h3>
       <p class="sub">All eight moves in their kidney-safe form, read by your chosen voice with time to do each one, and the picture follows along. About 8 to 14 minutes depending on the pace you pick.</p>
       <div class="chips wrap">${[[30, "30 s per move"], [45, "45 s per move"], [60, "60 s per move"]].map(([s, l]) =>
-        `<button type="button" class="chip" data-act="qigong-start" data-v="${s}">▶ ${l}</button>`).join("")}</div>
+        `<button type="button" class="chip" data-act="qigong-start" data-v="${s}">${I.play}${l}</button>`).join("")}</div>
     </div>
     <p class="small muted" style="margin-top:0">Baduanjin (eight pieces of brocade), adjusted for your kidney: head-only turns, hips square, folds only as far as is comfortable.</p>
     ${m.qigong.map(mindCard).join("")}
@@ -2178,7 +2314,7 @@ const actions = {
       state.waterHist = null;
       const card = $view.querySelector('[data-card="water"]');
       if (card) card.outerHTML = waterCard(state.plan); else render();
-      if (w.total >= w.goal && w.total - Number(el.dataset.v) < w.goal) toast("Water goal reached 💧🎉");
+      if (w.total >= w.goal && w.total - Number(el.dataset.v) < w.goal) toast("Water goal reached");
     } catch { toast("Couldn't add it"); el.disabled = false; }
   },
   async "water-undo"() {
@@ -2204,7 +2340,7 @@ const actions = {
       mode: "breath", body: { pace: el.dataset.v },
       onEnd() {
         if (name && state.plan) { state.checks[name] = true; if (state.tab === "today") rerenderCard(`w:${name}`); scheduleSave(); }
-        toast("40 breaths done ✓ ticked off");
+        toast("40 breaths done, ticked off");
       },
     });
   },
@@ -2233,7 +2369,7 @@ const actions = {
     if (state.tab === "report") render();
   },
   async "q-asked"(el) {
-    const answer = prompt("Asked ✓  What did your PT say? (optional)") ;
+    const answer = prompt("Marked as asked. What did your PT say? (optional)") ;
     if (answer === null) return;   // cancelled
     try {
       state.questions = await api(`api/questions/${el.dataset.v}/asked`, { method: "POST", body: JSON.stringify({ answer }) });
@@ -2299,7 +2435,7 @@ const actions = {
       state.report = null;
       refreshPlan().catch(() => {});
       render();
-      toast("Biofeedback session saved 🎯");
+      toast("Biofeedback session saved");
     } catch (err) {
       toast(err.status === 400 ? "Enter at least one reading (and a date that isn't in the future)" : "Couldn't save the session");
       el.disabled = false;
@@ -2354,7 +2490,7 @@ const actions = {
       state.skiVals = {};
       refreshPlan().catch(() => {});
       render();
-      toast("Ski readiness saved ⛷️");
+      toast("Ski readiness saved");
     } catch { toast("Couldn't save the results"); el.disabled = false; }
   },
   "trend-days"(el) { state.trendDays = Number(el.dataset.v); render(); },
@@ -2422,6 +2558,23 @@ const actions = {
   complete(el) { completeWorkout(el, Number(el.dataset.session || 1)); },
   send() { sendCoach(); },
   goto(el) { history.replaceState(null, "", `#${el.dataset.v}`); showTab(el.dataset.v); },
+  // From More straight to a section of a page: open the page, then scroll to the heading once it has drawn
+  "goto-sec"(el) {
+    const tab = el.dataset.v, sec = el.dataset.sec.toLowerCase();
+    history.replaceState(null, "", `#${tab}`);
+    showTab(tab);
+    let tries = 0;
+    const find = () => {
+      const h = [...$view.querySelectorAll("h2")].find((x) => x.textContent.trim().toLowerCase().startsWith(sec));
+      if (h) h.scrollIntoView({ behavior: "smooth", block: "start" });
+      else if (tries++ < 20) setTimeout(find, 150);
+    };
+    setTimeout(find, 150);
+  },
+  jump(el, e) {
+    e.preventDefault();       // the address bar's #tab must stay as it is
+    document.getElementById(el.dataset.v)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  },
   "week-nav"(el) { state.weekOffset = Number(el.dataset.v); render(); },
   "week-ask"() {
     state.coachDraft = "Look at my week and suggest any changes, thinking about my sports and how I've been feeling.";
@@ -2526,8 +2679,8 @@ const actions = {
     el.textContent = "Testing…";
     try {
       const r = await api("api/media/test", { method: "POST" });
-      state.mediaTest = (r.ok ? "✓ " : "✗ ") + r.message;
-    } catch { state.mediaTest = "✗ Couldn't reach the add-on."; }
+      state.mediaTest = r.message;
+    } catch { state.mediaTest = "Couldn't reach the add-on."; }
     el.disabled = false;
     el.textContent = "Test connection";
     const out = document.getElementById("media-test-result");
@@ -2680,7 +2833,7 @@ const actions = {
       state.week = null;
       if (saveTimer) await saveDraft();
       await refreshPlan();
-      toast("Snow day saved to History 🏔️");
+      toast("Snow day saved to History");
     } catch { toast("Couldn't save the snow day"); el.disabled = false; }
   },
   "checkin-edit"() { state.ckEdit = true; state.ck = null; render(); },
@@ -2897,7 +3050,8 @@ document.addEventListener("visibilitychange", () => {
 
 function render() {
   const views = { more: renderMore, today: renderToday, week: renderWeek, history: renderHistory, report: renderReport, coach: renderCoach, library: renderLibrary, mind: renderMindBody, settings: renderSettings };
-  Promise.resolve(views[state.tab]()).catch(() => {
+  letterhead();
+  Promise.resolve(views[state.tab]()).then(addContents).catch(() => {
     $view.innerHTML = `<div class="empty">Couldn't load this page. Pull down to refresh or try again.</div>`;
   });
 }
@@ -2908,12 +3062,35 @@ const MORE_TABS = ["history", "report", "library", "settings"];
 const VALID_TABS = [...TAB_ORDER, "more"];
 
 function renderMore() {
-  const items = [["history", "🗓️", "History", "Past workouts, symptom trends and progress charts"],
-    ["report", "📋", "PT report", "One page to show your PT: symptoms, routine, lifts. Printable"],
-    ["library", "📚", "Library", "Search the exercise library"],
-    ["settings", "⚙️", "Settings", "PT exercises, sports, equipment, install as an app"]];
-  $view.innerHTML = items.map(([tab, icon, name, sub]) => `<button type="button" class="card more-item" data-act="goto" data-v="${tab}">
-      <span class="more-icon" aria-hidden="true">${icon}</span><span><strong>${name}</strong><span class="sub" style="display:block">${sub}</span></span></button>`).join("");
+  // Each page and the sections on it (as their headings read), so a section is one tap from here
+  const items = [
+    ["history", I.history, "History", "Past workouts and how your numbers have moved.",
+      ["How you've felt", "Weight and blood pressure", "Progress", "Completed workouts"]],
+    ["report", I.report, "PT report", "One printable page to take to your PT.",
+      ["Questions for my PT", "Symptoms", "Daily routine", "Strength and holds"]],
+    ["library", I.library, "Library", "Every exercise, with pictures and how-to.", []],
+    ["settings", I.settings, "Settings", "Set the app up the way you train.",
+      ["From your PT", "Equipment", "Water", "Scale and blood pressure", "Sports", "Paused exercises", "Home Assistant", "Garmin", "AI Coach", "Install as an app"]],
+  ];
+  $view.innerHTML = `<div class="more-list">${items.map(([tab, icon, name, sub, secs]) => `<div class="more-item">
+      <span class="more-icon" aria-hidden="true">${icon}</span>
+      <span><button type="button" class="btn link more-name" style="padding:0;min-height:0" data-act="goto" data-v="${tab}">${name}</button>
+        <span class="sub" style="display:block">${sub}</span>
+        ${secs.length ? `<span class="chips wrap" style="margin-top:8px">${secs.map((s) => `<button type="button" class="chip" data-act="goto-sec" data-v="${tab}" data-sec="${esc(s)}">${esc(s)}</button>`).join("")}</span>` : ""}</span>
+    </div>`).join("")}</div>`;
+}
+
+// Long pages (Settings, History, PT report) get a row of links to their sections at the top
+function addContents() {
+  if (!["settings", "history", "report"].includes(state.tab) || $view.querySelector(".contents")) return;
+  const heads = [...$view.querySelectorAll("h2")];
+  if (heads.length < 4) return;
+  heads.forEach((h, i) => { h.id ||= `sec-${i}`; });
+  const nav = document.createElement("nav");
+  nav.className = "contents noprint";
+  nav.setAttribute("aria-label", "On this page");
+  nav.innerHTML = heads.map((h) => `<a href="#${h.id}" data-act="jump" data-v="${h.id}">${esc(h.textContent.trim())}</a>`).join("");
+  $view.prepend(nav);
 }
 
 // Swipe left/right anywhere on the page to move between tabs (ignored on sliders, text boxes, audio and sideways-scrolling strips)
@@ -2955,6 +3132,15 @@ function showTab(tab) {
 document.querySelector(".tabs").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-tab]");
   if (b) history.replaceState(null, "", `#${b.dataset.tab}`), showTab(b.dataset.tab);
+});
+
+// The letterhead: back to More from its pages, and tapping a score reopens this morning's check-in
+$back.addEventListener("click", () => { history.replaceState(null, "", "#more"); showTab("more"); });
+document.querySelector(".top").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-act]");
+  if (!el || el === $back || !actions[el.dataset.act]) return;
+  actions[el.dataset.act](el, e);
+  window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
 // Installed on the home screen (opened at the add-on's own address, not inside Home Assistant): register the service
