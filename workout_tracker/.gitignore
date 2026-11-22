@@ -12,4 +12,8 @@ movement_systems_repo/
 pt_skill_repo/
 endurance_skills_repo/
 
-data/
+# The yoga photo sets are uploaded to the private bucket, not shipped. The two exercise data files in data/
+# (free-exercise-db.json, boostcamp-exercises.json) ARE shipped: the image's exercise library is built from them.
+data/*
+!data/free-exercise-db.json
+!data/boostcamp-exercises.json

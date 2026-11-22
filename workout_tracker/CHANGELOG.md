@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.1 - Exercise Library Fix
+
+### 🐞 Fixes
+* **The exercise library can update again.** Two of its source files (the Free Exercise DB and the Boostcamp programs) had gone missing from the add-on when it moved into this add-on collection. Since then the library couldn't refresh, and a fresh install would have started with a smaller library. They're back, so the library rebuilds with all four sources (about 5,000 exercises) the next time the add-on starts.
+* If a source is ever missing again, the library now builds from the ones it has instead of not rebuilding at all.
+
 ## 0.14.0 - A New Look: Your Home Program
 
 ### 🌟 Features

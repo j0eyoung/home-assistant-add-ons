@@ -47,9 +47,13 @@ def init_db():
     import history
     history.ensure_schema(DB_PATH)
 
-    # Merge the exercise databases (skipped when nothing changed since the last start)
+    # Merge the exercise databases (skipped when nothing changed since the last start). A failure here must not
+    # stop the add-on: the library built last time stays in the database and is used as it is.
     import library
-    library.build(DB_PATH)
+    try:
+        library.build(DB_PATH)
+    except Exception as e:
+        print(f"Exercise library: not rebuilt this time ({type(e).__name__}: {e}); keeping the last one.", flush=True)
 
 def get_last_log():
     """Latest logged session: effort, symptoms and the workout that was done."""

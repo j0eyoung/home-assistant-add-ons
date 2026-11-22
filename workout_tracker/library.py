@@ -456,7 +456,11 @@ def _source_files():
     import ninjas_sync
     if os.path.exists(ninjas_sync.STATE_FILE):
         files["ninjas"] = ninjas_sync.STATE_FILE
-    return {k: v for k, v in files.items() if v}
+    # a missing source is skipped (and named in the log) rather than stopping the whole library from building
+    missing = [SOURCE_NAMES.get(k, k) for k, v in files.items() if v and not os.path.exists(v)]
+    if missing:
+        print("Exercise library: missing " + ", ".join(missing) + "; building from the other sources.", flush=True)
+    return {k: v for k, v in files.items() if v and os.path.exists(v)}
 
 
 def _signature(files):
