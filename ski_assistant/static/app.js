@@ -86,11 +86,19 @@ async function init() {
   RESORTS = await api('resorts');
   SET = (await api('settings')).settings;
   fillDepartures();
+  homeNote();
   for (const id of ['d', 'ld', 'gd']) $(id).value = today;
   $('lr').innerHTML = ropts();
   show(t);
   loadDailySnow(false); loadForecast(); loadOutlook(); rank();
   addEventListener('hashchange', route);
+}
+// Leave times start from the first departure point; the default is a placeholder in downtown Denver
+function homeNote() {
+  const h = (SET.departures || [])[0] || {};
+  const placeholder = Math.abs(h.lat - 39.7392) < 1e-4 && Math.abs(h.lon + 104.9903) < 1e-4;
+  $('homenote').hidden = !placeholder;
+  if (placeholder) $('homenote').innerHTML = `Leave times start from a placeholder in downtown Denver. <a href="#" onclick="show('more'); return false">Set your home under More</a> (Departure points).`;
 }
 function fillDepartures() {
   $('dep').innerHTML = SET.departures.map(d => `<option ${d.name === SET.default_departure ? 'selected' : ''}>${esc(d.name)}</option>`).join('');
@@ -147,14 +155,15 @@ function renderHero() {
       <div class="big"><span class="n">${ip(sel.fresh_in)}</span>
         <span class="u">fresh ${sel.date === today ? 'today' : 'by<br>' + dayName(sel.date, true)}${sel.fresh_in >= powderIn ? '<br><span class="powder">Powder day</span>' : ''}</span></div>
       <div class="facts"><span><b>${Math.round(sel.tmax_f)}°F</b> high</span><span><b>${Math.round(sel.gust_mph)} mph</b> gusts</span>
-        ${sel.next_best ? `<span>next best <b>${esc(sel.next_best)}</b></span>` : ''}</div>
+        ${sel.next_best ? `<span>next best <b>${esc(sel.next_best)}</b></span>` : ''}
+        ${sel.busy ? `<span>your calendar: <b>${esc(sel.busy)}</b></span>` : ''}</div>
     </div></div>
     ${vmsLeave(sel.leave, SHORT[sel.id] || sel.resort, `<button onclick="going('${sel.date}', '${esc(sel.id)}', false, this)">I'm going</button>`)}
     <p class="goingmsg dim" role="status"></p>
     <div class="plates" role="group" aria-label="Pick a day">${days.map(x => `
-      <button class="plate${x === sel ? ' on' : ''}" aria-pressed="${x === sel}" onclick="HERO_DATE='${x.date}'; renderHero()">
+      <button class="plate${x === sel ? ' on' : ''}${x.busy ? ' busy' : ''}" aria-pressed="${x === sel}" onclick="HERO_DATE='${x.date}'; renderHero()"${x.busy ? ` title="Busy: ${esc(x.busy)}"` : ''}>
         <span class="dn">${dayName(x.date)}</span><span class="dv">${ip(x.fresh_in)}</span>
-        <span class="dr">${esc(SHORT[x.id] || x.resort)}</span>${x === best ? '<span class="best">Best</span>' : ''}</button>`).join('')}</div>
+        <span class="dr">${esc(SHORT[x.id] || x.resort)}</span>${x === best ? '<span class="best">Best</span>' : x.busy ? '<span class="best">Busy</span>' : ''}</button>`).join('')}</div>
     <div class="hero-links"><a href="#" onclick="planDay('${sel.date}'); return false">All resorts ${sel.date === today ? 'today' : 'on ' + dayName(sel.date, true)} ${ARROW_R}</a>
       <span>${monthDay(sel.date)}</span></div>
     ${(OUT.alerts || []).map(x => `<div class="alert">${FLAKE}<span><b>Powder alert:</b> ${esc(x.resort)}, ${x.snow_in}″ from ${dayLabel(x.first_day)}</span></div>`).join('')}`;
@@ -400,10 +409,10 @@ async function rank() {
   try { rows = await api(q); } catch (e) { t.innerHTML = `<tr><td>${esc(e.message)}</td></tr>`; return; }
   t.innerHTML = '<tr><th>Resort</th><th class="num">Score</th><th class="num">Fresh</th><th class="num">Gust</th><th class="num">High</th><th class="num">Base</th><th class="num">Lifts</th><th>Leave</th></tr>' +
     rows.map(r => r.error ? `<tr><td>${esc(r.resort)}</td><td colspan=7>${esc(r.error)}</td></tr>` :
-      `<tr><td>${esc(r.resort)}</td><td class="num">${r.score}</td><td class="num">${inch(r.fresh_in)}</td><td class="num">${Math.round(r.gust_mph)}</td><td class="num">${Math.round(r.tmax_f)}°</td>
+      `<tr${r.not_open ? ' class="notopen"' : ''}><td>${esc(r.resort)}${r.not_open ? ' <span class="mute">not open yet</span>' : ''}</td><td class="num">${r.not_open ? '-' : r.score}</td><td class="num">${inch(r.fresh_in)}</td><td class="num">${Math.round(r.gust_mph)}</td><td class="num">${Math.round(r.tmax_f)}°</td>
        <td class="num">${r.snowpack ? inch(r.snowpack.depth_in) : '-'}</td><td class="num">${r.live && r.live.lifts_total != null ? r.live.lifts_open + '/' + r.live.lifts_total : '-'}</td>
        <td>${t12(r.leave.leave_at)} <span class="mute">(${hm(r.leave.drive_min)})</span></td></tr>`).join('');
-  const top = rows.find(r => !r.error);
+  const top = rows.find(r => !r.error && !r.not_open) || rows.find(r => !r.error);
   $('pick').innerHTML = top ? `<div class="pickgrid">
     <div class="sign"><div class="sign-in">
       <h2 class="rtab">${ARROW}${esc(top.resort)}</h2>
@@ -561,17 +570,14 @@ async function loadGear() {
     Object.entries(k).map(([kind, u]) => `<span class="${u.due ? 'due' : ''}">${kind} ${u.days_since}/${u.every} days${u.due ? ' (due)' : ''}</span>`).join(SEP) + '</p>').join('');
 }
 async function addService() { await api('gear', { method: 'POST', body: JSON.stringify({ date: $('gd').value, equipment: $('ge').value, kind: $('gk').value }) }); loadGear(); }
-async function addShop() {
-  try { await api('shopping', { method: 'POST', body: JSON.stringify({ item: $('shop').value }) }); $('shopmsg').textContent = 'Added.'; $('shop').value = ''; }
-  catch (e) { $('shopmsg').textContent = e.message; }
-}
 
 /* ---------- Settings ---------- */
 const FIELDS = [['arrive_by', 'On the lifts by (HH:MM)'], ['buffer_min', 'Buffer for parking and boots (min)', 'n'],
   ['phone_service', 'Phone notify service'], ['tts_entity', 'TTS entity (tts.*)'], ['speaker_entity', 'Speaker (media_player.*)'],
   ['wake_time', 'Powder wake-up time (HH:MM)'], ['tracker_entity', 'Phone tracker (device_tracker.*)'],
   ['climate_entity', 'Thermostat (climate.*)'], ['normal_temp_f', 'Normal temperature (F)', 'n'],
-  ['outlook_time', 'Thursday weekend outlook at (HH:MM)'], ['packing_todo', 'Packing list (todo.*, blank = shopping list)']];
+  ['outlook_time', 'Thursday weekend outlook at (HH:MM)'], ['packing_todo', 'Packing list (todo.*, blank = shopping list)'],
+  ['calendar_entity', 'Calendar for free days (calendar.*, blank = off)']];
 async function loadSettings() {
   const r = await api('settings'); const s = r.settings; SET = s;
   $('setbox').innerHTML = `<h3>Settings</h3>
@@ -632,7 +638,7 @@ async function saveSettings() {
   const wm = {}; document.querySelectorAll('#wazemap select').forEach(el => { if (el.value) wm[el.dataset.resort] = el.value; });
   if (document.querySelector('#wazemap select')) p.waze_sensors = wm;
   await api('settings', { method: 'PUT', body: JSON.stringify(p) }); $('setmsg').textContent = 'Saved.';
-  SET = (await api('settings')).settings; fillDepartures();
+  SET = (await api('settings')).settings; fillDepartures(); homeNote();
 }
 
 init();

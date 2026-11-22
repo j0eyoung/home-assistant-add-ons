@@ -318,3 +318,16 @@ label.wide { margin-top: 14px; }
 /* Radar tabs pushed below a neighbour keep a leader back to their point */
 .snowpin { position: relative; }
 .snowpin::before { content: ""; position: absolute; left: 0; bottom: 100%; width: 2px; height: var(--dy, 0px); background: var(--sheet); }
+
+/* Busy days (from the calendar) recede; the Plan table's not-open resorts too */
+.plate.busy .dv, .plate.busy .dr { color: var(--sheet-3); }
+tr.notopen td { color: var(--sheet-3); }
+
+/* A panel that folds away: the summary reads as a button */
+details.fold { padding: 0; }
+details.fold > summary { list-style: none; cursor: pointer; padding: 14px 16px; font-weight: 800; font-size: 17px; display: flex; align-items: center; gap: 10px; min-height: 52px; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary::before { content: ""; width: 9px; height: 9px; border-right: 2px solid var(--sheet); border-bottom: 2px solid var(--sheet); transform: rotate(-45deg); transition: transform .15s ease-out; flex: none; }
+details.fold[open] > summary::before { transform: rotate(45deg); }
+details.fold > summary:hover { background: var(--panel-2); border-radius: var(--r); }
+details.fold > .controls { padding: 0 16px 14px; margin: 0; }

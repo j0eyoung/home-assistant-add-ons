@@ -87,19 +87,8 @@ def alerts():
 def outlook(days: int = 5, skis: bool = False, departure: Optional[str] = None):
     """The Forecast tab's best-bet card: the top resort for each of the next few days, the best of those days,
     and any powder alerts."""
-    rs = resorts.load()
-    start = util.today()
-    out = []
-    for i in range(max(1, min(days, 7))):
-        date = (start + dt.timedelta(days=i)).isoformat()
-        rows = [x for x in ranking.best_days(rs, date, skis=skis, departure=departure) if "error" not in x]
-        if rows:
-            t = rows[0]
-            out.append({"date": date, "id": t["id"], "resort": t["resort"], "score": t["score"], "fresh_in": t["fresh_in"],
-                        "tmax_f": t["tmax_f"], "gust_mph": t["gust_mph"], "leave": t["leave"],
-                        "next_best": rows[1]["resort"] if len(rows) > 1 else None})
-    best = max(out, key=lambda x: x["score"]) if out else None
-    return {"days": out, "best_date": best["date"] if best else None, "powder_in": ALERT_IN, "alerts": alerts()}
+    o = ranking.outlook(resorts.load(), days, skis=skis, departure=departure)
+    return {**o, "powder_in": ALERT_IN, "alerts": alerts()}
 
 
 @app.get("/api/snowpack")
@@ -346,19 +335,6 @@ def add_service(s: Service):
     if s.equipment not in ("board", "ski") or s.kind not in ("wax", "tune"):
         raise HTTPException(400, "equipment must be board or ski, kind wax or tune")
     return {"id": season.add_service(s.date, s.equipment, s.kind)}
-
-
-class Shopping(BaseModel):
-    item: str
-
-
-@app.post("/api/shopping")
-def shopping(s: Shopping):
-    try:
-        ha.shopping_add(s.item.strip()[:100])
-    except Exception as e:
-        raise HTTPException(502, f"Home Assistant shopping list failed: {e}")
-    return {"ok": True}
 
 
 # Settings

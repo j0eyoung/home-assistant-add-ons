@@ -96,6 +96,20 @@ def sensors():
         ha.set_state("sensor.ski_best_today", top["resort"],
                      {"friendly_name": "Ski: best today", "score": top["score"], "fresh_in": top["fresh_in"],
                       "leave_at": top["leave"]["leave_at"], "icon": "mdi:ski"})
+    # Best bet over the next five days, for the dashboard card in DOCS.md
+    o = ranking.outlook(resorts.load())
+    best = next((d for d in o["days"] if d["date"] == o["best_date"]), None)
+    if best:
+        lv = best["leave"]
+        h, m = (int(x) for x in lv["leave_at"].split(":"))
+        mins = lv["drive_min"]
+        ha.set_state("sensor.ski_best_bet", best["resort"],
+                     {"friendly_name": "Ski: best bet", "icon": "mdi:ski", "date": best["date"],
+                      "day": "today" if best["date"] == util.today().isoformat() else dt.date.fromisoformat(best["date"]).strftime("%A"),
+                      "fresh_in": best["fresh_in"], "high_f": round(best["tmax_f"]), "gust_mph": round(best["gust_mph"]),
+                      "leave_at": f"{h % 12 or 12}:{m:02d} {'am' if h < 12 else 'pm'}",
+                      "drive": f"{mins // 60} hr {mins % 60} min" if mins >= 60 else f"{mins} min",
+                      "next_best": best["next_best"], "panel": ha.panel_url() or ""})
     p = season.pass_summary()
     ha.set_state("sensor.ski_days_this_season", p["total_days"],
                  {"friendly_name": "Ski days this season", "unit_of_measurement": "days", "icon": "mdi:snowflake"})

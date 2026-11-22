@@ -2,6 +2,7 @@
 Every function raises on failure; callers in scheduler.py wrap them so one broken entity never stops the rest."""
 import json
 import os
+import urllib.parse
 import urllib.request
 
 CORE = "http://supervisor/core/api"
@@ -89,3 +90,9 @@ def todo_add(entity_id, item):
 
 def shopping_add(item):
     return service("shopping_list", "add_item", {"name": item})
+
+
+def calendar_events(entity_id, start_iso, end_iso):
+    """Events on a Home Assistant calendar between two local times (ISO strings)."""
+    q = urllib.parse.urlencode({"start": start_iso, "end": end_iso})
+    return _call("GET", f"{CORE}/calendars/{entity_id}?{q}") or []

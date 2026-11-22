@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.0 - Free Days, Dashboard Card, Shorter Drives
+
+### 🌟 Features
+* **Picks only the days you're free.** Choose a Home Assistant calendar under More → Settings ("Calendar for free days"). A day with a timed event between 8am and 3pm counts as busy; all-day events like holidays don't. The best bet is always a free day, and busy days say "Busy" on their day button.
+* **A dashboard card.** A new `sensor.ski_best_bet` holds the best resort and day, the fresh snow, when to leave and the drive. The Documentation tab has a card to paste into any dashboard.
+* **A nudge to set your home.** While the home departure point is still the downtown-Denver placeholder, the Forecast tab says so and links to where to change it.
+
+### 🔧 Improvements
+* **Drive time counts for more.** It's now 20 of the 100 points (was 10): 75 minutes or less is free and 3½ hours or more gets nothing, so a long drive has to be worth it. Wind and temperature give up 5 points each.
+* **Resorts that aren't open drop out.** A resort whose report says it isn't open for the season, or with no lifts running at midday, goes to the bottom of the Plan list marked "not open yet" and is never the best bet.
+* "Add a day" on the Season tab folds away behind a button, since Garmin logs your days on its own.
+* Removed the Shopping list box under More (Home Assistant has its own list; the packing list still uses it).
+
 ## 0.8.0 - The Guide-Sign Redesign
 
 ### 🌟 Features

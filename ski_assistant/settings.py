@@ -27,6 +27,7 @@ DEFAULTS = {
     "storm_alerts": True,          # storm trending up (next-5-day total jumps and the models agree)
     "packing_todo": "",            # to-do list entity for the packing list, e.g. todo.ski_packing (blank = shopping list)
     "waze_sensors": {},            # {resort_id: sensor.entity_id}; empty = match Waze sensors by name
+    "calendar_entity": "",         # calendar.* to skip days you're busy (timed events 8am-3pm); blank = off
 }
 
 

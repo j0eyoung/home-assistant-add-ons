@@ -4,7 +4,7 @@
 <meta name="theme-color" content="#0b3d2b">
 <title>Ski Assistant</title>
 <link rel="preload" href="static/fonts/overpass-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="static/app.css?v=0.8.0">
+<link rel="stylesheet" href="static/app.css?v=0.9.0">
 <link rel="icon" type="image/png" href="static/icon-192.png">
 <link rel="apple-touch-icon" href="static/icon-192.png">
 </head><body>
@@ -17,6 +17,7 @@
  <div id="flist" class="split">
   <div class="col-a">
    <div id="hero" aria-live="polite"><div class="sign"><div class="sign-in"><p class="dim">Working out the best day…</p></div></div></div>
+   <p class="fine" id="homenote" hidden></p>
    <div class="panel" id="dailysnow" hidden></div>
    <p class="fine" id="dsoff" hidden></p>
   </div>
@@ -66,11 +67,11 @@
 
 <section id="log">
  <div class="panel" id="statsbox"></div>
- <div class="panel"><h2 class="legend-h">Add a day</h2><div class="row controls">
+ <details class="panel fold"><summary><span>Add a day by hand</span></summary><div class="row controls">
   <input type="date" id="ld" aria-label="Date"><select id="lr" aria-label="Resort"></select>
   <select id="le" aria-label="Board or skis"><option value="board">Board</option><option value="ski">Skis</option></select>
   <input id="lv" type="number" placeholder="Vertical ft (optional)" aria-label="Vertical feet" inputmode="numeric" autocomplete="off">
-  <input id="ln" class="grow" placeholder="Notes…" aria-label="Notes" autocomplete="off"><button class="primary" onclick="addDay()">Save</button></div></div>
+  <input id="ln" class="grow" placeholder="Notes…" aria-label="Notes" autocomplete="off"><button class="primary" onclick="addDay()">Save</button></div></details>
  <div class="panel wrap"><table id="days"></table></div>
 </section>
 
@@ -81,7 +82,6 @@
    <div class="panel"><h2 class="legend-h">Log a wax or tune</h2><div class="row controls">
     <input type="date" id="gd" aria-label="Date"><select id="ge" aria-label="Board or skis"><option value="board">Board</option><option value="ski">Skis</option></select>
     <select id="gk" aria-label="Wax or tune"><option value="wax">Wax</option><option value="tune">Tune</option></select><button class="primary" onclick="addService()">Save</button></div></div>
-   <div class="panel"><h2 class="legend-h">Shopping list</h2><div class="row"><input id="shop" class="grow" placeholder="Hand warmers…" aria-label="Shopping list item" autocomplete="off"><button onclick="addShop()">Add to Home Assistant</button></div><p id="shopmsg" class="dim" role="status"></p></div>
    <div class="panel" id="claudebox"></div>
    <div class="panel" id="garminbox"></div>
   </div>
@@ -96,7 +96,7 @@
   <button onclick="Recap.close()">Close</button><span class="dim" id="recapmsg" role="status"></span></div>
 </dialog>
 
-<script src="static/charts.js?v=0.8.0"></script>
-<script src="static/recap.js?v=0.8.0"></script>
-<script src="static/app.js?v=0.8.0"></script>
+<script src="static/charts.js?v=0.9.0"></script>
+<script src="static/recap.js?v=0.9.0"></script>
+<script src="static/app.js?v=0.9.0"></script>
 </body></html>
