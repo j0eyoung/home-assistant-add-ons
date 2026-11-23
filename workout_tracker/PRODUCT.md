@@ -26,12 +26,12 @@ Not a generic gym log. Every plan, progression step and coach suggestion is scre
 
 ## Capabilities and Constraints
 
-- Five tabs: Today, Week, Coach, Mind & Body, More (History, Library, PT report, Settings).
-- Today: check-in, water, snow-day log, daily non-negotiables with timers and guided breathing, strength cards (pictures, how-to, last time and suggested weight/reps, set logging, rest and hold timers, swap, "Bothered me"), cardio, optional guided cool-down, done card with personal records.
+- Five tabs: Today, Week, Coach, Mind & Body, Records (History, Library, PT report, Settings).
+- Today: check-in, water, snow-day log, daily non-negotiables with timers and guided breathing, strength cards (pictures, how-to, last time and suggested weight/reps, set logging, rest and hold timers, swap, "Bothered me", a progress chart per exercise), cardio (with today's Garmin cardio to tick), Garmin ski days offered for logging, optional guided cool-down, done card with personal records.
 - Week: the week's day types and muscle groups, a coach-planned 4-week block, cardio machine unlock status, ski readiness checks.
 - Coach: shared chat with Apply / No thanks on suggested plan changes.
-- Mind & Body: yoga poses, Baduanjin qigong, guided sessions in a natural voice, meditations.
-- Stack: FastAPI with a vanilla JS single page (static/app.js, static/app.css, static/index.html), no build step, relative URLs so it works behind Home Assistant ingress. Offline-capable service worker.
+- Mind & Body: yoga poses (with his own photo for any pose that has none), Baduanjin qigong, guided sessions in a natural voice, meditations.
+- Stack: FastAPI with a vanilla JS single page (static/app.js, static/app.css, static/index.html), no build step, relative URLs so it works behind Home Assistant ingress. Sets and ticks are kept on the phone until the add-on has them, a workout completed offline waits in an outbox, and the installed app's service worker keeps the page and today's plan for opening offline.
 - Must keep (confirmed): Today's order (daily non-negotiables, strength, cardio, cool-down), the five-tab bar, dark and light mode following the phone.
 - Confirmed problems with the current interface: it looks generic, and History, Library, PT report and Settings are hard to find.
 

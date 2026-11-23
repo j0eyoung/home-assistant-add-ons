@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.15.0 - Progress Charts, Garmin Ski Days and Cardio, Logging Without a Connection
+
+### 🌟 Features
+* **See how each exercise has moved.** Tap **Progress** on any exercise on Today, or pick one under Records › History › Progress (there's a search box for the long list). The chart shows your heaviest weight with the reps you did at it, or your longest hold, or your most reps, on a real time scale. Every day you tapped "Bothered me" is marked with a dashed amber line. Under it: your first, latest and best sets, and every session.
+* **Ski days from your watch.** When your Garmin records a day of skiing or snowboarding that isn't logged yet, Today offers it: tap **Log it** and the snow-day form opens already filled in (sport, hours, the day). Add how it felt and save. It works for any day in the last week, not only today. "Not a snow day" stops it being offered.
+* **Cardio from your watch.** A walk, run, ride, row or swim your Garmin recorded today shows under the cardio section. Tick it and those minutes (and the type) are logged with today's workout instead of the planned minutes, so the next cardio length follows what you actually did. **Check Garmin** looks for new activities right away; otherwise the add-on checks every hour.
+* **Your own photos for yoga poses.** Poses with no picture now have **Add your photo**: take one of yourself in the pose or pick one from your photos. It shows in Mind & Body and in your cool-downs, and you can replace or remove it.
+* **Logging keeps going when the connection drops.** Every set and tick is kept on your phone until Home Assistant has it, so closing the app or reloading with no connection no longer loses it. If you tap Complete with no connection, the workout is kept on the phone, Today shows it as done, and it goes to History on its own once you're back online. Installed on your home screen, the app also opens with today's plan when Home Assistant can't be reached.
+
+### 🔧 Improvements
+* **The More tab is now called Records.** Same pages: History, PT report, Library and Settings.
+* The stock photo under today's cardio is gone, so the cardio section is shorter.
+* History's exercise progress is one chart with one scale (weight, reps or seconds), instead of two lines squeezed onto the same axis.
+
 ## 0.14.1 - Exercise Library Fix
 
 ### 🐞 Fixes

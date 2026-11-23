@@ -27,6 +27,8 @@ const I = {
   history: svg('<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3.5 4v4h4M12 7.5V12l3 2"/>'),
   report: svg('<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8.5 8h7M8.5 11.5h7M8.5 15h4"/>'),
   library: svg('<path d="M5 4.5h4v15H5zM10 4.5h4v15h-4zM15.2 5.2l3.8-1 3 14.5-3.8 1z"/>'),
+  camera: svg('<path d="M4 8.5h3.2L8.8 6h6.4l1.6 2.5H20v10.5H4z"/><circle cx="12" cy="13.5" r="3.3"/>'),
+  chart: svg('<path d="M4 4.5v15h16"/><path d="M7.5 15l3.5-4 3 2.5 4.5-6"/>'),
   settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/>'),
 };
 
@@ -74,7 +76,9 @@ const state = {
   finish: { ...FINISH_DEFAULTS },
   open: new Set(), // expanded how-to / history / library panels
   history: null,
-  progress: { exercise: "", days: [] },
+  progress: { exercise: "" },
+  prog: {},        // exercise name -> its progress (api/progress), shared by History and Today's cards
+  progQ: "",
   coach: [],       // the chat is kept on the add-on (shared by every device); loadCoach() fills this
   coachLoaded: false,
   coachBusy: false,   // this device is waiting for a reply
@@ -82,6 +86,7 @@ const state = {
   mind: null, mindFilter: "all", mindQ: "",
   week: null, weekOffset: 0, coachDraft: "", secondOpen: false, ck: null, ckEdit: false, snowOpen: false, snow: null,
   garmin: null, garminMsg: "", ha: null,
+  cardioGarmin: [],   // today's watch activities ticked to log as today's cardio
   trends: null, trendDays: 30, report: null, reportDays: 30, ski: null, skiOpen: false, skiVals: {}, ptForm: null, install: null,
   bio: null, bioForm: null, questions: null, qSuggest: null, body: null, bodyForm: null, waterHist: null, bodySensors: null, bodyMsg: "",
   voices: null, voice: "lessac", audio: null,
@@ -130,7 +135,28 @@ function formatDate(iso) {
 
 const finishKey = () => `finish-${state.plan?.date}`;
 
+// --- Offline: what you log is kept on the phone until Home Assistant has it ------------------------------------------
+// Every change to today's sets and ticks is copied here first; the copy is dropped once the add-on has saved it.
+// A workout completed with no connection waits in an outbox and is sent (with its date) when the phone is back online.
+const unsentKey = (date) => `unsent-draft-${date}`;
+const OUTBOX = "outbox-complete";
+const offline = (err) => !err.status;     // fetch itself failed: no connection (the add-on answering with an error has a status)
+
+function keepUnsent() {
+  if (state.plan) store.set(unsentKey(state.plan.date), { tracker: draftRows(), checks: state.checks, at: Date.now() });
+}
+
+function dropOldUnsent(today) {
+  try {
+    Object.keys(localStorage).filter((k) => k.startsWith("unsent-draft-") && k !== unsentKey(today)).forEach((k) => localStorage.removeItem(k));
+  } catch { /* private mode */ }
+}
+
 function loadPlan(plan) {
+  dropOldUnsent(plan.date);
+  const unsent = store.get(unsentKey(plan.date), null);
+  if (unsent && !plan.done?.["1"]) plan = { ...plan, draft: { tracker: unsent.tracker, checks: unsent.checks } };
+  else if (unsent) store.remove(unsentKey(plan.date));
   state.plan = plan;
   state.checks = { ...(plan.draft?.checks || {}) };
   state.sets = {};
@@ -147,17 +173,23 @@ function loadPlan(plan) {
     }
   }
   state.extras = Object.keys(state.sets).filter((n) => !plan.strength.some((e) => e.name === n));
+  const watch = (plan.garmin_acts?.cardio || []).map((a) => a.activity_id);
+  state.cardioGarmin = store.get(`garmin-cardio-${plan.date}`, []).filter((id) => watch.includes(id));
   state.finish = { ...FINISH_DEFAULTS, ...store.get(finishKey(), {}) };
   if (plan.checkin && !store.get(finishKey(), null)) {   // start the finish sliders from this morning's check-in
     state.finish.kidney = plan.checkin.kidney;
     state.finish.pf = plan.checkin.pelvic_floor;
   }
   $date.textContent = formatDate(plan.date);
+  for (const q of store.get(OUTBOX, [])) {   // a workout waiting to be sent shows as done, not as a plan to do again
+    if (q.date === plan.date && !plan.done?.[String(q.session)]) plan.done = { ...plan.done, [q.session]: q.summary };
+  }
   letterhead();
+  if (unsent && !plan.done?.["1"]) scheduleSave();
 }
 
 // The teal letterhead: page name and date; on Today also the kind of day and this morning's two scores
-const TAB_TITLES = { today: "Today", week: "Week", coach: "Coach", mind: "Mind & Body", more: "More",
+const TAB_TITLES = { today: "Today", week: "Week", coach: "Coach", mind: "Mind & Body", more: "Records",
   history: "History", report: "PT report", library: "Library", settings: "Settings" };
 
 function letterhead() {
@@ -209,6 +241,7 @@ function draftRows() {
 
 let saveTimer = null;
 function scheduleSave() {
+  keepUnsent();
   setSaveState("Saving…");
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveDraft, 700);
@@ -218,19 +251,21 @@ async function saveDraft() {
   clearTimeout(saveTimer);
   saveTimer = null;
   if (!state.plan) return;
+  const date = state.plan.date;
+  const body = JSON.stringify({ date, tracker: draftRows(), checks: state.checks });
   try {
-    await api("api/draft", {
-      method: "PUT",
-      body: JSON.stringify({ date: state.plan.date, tracker: draftRows(), checks: state.checks }),
-    });
+    await api("api/draft", { method: "PUT", body });
+    // drop the phone's copy only if nothing changed while it was on its way
+    if (state.plan?.date === date && JSON.stringify({ date, tracker: draftRows(), checks: state.checks }) === body) store.remove(unsentKey(date));
     setSaveState("Saved");
   } catch (err) {
     if (err.status === 409) {
+      store.remove(unsentKey(date));
       toast("A new day has started: loading today's plan");
       await refreshPlan();
     } else {
-      setSaveState("Not saved yet, retrying…", true);
-      saveTimer = setTimeout(saveDraft, 5000);
+      setSaveState(offline(err) ? "No connection: kept on this phone" : "Not saved yet, retrying…", !offline(err));
+      saveTimer = setTimeout(saveDraft, offline(err) ? 15000 : 5000);
     }
   }
 }
@@ -265,6 +300,8 @@ function strengthCard(ex, idx) {
     ${ex.progress ? `<div class="progress"><span class="last">Last time, ${esc(formatDate(ex.progress.date))}: <span class="pen">${esc(ex.progress.last)}</span></span>
       <strong>${esc(ex.progress.note)}</strong></div>` : ""}
     ${hasHowTo(ex) ? toggleButton(key) + (state.open.has(key) ? howTo(ex) : "") : ""}
+    ${ex.progress ? toggleButton(`p:${ex.name}`, "Progress") + (state.open.has(`p:${ex.name}`) ? `<div class="chart prog-inline">${state.prog[ex.name]
+      ? progressBody(state.prog[ex.name]) : `<div class="spinner">Loading…</div>`}</div>` : "") : ""}
     ${ex.hold ? `<p class="small muted" style="margin:6px 0">Tap a hold to start its ${esc(ex.hold_secs || 30)} s timer. It ticks itself off and starts your rest.</p>` : ""}
     <div class="sets">${ex.hold ? holdRow(ex, sets) : sets.map((s, i) => setRow(ex.name, s, i, i === next)).join("")}</div>
     <div class="row-actions">${sameLast ? `<button type="button" class="btn small" data-act="same-last" data-name="${esc(ex.name)}">${I.again}Same as last time</button>` : ""}
@@ -397,8 +434,37 @@ function checkinCard(p) {
 }
 
 // Snow days: a day skiing or snowboarding is logged as that day's workout (legs and cardio)
+const fmtMinutes = (m) => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`);
+
+// Ski days your watch recorded that aren't logged yet: one tap opens the snow-day form, filled in from it
+function garminSnowCard(p) {
+  const offers = p.garmin_acts?.snow || [];
+  if (!offers.length || state.snowOpen) return "";
+  return offers.map((o, i) => `<div class="card season"><strong>${esc(o.label)} ${o.date === p.date ? "today" : `on ${esc(formatDate(o.date))}`}</strong>
+    <div class="sub">From your Garmin: ${esc([...o.names, fmtMinutes(o.minutes)].join(", "))}. Log it as a snow day so it counts as that day's workout.</div>
+    <div class="row-actions"><button type="button" class="btn small" data-act="garmin-snow" data-i="${i}">Log it</button>
+      <button type="button" class="btn link small muted-link" data-act="garmin-ignore" data-v="${esc(o.ids.join(","))}">Not a snow day</button></div></div>`).join("");
+}
+
+// Cardio your watch recorded today: tick it and its minutes are logged with today's workout instead of the planned ones
+function garminCardio(p) {
+  if (!p.garmin_acts) return "";
+  const acts = p.garmin_acts.cardio || [];
+  return `<div class="garmin-acts">
+    ${acts.map((a) => {
+      const on = state.cardioGarmin.includes(a.activity_id);
+      const bits = [a.name, a.avg_hr ? `average heart rate ${a.avg_hr}` : ""].filter(Boolean).join(" · ");
+      return `<button type="button" class="check${on ? " on" : ""}" data-act="garmin-cardio" data-v="${esc(a.activity_id)}" aria-pressed="${on}">
+        <span class="box" aria-hidden="true"></span>
+        <span><span class="name">From your watch: ${esc(a.label)}, <span class="pen">${esc(fmtMinutes(a.minutes))}</span></span>
+          <span class="sub">${bits ? `${esc(bits)}. ` : ""}${on ? "These minutes are logged with today's workout." : "Tick to log these minutes with today's workout."}</span></span></button>`;
+    }).join("")}
+    <div class="small muted">${acts.length ? "" : "Recorded it on your watch? "}<button type="button" class="btn link small" data-act="garmin-check">Check Garmin</button></div>
+  </div>`;
+}
+
 function snowCard(p) {
-  if (p.snow_today) {
+  if (p.snow_today && !state.snowOpen) {
     return `<div class="card"><strong>Snow day logged: ${esc(p.snow_today)}</strong>
       <div class="sub">It counts as today's workout. Tomorrow's leg work becomes core so your legs can recover.</div></div>`;
   }
@@ -407,7 +473,9 @@ function snowCard(p) {
     pelvic_floor: p.checkin?.pelvic_floor ?? 1, notes: "" };
   const sl = (key, label) => `<div class="slider"><div class="lbl"><span>${label}</span><span class="val" id="snowval-${key}">${s[key]}/10</span></div>
     <input type="range" min="1" max="10" step="1" value="${s[key]}" data-snow="${key}" aria-label="${label}"></div>`;
-  return `<div class="card"><h3>Log a snow day</h3>
+  const other = s.date && s.date !== p.date;
+  return `<div class="card"><h3>Log a snow day${other ? `: ${esc(formatDate(s.date))}` : ""}</h3>
+    ${s.garmin_ids?.length ? `<p class="sub" style="margin:2px 0 0">Filled in from your watch. Add how it felt${other ? " that day" : ""}.</p>` : ""}
     <div class="chips wrap" style="margin:6px 0 10px">${[["skiing", "Skiing"], ["snowboarding", "Snowboarding"]].map(([k, l]) =>
       `<button type="button" class="chip${s.sport === k ? " on" : ""}" data-act="snow-sport" data-v="${k}">${l}</button>`).join("")}</div>
     <label class="sub" for="snow-hours">Hours on the snow</label>
@@ -437,7 +505,8 @@ function renderToday() {
       <div class="sub">${esc(p.garmin.reasons.join(", "))}. ${p.garmin.level === "recovery"
         ? "Today is gentle recovery work."
         : "One fewer exercise, a quarter less cardio, and no load increases."} You can turn this off in Settings.</div></div>` : ""}
-    ${p.snow_sport ? snowCard(p) : ""}
+    ${garminSnowCard(p)}
+    ${p.snow_sport || state.snowOpen ? snowCard(p) : ""}
     ${atPtCard(p)}
     ${bioDueCard(p)}
     ${skiDueCard(p)}
@@ -460,7 +529,7 @@ function renderToday() {
       ${cardio.minutes ? minutesRule(cardio.minutes, cardio.type !== "recovery") : ""}
       <p>${esc(cardioText)}</p>
       ${cardio.note ? `<div class="sub">Why this length: ${esc(cardio.note)}</div>` : ""}
-      ${pictures(cardio.images)}
+      ${garminCardio(p)}
     </div>
 
     ${p.cooldown?.cards?.length ? `<h2 class="sec"><span class="n">4</span>${esc(p.cooldown.title || "Cool-down")}<span class="meta">optional</span></h2>
@@ -526,9 +595,11 @@ function renderTodayDone(p) {
     <div class="card done-card"><h3>${I.check}Today's workout is done</h3>
       <p class="sub">${esc(doneSummary(d) || "Saved to History.")}</p>
       ${prList(d.prs)}
-      <div class="row-actions"><button type="button" class="btn small" data-act="goto" data-v="history">View in History</button></div></div>
+      ${d.pending ? `<p class="small muted">Kept on this phone until it's back online, then it goes to History on its own.</p>`
+        : `<div class="row-actions"><button type="button" class="btn small" data-act="goto" data-v="history">View in History</button></div>`}</div>
     ${waterCard(p)}
-    ${p.snow_sport ? snowCard(p) : ""}
+    ${garminSnowCard(p)}
+    ${p.snow_sport || state.snowOpen ? snowCard(p) : ""}
     ${atPtCard(p)}
     ${bioDueCard(p)}
     ${skiDueCard(p)}
@@ -602,15 +673,16 @@ async function completeWorkout(btn, session = 1) {
   btn.disabled = true;
   btn.textContent = "Saving…";
   clearTimeout(saveTimer);
+  saveTimer = null;
+  const payload = {
+    rpe: Number(session === 2 ? state.finish.rpe2 : state.finish.rpe), pelvic_floor: Number(state.finish.pf),
+    kidney: Number(state.finish.kidney), notes: session === 2 ? state.finish.notes2 : state.finish.notes,
+    tracker: draftRows(), checks: state.checks, session, cardio_garmin_ids: session === 1 ? state.cardioGarmin : [],
+    date: state.plan.date,
+  };
   try {
-    const res = await api("api/complete", {
-      method: "POST",
-      body: JSON.stringify({
-        rpe: Number(session === 2 ? state.finish.rpe2 : state.finish.rpe), pelvic_floor: Number(state.finish.pf),
-        kidney: Number(state.finish.kidney), notes: session === 2 ? state.finish.notes2 : state.finish.notes,
-        tracker: draftRows(), checks: state.checks, session,
-      }),
-    });
+    const res = await api("api/complete", { method: "POST", body: JSON.stringify(payload) });
+    store.remove(unsentKey(state.plan.date));
     if (session === 1) {
       // keep the second session's effort and notes; the first session's are done
       const keep = { rpe2: state.finish.rpe2, notes2: state.finish.notes2 };
@@ -633,34 +705,126 @@ async function completeWorkout(btn, session = 1) {
       toast("Already logged today.");
       return refreshPlan();
     }
+    if (offline(err)) return queueComplete(payload);
     toast("Couldn't save. Check your connection and try again.");
     btn.disabled = false;
     btn.textContent = label;
   }
 }
 
+// No connection: keep the finished workout on the phone and show the day as done; sendOutbox() delivers it later
+function queueComplete(payload) {
+  const session = payload.session;
+  const names = new Set(payload.tracker.filter((r) => r.done).map((r) => r.exercise));
+  const summary = { pending: true, rpe: payload.rpe, exercises: names.size, sets: payload.tracker.filter((r) => r.done).length,
+    minutes: session === 1 ? state.plan.cardio?.minutes : state.plan.extra_cardio?.minutes };
+  store.set(OUTBOX, [...store.get(OUTBOX, []).filter((q) => !(q.date === payload.date && q.session === session)),
+    { date: payload.date, session, payload, summary }]);
+  store.remove(unsentKey(payload.date));
+  if (session === 1) {
+    const keep = { rpe2: state.finish.rpe2, notes2: state.finish.notes2 };
+    state.finish = { ...FINISH_DEFAULTS, ...keep };
+  } else {
+    state.finish.rpe2 = FINISH_DEFAULTS.rpe2;
+    state.finish.notes2 = "";
+  }
+  store.set(finishKey(), state.finish);
+  state.plan.done = { ...state.plan.done, [session]: summary };
+  stopTimer(false);
+  setSaveState("No connection: kept on this phone");
+  toast("No connection. Your workout is kept on this phone and goes to History when you're back online.");
+  render();
+  window.scrollTo({ top: 0 });
+}
+
+let sending = false;
+async function sendOutbox() {
+  const queue = store.get(OUTBOX, []);
+  if (!queue.length || sending) return;
+  sending = true;
+  let sent = 0;
+  try {
+    for (const q of queue) {
+      try {
+        const res = await api("api/complete", { method: "POST", body: JSON.stringify(q.payload) });
+        sent += 1;
+        if (res.prs?.length) showTrophies(res.prs);
+      } catch (err) {
+        if (offline(err)) break;                 // still no connection: try again later
+        if (err.status === 400) toast("A workout kept on this phone was too old to add. Add it to History by hand.");
+      }
+      // sent, already logged (409) or refused (400): either way it no longer waits here
+      store.set(OUTBOX, store.get(OUTBOX, []).filter((x) => !(x.date === q.date && x.session === q.session)));
+    }
+  } finally { sending = false; }
+  if (sent) {
+    state.history = null;
+    toast(sent === 1 ? "Your workout reached History" : `${sent} workouts reached History`);
+    setSaveState("Saved");
+    refreshPlan().catch(() => {});
+  }
+}
+
 // --- History ----------------------------------------------------------------------------------
 
-function chart(days) {
-  if (!days.length) return `<div class="empty">No sets logged for this exercise yet.</div>`;
-  const W = 340, H = 170, P = 26, n = days.length;
-  const x = (i) => (n === 1 ? W / 2 : P + (i * (W - 2 * P)) / (n - 1));
-  const maxW = Math.max(1, ...days.map((d) => d.top_weight_lbs));
-  const maxR = Math.max(1, ...days.map((d) => d.total_reps));
-  const y = (v, m) => H - P - (v / m) * (H - 2 * P);
-  const path = (k, m) => days.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d[k], m).toFixed(1)}`).join(" ");
-  const dots = (k, m, color) => days.map((d, i) =>
-    `<circle cx="${x(i).toFixed(1)}" cy="${y(d[k], m).toFixed(1)}" r="4" style="fill:${color}"><title>${esc(d.date)}: ${d[k]}</title></circle>`).join("");
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Heaviest weight and total reps by day">
-      <line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" style="stroke:var(--line)"/>
-      <path d="${path("total_reps", maxR)}" style="fill:none;stroke:var(--ok);stroke-width:2;stroke-dasharray:5 4"/>
-      <path d="${path("top_weight_lbs", maxW)}" style="fill:none;stroke:var(--accent);stroke-width:2.5"/>
-      ${dots("total_reps", maxR, "var(--ok)")}${dots("top_weight_lbs", maxW, "var(--accent)")}
-      <text x="${P}" y="14" style="fill:var(--muted);font-size:11px">top: ${maxW} lbs · ${maxR} reps</text>
-      <text x="${P}" y="${H - 6}" style="fill:var(--muted);font-size:11px">${esc(days[0].date)}</text>
-      ${n > 1 ? `<text x="${W - P}" y="${H - 6}" text-anchor="end" style="fill:var(--muted);font-size:11px">${esc(days[n - 1].date)}</text>` : ""}
-    </svg>
-    <div class="legend"><span><i style="background:var(--accent)"></i>Heaviest lbs</span><span><i style="background:var(--ok)"></i>Total reps</span></div>`;
+// --- One exercise over time: weight (or reps, or hold seconds) per day, and the days it bothered you --------------------
+
+const progValue = (p, d) => (p.kind === "weight" ? d.top_weight_lbs : d.best_reps);
+function bestSet(p, d) {
+  if (p.kind === "hold") return `${d.best_reps} s`;
+  if (p.kind === "reps") return plural(d.best_reps, "rep");
+  return `${d.top_weight_lbs} lb × ${d.reps_at_top}`;
+}
+const setsText = (p, d) => d.sets.map(([w, r]) => (p.kind === "hold" ? `${r} s` : p.kind === "reps" ? `${r}` : `${w}×${r}`)).join(", ");
+
+// A time axis, so a two-week gap looks like one. "Bothered me" days are dashed upright lines in amber.
+function progressChart(p) {
+  const days = p.days;
+  if (!days.length) return `<div class="empty">No sets of this exercise ticked done yet.</div>`;
+  const W = 340, P = 34, PR = 18, TOP = 22, H = 120;
+  const ms = (iso) => new Date(`${iso}T12:00:00`).getTime();
+  const bothered = p.bothered || [];
+  const isos = days.map((d) => d.date).concat(bothered).sort();
+  const t0 = ms(isos[0]), t1 = ms(isos[isos.length - 1]), span = t1 - t0;
+  const x = (iso) => (span ? P + ((ms(iso) - t0) / span) * (W - P - PR) : P + (W - P - PR) / 2);
+  const vals = days.map((d) => progValue(p, d));
+  const hi = Math.max(...vals), lo = Math.min(...vals), pad = Math.max(1, (hi - lo) * 0.15);
+  const min = Math.max(0, Math.floor(lo - pad)), max = Math.ceil(hi + pad);
+  const y = (v) => TOP + (1 - (v - min) / Math.max(1, max - min)) * H;
+  const line = days.map((d, i) => `${i ? "L" : "M"}${x(d.date).toFixed(1)},${y(progValue(p, d)).toFixed(1)}`).join(" ");
+  const showReps = p.kind === "weight" && days.length <= 14;
+  const dots = days.map((d) => {
+    const cx = x(d.date).toFixed(1), cy = y(progValue(p, d));
+    return `<circle class="dot-a" cx="${cx}" cy="${cy.toFixed(1)}" r="4"><title>${esc(`${formatDate(d.date)}: ${bestSet(p, d)}, ${plural(d.sets_done, "set")}`)}</title></circle>
+      ${showReps ? `<text x="${cx}" y="${(cy - 8).toFixed(1)}" text-anchor="middle" class="axis-text">×${d.reps_at_top}</text>` : ""}`;
+  }).join("");
+  const marks = bothered.map((b) => `<line class="bothered" x1="${x(b).toFixed(1)}" x2="${x(b).toFixed(1)}" y1="${TOP - 14}" y2="${TOP + H}"><title>${esc(`${formatDate(b)}: bothered you`)}</title></line>`).join("");
+  const what = p.kind === "weight" ? "Heaviest weight (lb), with the reps you did at it" : p.kind === "hold" ? "Longest hold (seconds)" : "Most reps in a set";
+  return `<div class="legend"><span><i class="sw-a"></i>${what}</span>${bothered.length ? `<span><i class="sw-bothered"></i>Bothered me</span>` : ""}</div>
+    <svg viewBox="0 0 ${W} ${TOP + H + 18}" role="img" aria-label="${esc(`${p.exercise}: ${what.toLowerCase()} by day`)}">
+      ${[min, max].map((v) => `<line class="grid" x1="${P}" x2="${W - PR}" y1="${y(v)}" y2="${y(v)}"/>
+        <text x="${P - 4}" y="${y(v) + 4}" text-anchor="end" class="axis-text">${v}</text>`).join("")}
+      ${marks}
+      ${days.length > 1 ? `<path class="ln-a" d="${line}"/>` : ""}
+      ${dots}
+      <text x="${P}" y="${TOP + H + 14}" class="axis-text">${esc(formatDate(isos[0]))}</text>
+      ${span ? `<text x="${W - PR}" y="${TOP + H + 14}" text-anchor="end" class="axis-text">${esc(formatDate(isos[isos.length - 1]))}</text>` : ""}
+    </svg>`;
+}
+
+function progressBody(p) {
+  const d = p.days;
+  if (!d.length) return progressChart(p);
+  const first = d[0], last = d[d.length - 1];
+  const best = d.reduce((a, b) => (progValue(p, b) > progValue(p, a) || (progValue(p, b) === progValue(p, a) && b.reps_at_top > a.reps_at_top) ? b : a));
+  const cell = (x) => `<td><span class="pen">${esc(bestSet(p, x))}</span><div class="small muted">${esc(formatDate(x.date))}</div></td>`;
+  return `${progressChart(p)}
+    <table><thead><tr><th>First</th><th>Latest</th><th>Best</th></tr></thead><tbody><tr>${cell(first)}${cell(last)}${cell(best)}</tr></tbody></table>
+    ${p.paused_until ? `<p class="small muted">Sitting out until ${esc(formatDate(p.paused_until))} because it bothered you.</p>` : ""}
+    <details class="small"><summary>Every session (${d.length})</summary>
+      <table><thead><tr><th>Day</th><th>${p.kind === "weight" ? "Sets (lb × reps)" : p.kind === "hold" ? "Holds" : "Reps per set"}</th></tr></thead><tbody>
+      ${[...d].reverse().map((x) => `<tr><td class="nowrap">${esc(formatDate(x.date))}${(p.bothered || []).includes(x.date) ? ` <span class="badge bad">bothered</span>` : ""}</td>
+        <td>${esc(setsText(p, x))}</td></tr>`).join("")}</tbody></table></details>`;
 }
 
 // Symptoms over time: kidney and pelvic floor (same 1-10 scale, one axis) above, that day's workout effort below.
@@ -865,9 +1029,11 @@ function bioSection() {
 }
 
 async function loadProgress(exercise) {
-  state.progress = { exercise, days: (await api(`api/progress?exercise=${encodeURIComponent(exercise)}`)).days };
+  const p = await api(`api/progress?exercise=${encodeURIComponent(exercise)}`);
+  state.prog[exercise] = p;
   const el = document.getElementById("chart");
-  if (el) el.innerHTML = chart(state.progress.days);
+  if (el && state.progress.exercise === exercise) el.innerHTML = progressBody(p);
+  if (state.tab === "today" && state.open.has(`p:${exercise}`)) rerenderCard(`s:${exercise}`);
 }
 
 function workoutCard(w) {
@@ -895,6 +1061,12 @@ function workoutCard(w) {
   </div>`;
 }
 
+function progOptions(exercises) {
+  const q = state.progQ.trim().toLowerCase();
+  const shown = exercises.filter((e) => !q || e.toLowerCase().includes(q) || e === state.progress.exercise);
+  return shown.map((e) => `<option${e === state.progress.exercise ? " selected" : ""}>${esc(e)}</option>`).join("");
+}
+
 async function renderHistoryPage() {
   if (!state.history) {
     $view.innerHTML = `<div class="spinner">Loading history…</div>`;
@@ -906,10 +1078,8 @@ async function renderHistoryPage() {
     $view.innerHTML = `${bioSection()}${bodySection()}${waterHistory()}<div class="empty">No completed workouts yet.<br>Press <strong>Complete workout</strong> at the end of Today to save one.</div>`;
     return;
   }
-  if (exercises.length && !exercises.includes(state.progress.exercise)) {
-    state.progress = { exercise: exercises[0], days: [] };
-    loadProgress(exercises[0]);
-  }
+  if (exercises.length && !exercises.includes(state.progress.exercise)) state.progress = { exercise: exercises[0] };
+  if (exercises.length && !state.prog[state.progress.exercise]) loadProgress(state.progress.exercise).catch(() => {});
   $view.innerHTML = `
     ${trendSection()}
     ${bioSection()}
@@ -917,10 +1087,11 @@ async function renderHistoryPage() {
     ${waterHistory()}
     ${exercises.length ? `<h2>Progress</h2>
     <div class="card">
-      <select data-act-change="progress" aria-label="Exercise" style="width:100%;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--card-2);padding:0 10px">
-        ${exercises.map((e) => `<option${e === state.progress.exercise ? " selected" : ""}>${esc(e)}</option>`).join("")}
-      </select>
-      <div id="chart" class="chart">${chart(state.progress.days)}</div>
+      <div class="prog-pick">
+        <input type="search" id="prog-q" placeholder="Find an exercise…" value="${esc(state.progQ)}" aria-label="Find an exercise" autocomplete="off">
+        <select id="prog-select" data-act-change="progress" aria-label="Exercise">${progOptions(exercises)}</select>
+      </div>
+      <div id="chart" class="chart">${state.prog[state.progress.exercise] ? progressBody(state.prog[state.progress.exercise]) : `<div class="spinner">Loading…</div>`}</div>
     </div>` : ""}
     <h2>Completed workouts (${workouts.length})</h2>
     ${workouts.map(workoutCard).join("")}
@@ -1685,7 +1856,8 @@ function garminCard() {
   if (g.connected) {
     return `<div class="card"><h3>Garmin connected</h3>
       <p class="sub">${g.last ? `Last sync ${esc(formatDate(g.last.date))}${g.last.resting_hr ? ` · resting heart rate ${esc(g.last.resting_hr)}` : ""}` : "No data yet. Tap Sync now."}.
-        The coach reads resting heart rate, HRV, sleep and your latest activity. It syncs every few hours.</p>
+        The coach reads resting heart rate, HRV, sleep and your latest activity. It syncs every few hours.
+        Ski days and cardio your watch records show up on Today, ready to log with a tap (it looks for new ones every hour).</p>
       <label class="toggle" style="margin-top:8px"><input type="checkbox" id="garmin-adjust" data-act-change="garmin-adjust" ${state.settings?.garmin_adjust ? "checked" : ""}>
         Make days lighter when Garmin shows poor recovery</label>
       <p class="small muted" style="margin:2px 0 0">Compared with your own last two weeks: short sleep (under 6 h), low body battery (under 30), HRV well below your usual,
@@ -1941,8 +2113,48 @@ function mindCard(e) {
         ${e.safe ? "" : `<span class="badge bad">not in auto picks</span>`}
       </div>
     </button>
-    ${open ? howTo(e) : ""}
+    ${open ? howTo(e) + photoActions(e) : ""}
   </div>`;
+}
+
+// Your own photo of a pose: offered on poses with no picture, and replaceable or removable once added
+function photoActions(e) {
+  if (!e.slug) return "";
+  if (e.own_photo) {
+    return `<div class="row-actions"><button type="button" class="btn small" data-act="pose-photo" data-v="${esc(e.slug)}">${I.camera}Replace my photo</button>
+      <button type="button" class="btn link small muted-link" data-act="pose-photo-remove" data-v="${esc(e.slug)}">Remove my photo</button></div>`;
+  }
+  if (e.images?.length) return "";
+  return `<div class="row-actions"><button type="button" class="btn small" data-act="pose-photo" data-v="${esc(e.slug)}">${I.camera}Add your photo</button></div>
+    <p class="small muted" style="margin-top:0">Take one of yourself in the pose, or pick one from your photos. It's kept on your Home Assistant.</p>`;
+}
+
+// A phone photo is several MB; shrink it to 1000 px on its long side as a JPEG before it is sent
+async function shrinkPhoto(file, size = 1000) {
+  let img;
+  try { img = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch {
+    img = await new Promise((ok, fail) => {
+      const el = new Image();
+      el.onload = () => ok(el);
+      el.onerror = fail;
+      el.src = URL.createObjectURL(file);
+    });
+  }
+  const w = img.width || img.naturalWidth, h = img.height || img.naturalHeight;
+  const k = Math.min(1, size / Math.max(w, h));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(w * k);
+  canvas.height = Math.round(h * k);
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+// After a pose photo changes: Mind & Body and today's cool-down both show it
+async function afterPosePhoto() {
+  state.mind = null;
+  if (state.plan?.cooldown?.cards?.length) await refreshPlan().catch(() => {});
+  render();
 }
 
 // Meditation: guided audio streamed from The Holistic Care, plus a script Claude writes and the phone reads aloud.
@@ -2167,7 +2379,11 @@ const actions = {
   toggle(el) {
     const key = el.dataset.key;
     state.open.has(key) ? state.open.delete(key) : state.open.add(key);
-    if (key.startsWith("w:") || key.startsWith("s:")) rerenderCard(key);
+    if (key.startsWith("p:")) {      // an exercise's progress, inside its card on Today
+      const name = key.slice(2);
+      if (state.open.has(key) && !state.prog[name]) loadProgress(name).catch(() => toast("Couldn't load its progress"));
+      rerenderCard(`s:${name}`);
+    } else if (key.startsWith("w:") || key.startsWith("s:")) rerenderCard(key);
     else if (key.startsWith("m:")) {   // redraw just this card so a playing meditation isn't interrupted
       const card = $view.querySelector(`[data-card="${CSS.escape(key)}"]`);
       const e = findMind(key.slice(2));
@@ -2820,7 +3036,73 @@ const actions = {
       toast("It's back in your plans");
     } catch { toast("Couldn't bring it back"); }
   },
-  "snow-toggle"() { state.snowOpen = !state.snowOpen; render(); },
+  "pose-photo"(el) {
+    const slug = el.dataset.v;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.addEventListener("change", async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      el.disabled = true;
+      toast("Saving your photo…");
+      try {
+        const data = await shrinkPhoto(file);
+        await api("api/mindbody/photo", { method: "POST", body: JSON.stringify({ slug, data }) });
+        toast("Photo saved");
+        await afterPosePhoto();
+      } catch (err) {
+        toast(err.status === 400 ? (() => { try { return JSON.parse(err.message).detail; } catch { return "Couldn't save that photo"; } })() : "Couldn't save that photo");
+        el.disabled = false;
+      }
+    });
+    input.click();
+  },
+  async "pose-photo-remove"(el) {
+    if (!confirm("Remove your photo of this pose?")) return;
+    try {
+      await api(`api/mindbody/photo/${encodeURIComponent(el.dataset.v)}`, { method: "DELETE" });
+      toast("Photo removed");
+      await afterPosePhoto();
+    } catch { toast("Couldn't remove it"); }
+  },
+  "snow-toggle"() { state.snowOpen = !state.snowOpen; if (!state.snowOpen) state.snow = null; render(); },
+  "garmin-snow"(el) {
+    const p = state.plan, o = p.garmin_acts.snow[Number(el.dataset.i)];
+    state.snow = { sport: o.kind === "skiing" ? "skiing" : "snowboarding", hours: Math.max(0.5, Math.round(o.minutes / 30) / 2), rpe: 6,
+      kidney: p.checkin?.kidney ?? p.last_scores?.kidney ?? 1, pelvic_floor: p.checkin?.pelvic_floor ?? p.last_scores?.pelvic_floor ?? 1,
+      notes: "", date: o.date, garmin_ids: o.ids };
+    state.snowOpen = true;
+    render();
+  },
+  async "garmin-ignore"(el) {
+    try {
+      await api("api/garmin/activities/ignore", { method: "POST", body: JSON.stringify({ ids: el.dataset.v.split(",") }) });
+      if (saveTimer) await saveDraft();
+      await refreshPlan();
+    } catch { toast("Couldn't save that"); }
+  },
+  async "garmin-check"(el) {
+    el.disabled = true;
+    el.textContent = "Checking…";
+    try {
+      const r = await api("api/garmin/activities/check", { method: "POST" });
+      toast(r.message);
+      if (saveTimer) await saveDraft();
+      await refreshPlan();
+    } catch {
+      toast("Couldn't reach Garmin. Try again in a few minutes.");
+      el.disabled = false;
+      el.textContent = "Check Garmin";
+    }
+  },
+  "garmin-cardio"(el) {
+    const id = el.dataset.v;
+    state.cardioGarmin = state.cardioGarmin.includes(id) ? state.cardioGarmin.filter((x) => x !== id) : [...state.cardioGarmin, id];
+    store.set(`garmin-cardio-${state.plan.date}`, state.cardioGarmin);
+    const box = $view.querySelector(".garmin-acts");
+    if (box) box.outerHTML = garminCardio(state.plan); else render();
+  },
   "snow-sport"(el) { state.snow.sport = el.dataset.v; render(); },
   async "snow-save"(el) {
     const s = state.snow;
@@ -2834,7 +3116,13 @@ const actions = {
       if (saveTimer) await saveDraft();
       await refreshPlan();
       toast("Snow day saved to History");
-    } catch { toast("Couldn't save the snow day"); el.disabled = false; }
+    } catch (err) {
+      let why = "Couldn't save the snow day";
+      try { if (err.status === 400 || err.status === 409) why = JSON.parse(err.message).detail; } catch { /* keep the plain message */ }
+      toast(why);
+      el.disabled = false;
+      if (err.status === 409) { state.snowOpen = false; state.snow = null; refreshPlan().catch(() => {}); }
+    }
   },
   "checkin-edit"() { state.ckEdit = true; state.ck = null; render(); },
   "checkin-cancel"() { state.ckEdit = false; state.ck = null; render(); },
@@ -3001,6 +3289,18 @@ $view.addEventListener("input", (e) => {
     state.mindQ = t.value.trim().toLowerCase();
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { render(); const q = document.getElementById("mind-q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 250);
+  } else if (t.id === "prog-q") {
+    state.progQ = t.value;
+    const sel = document.getElementById("prog-select");
+    const q = t.value.trim().toLowerCase();
+    const first = (state.history?.exercises || []).find((e) => e.toLowerCase().includes(q));
+    if (q && first && !state.progress.exercise.toLowerCase().includes(q)) {
+      state.progress.exercise = first;
+      const el = document.getElementById("chart");
+      if (state.prog[first] && el) el.innerHTML = progressBody(state.prog[first]);
+      else loadProgress(first).catch(() => {});
+    }
+    if (sel) sel.innerHTML = progOptions(state.history?.exercises || []);
   } else if (t.id === "lib-q") {
     state.lib.q = t.value;
     clearTimeout(searchTimer);
@@ -3010,7 +3310,12 @@ $view.addEventListener("input", (e) => {
 
 $view.addEventListener("change", (e) => {
   const t = e.target;
-  if (t.dataset.actChange === "progress") loadProgress(t.value);
+  if (t.dataset.actChange === "progress") {
+    state.progress.exercise = t.value;
+    const el = document.getElementById("chart");
+    if (state.prog[t.value] && el) el.innerHTML = progressBody(state.prog[t.value]);
+    else { if (el) el.innerHTML = `<div class="spinner">Loading…</div>`; loadProgress(t.value).catch(() => toast("Couldn't load that exercise")); }
+  }
   else if (t.dataset.actChange === "garmin-adjust") {
     api("api/settings", { method: "PUT", body: JSON.stringify({ garmin_adjust: t.checked }) })
       .then(async (s) => {
@@ -3034,6 +3339,12 @@ $view.addEventListener("change", (e) => {
   else if (t.id === "lib-filtered") { state.lib.filtered = t.checked; searchLibrary(); }
 });
 
+window.addEventListener("online", () => {
+  sendOutbox();
+  if (saveTimer || (state.plan && store.get(unsentKey(state.plan.date), null))) saveDraft();
+});
+window.addEventListener("offline", () => setSaveState("No connection: changes stay on this phone"));
+
 // Save right away when the phone locks or the app goes to the background
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden" && saveTimer) saveDraft();
@@ -3041,6 +3352,7 @@ document.addEventListener("visibilitychange", () => {
     loadCoach().then((changed) => { if (changed && state.tab === "coach") renderCoach(true); });
     pollCoach();
   }
+  if (document.visibilityState === "visible") sendOutbox();
   if (document.visibilityState === "visible" && state.plan) {
     api("api/plan").then((p) => { if (p.date !== state.plan.date) { loadPlan(p); render(); } }).catch(() => {});
   }
@@ -3056,7 +3368,7 @@ function render() {
   });
 }
 
-// Swipe order. The bottom bar shows five; History, Library and Settings live under More.
+// Swipe order. The bottom bar shows five; History, Library and Settings live under Records.
 const TAB_ORDER = ["today", "week", "coach", "mind", "history", "report", "library", "settings"];
 const MORE_TABS = ["history", "report", "library", "settings"];
 const VALID_TABS = [...TAB_ORDER, "more"];
@@ -3134,7 +3446,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   if (b) history.replaceState(null, "", `#${b.dataset.tab}`), showTab(b.dataset.tab);
 });
 
-// The letterhead: back to More from its pages, and tapping a score reopens this morning's check-in
+// The letterhead: back to Records from its pages, and tapping a score reopens this morning's check-in
 $back.addEventListener("click", () => { history.replaceState(null, "", "#more"); showTab("more"); });
 document.querySelector(".top").addEventListener("click", (e) => {
   const el = e.target.closest("[data-act]");
@@ -3151,6 +3463,6 @@ if ("serviceWorker" in navigator && window.top === window && !location.pathname.
 
 api("api/status").then((s) => { state.status = s; if (state.tab === "coach" || state.tab === "library") render(); }).catch(() => {});
 showTab(location.hash.slice(1) || "today");
-refreshPlan().catch(() => {
+refreshPlan().then(sendOutbox).catch(() => {
   $view.innerHTML = `<div class="empty">Couldn't load today's plan. Check that the add-on is running, then reload.</div>`;
 });

@@ -1,5 +1,6 @@
 """Garmin Connect: sign in from the app (once), then sync resting heart rate, HRV, sleep and your latest activity
-into garmin_metrics a few times a day so the coach can use them.
+into garmin_metrics a few times a day so the coach can use them. Every hour it also copies the last ten days of
+activities into garmin_activities, so Today can offer your ski days and cardio instead of you typing them in.
 
 Your Garmin password is only used for the sign-in itself and is never saved. What is saved is the login token
 (/data/garmin_tokens.json), which Garmin lets this add-on refresh on its own."""
@@ -14,6 +15,10 @@ from db import DB_PATH
 
 TOKEN_PATH = os.getenv("GARMIN_TOKEN_PATH", "/data/garmin_tokens.json")
 SYNC_EVERY_HOURS = 6
+ACTIVITY_EVERY_MINUTES = 60
+ACTIVITY_DAYS = 10                # how far back each activity check looks
+CHECK_AGAIN_SECS = 120            # "Check Garmin" more often than this just reuses the last check
+_last_check = {"at": 0.0}
 
 _pending = {"garmin": None}   # a sign-in waiting for its MFA code
 _lock = threading.Lock()
@@ -127,8 +132,11 @@ def sync(today=None):
         battery = stats.get("bodyBatteryMostRecentValue")
         activities = _try(g.get_activities, 0, 1) or []
         latest = activities[0] if activities else {}
+        recent = _fetch_activities(g, today)
     except Exception as e:
         return False, _friendly(e)
+    _last_check["at"] = time.time()
+    store_activities(recent)
 
     conn = sqlite3.connect(DB_PATH)
     _ensure_table(conn)
@@ -141,6 +149,144 @@ def sync(today=None):
     conn.commit()
     conn.close()
     return True, "Garmin data synced."
+
+
+# --- Activities: ski days and cardio your watch recorded ------------------------------------------------------------
+
+KIND_LABELS = {"skiing": "Skiing", "snowboarding": "Snowboarding", "snow": "Skiing or snowboarding",
+               "walk": "Walk", "run": "Run", "bike": "Ride", "row": "Row", "swim": "Swim"}
+SNOW_KINDS = {"skiing", "snowboarding", "snow"}
+CARDIO_KINDS = {"walk", "run", "bike", "row", "swim"}   # the app's own cardio types
+
+
+def activity_kind(type_key):
+    """Garmin's activity type -> a snow sport or one of the app's cardio types; None for anything else
+    (strength, yoga and the like are logged in the app itself)."""
+    t = (type_key or "").lower()
+    if "resort_skiing_snowboarding" in t:
+        return "snow"                       # Garmin's combined type: you say which when you log it
+    if "snowboard" in t:
+        return "snowboarding"
+    if "ski" in t:
+        return "skiing"
+    if "run" in t:
+        return "run"
+    if "walk" in t or "hik" in t or "treadmill" in t:
+        return "walk"
+    if "cycl" in t or "bik" in t or "ride" in t or "spin" in t:
+        return "bike"
+    if "row" in t:
+        return "row"
+    if "swim" in t:
+        return "swim"
+    return None
+
+
+def _ensure_activity_table(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS garmin_activities (
+        activity_id TEXT PRIMARY KEY, date TEXT, start TEXT, type_key TEXT, kind TEXT, name TEXT, minutes INTEGER,
+        distance_km REAL, avg_hr INTEGER, calories INTEGER, status TEXT DEFAULT 'new', log_id INTEGER)""")
+
+
+def _fetch_activities(g, today_iso):
+    start = (datetime.date.fromisoformat(today_iso) - datetime.timedelta(days=ACTIVITY_DAYS)).isoformat()
+    acts = _try(g.get_activities_by_date, start, today_iso)
+    if acts is None:   # older library: the latest few, filtered to the same days
+        acts = [a for a in (_try(g.get_activities, 0, 30) or []) if str(a.get("startTimeLocal") or "")[:10] >= start]
+    return acts or []
+
+
+def store_activities(acts):
+    """Adds new activities and refreshes known ones, keeping whether each was already logged or set aside."""
+    rows = []
+    for a in acts or []:
+        start = str(a.get("startTimeLocal") or "")
+        type_key = (a.get("activityType") or {}).get("typeKey") or ""
+        kind = activity_kind(type_key)
+        minutes = int(round((a.get("duration") or 0) / 60))
+        if not a.get("activityId") or not kind or minutes < 1 or len(start) < 10:
+            continue
+        rows.append((str(a["activityId"]), start[:10], start, type_key, kind, (a.get("activityName") or "").strip()[:120],
+                     minutes, round((a.get("distance") or 0) / 1000, 2) or None, int(a.get("averageHR") or 0) or None,
+                     int(a.get("calories") or 0) or None))
+    if not rows:
+        return 0
+    conn = sqlite3.connect(DB_PATH)
+    _ensure_activity_table(conn)
+    conn.executemany(
+        """INSERT INTO garmin_activities (activity_id, date, start, type_key, kind, name, minutes, distance_km, avg_hr, calories)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(activity_id) DO UPDATE SET date = excluded.date, start = excluded.start, type_key = excluded.type_key,
+             kind = excluded.kind, name = excluded.name, minutes = excluded.minutes, distance_km = excluded.distance_km,
+             avg_hr = excluded.avg_hr, calories = excluded.calories""", rows)
+    conn.commit()
+    conn.close()
+    return len(rows)
+
+
+def sync_activities(today=None, force=False):
+    """Just the recent activities (one quick call). Returns (ok, message)."""
+    if not connected():
+        return False, "Garmin isn't connected."
+    if not force and time.time() - _last_check["at"] < CHECK_AGAIN_SECS:
+        return True, "Checked a moment ago."
+    today = (today or datetime.date.today()).isoformat()
+    try:
+        g = _garmin()
+        g.login(TOKEN_PATH)
+        acts = _fetch_activities(g, today)
+    except Exception as e:
+        return False, _friendly(e)
+    _last_check["at"] = time.time()
+    n = store_activities(acts)
+    return True, f"Checked Garmin: {n} recent activit{'y' if n == 1 else 'ies'}."
+
+
+def activities(since_iso, statuses=("new",)):
+    """Stored activities from a date on, oldest first."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        _ensure_activity_table(conn)
+        marks = ",".join("?" * len(statuses))
+        rows = [dict(r) for r in conn.execute(
+            f"SELECT * FROM garmin_activities WHERE date >= ? AND status IN ({marks}) ORDER BY start",
+            (since_iso, *statuses))]
+        conn.close()
+    except sqlite3.Error:
+        return []
+    for r in rows:
+        r["label"] = KIND_LABELS.get(r["kind"], r["kind"])
+    return rows
+
+
+def get_activity(activity_id):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        _ensure_activity_table(conn)
+        row = conn.execute("SELECT * FROM garmin_activities WHERE activity_id = ?", (str(activity_id),)).fetchone()
+        conn.close()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    r = dict(row)
+    r["label"] = KIND_LABELS.get(r["kind"], r["kind"])
+    return r
+
+
+def mark(activity_ids, status, log_id=None):
+    """status: logged (it's in the app now) or ignored (you said it wasn't one)."""
+    ids = [str(i) for i in activity_ids or []]
+    if not ids:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    _ensure_activity_table(conn)
+    conn.executemany("UPDATE garmin_activities SET status = ?, log_id = ? WHERE activity_id = ?",
+                     [(status, log_id, i) for i in ids])
+    conn.commit()
+    conn.close()
 
 
 def recovery_signal(today_iso):
@@ -182,14 +328,20 @@ def recovery_signal(today_iso):
 
 
 def start_background(local_today):
-    """Sync shortly after start, then every few hours while connected."""
+    """Sync shortly after start, then everything every few hours and the recent activities every hour."""
     def loop():
         time.sleep(90)
+        last_full = 0.0
         while True:
             if connected():
                 try:
-                    sync(datetime.date.fromisoformat(local_today()))
+                    today = datetime.date.fromisoformat(local_today())
+                    if time.time() - last_full >= SYNC_EVERY_HOURS * 3600:
+                        sync(today)
+                        last_full = time.time()
+                    else:
+                        sync_activities(today, force=True)
                 except Exception:
                     pass
-            time.sleep(SYNC_EVERY_HOURS * 3600)
+            time.sleep(ACTIVITY_EVERY_MINUTES * 60)
     threading.Thread(target=loop, daemon=True).start()

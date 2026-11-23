@@ -392,7 +392,7 @@ button.block-week { cursor: pointer; }
 .block-day.cardio { background: var(--pen-soft); border-color: transparent; color: var(--pen); }
 .block-day.rest, .block-day.recovery { color: var(--ink-2); }
 
-/* More: the binder's contents, ruled on the paper, each page with its sections listed under it */
+/* Records: the binder's contents, ruled on the paper, each page with its sections listed under it */
 .more-list { display: grid; border-top: 1.5px solid var(--rule); }
 .more-item { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; width: 100%; text-align: left;
   cursor: pointer; padding: 16px 0 14px; background: none; border: none; border-bottom: 1.5px solid var(--rule); color: inherit; }
@@ -450,6 +450,21 @@ button.block-week { cursor: pointer; }
 .legend .sw-pf, .legend .sw-b { background: var(--s-pf); }
 .legend .sw-effort { background: var(--ink-2); height: 8px; width: 6px; border-radius: 2px 2px 0 0; }
 .legend .sw-ref { background: none; border-top: 2px dashed var(--ink-2); height: 0; }
+.chart .bothered { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 3 3; }
+.legend .sw-bothered { background: none; border-left: 2px dashed var(--warn); width: 0; height: 12px; vertical-align: -2px; }
+
+/* One exercise's progress: find it, pick it, see it (History, and inside its card on Today) */
+.prog-pick { display: grid; gap: 8px; margin-bottom: 10px; }
+.prog-pick input, .prog-pick select { width: 100%; height: var(--tap); border-radius: var(--r-box); border: 1.5px solid var(--rule);
+  background: var(--sheet); color: var(--ink); padding: 0 10px; font: inherit; }
+.prog-inline { margin: 4px 0 8px; }
+.prog-inline table, .chart table { margin-top: 8px; }
+.nowrap { white-space: nowrap; }
+
+/* Cardio your watch recorded, under today's planned cardio */
+.garmin-acts { margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--line); display: grid; gap: 2px; }
+.garmin-acts .check { gap: 10px; padding: 4px 0; }
+.garmin-acts .check .sub { display: block; font-size: 0.84rem; line-height: 1.3; }
 
 /* Personal records: the line gets highlighted */
 .prs { list-style: none; margin: 8px 0 0; padding: 0; font-size: 0.92rem; display: grid; gap: 6px; }

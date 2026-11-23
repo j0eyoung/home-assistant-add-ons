@@ -193,7 +193,7 @@ A restrained sheet palette: warm off-white paper, cool ink, teal for the shell, 
 ### Hierarchy
 - **Display** (800, 1.65rem, 1.1, -0.015em): the letterhead title; on Today it is the date.
 - **Headline** (800, 1.06rem, 1.25): section headings (h2); numbered sections pair it with a 1.25rem 800 teal section number.
-- **Title** (800, 1.05 to 1.08rem, 1.25): exercise names and card titles. More-page names are 1.22rem 800.
+- **Title** (800, 1.05 to 1.08rem, 1.25): exercise names and card titles. Records-page names are 1.22rem 800.
 - **Body** (400, 16px, 1.45): reading text; secondary lines are 0.9rem in Soft Ink; small notes 0.84 to 0.86rem.
 - **Label** (600 to 700, 0.74 to 0.9rem): buttons (600, 800 for primary), dose boxes (700, 0.86rem), badges (0.74rem 700), tab labels (0.74rem 600, 800 active).
 - **Figure** (800, 1.7 to 2.2rem, 1): cardio minutes, timer time (2.1rem), stats, score numbers (1.35rem).
@@ -252,8 +252,8 @@ An exercise sitting out because it bothered Joe prints as a whole greyed row: So
 ### Chips and Section Jump Links
 Chips are 44px outlined boxes; the selected one fills teal. Long pages (Settings, History, PT report) open with a row of section jump links: 40px outlined ink boxes, 0.88rem 600, linking to each section heading.
 
-### Binder-Style More
-The More tab is a table of contents ruled on the paper: 1.5px rules above and between entries, a 26px drawn icon in teal, the page name at 1.22rem 800 (underlined on hover), a one-line description, and the page's sections listed as small outlined chips that jump straight to them. Sub-pages show a "More" back link on the letterhead.
+### Binder-Style Records
+The Records tab is a table of contents ruled on the paper: 1.5px rules above and between entries, a 26px drawn icon in teal, the page name at 1.22rem 800 (underlined on hover), a one-line description, and the page's sections listed as small outlined chips that jump straight to them. Sub-pages show a "More" back link on the letterhead.
 
 ### Inputs
 1.5px ink outline, 3px corners, Sheet fill, 44 to 48px tall; text fields are 12px padded. Focus is a 2px ballpoint-blue outline offset 2px. The caret is blue. Settings checkboxes are the same drawn boxes as Today's ticks (26px, blue check).

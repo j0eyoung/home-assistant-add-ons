@@ -4,6 +4,8 @@
 The UI is served through Home Assistant ingress under a per-install path prefix, so the
 page only ever uses relative URLs (e.g. fetch("api/plan")).
 """
+import base64
+import binascii
 import datetime
 import os
 import random
@@ -37,10 +39,10 @@ import wellness
 from db import DB_PATH, get_last_log
 import engine as engine_mod
 from engine import WorkoutEngine
-from exercises import CARDIO_IMAGES, GUIDES
+from exercises import GUIDES
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = "0.14.1"
+VERSION = "0.15.0"
 
 app = FastAPI(title="AI Workout Tracker")
 app.mount("/static", StaticFiles(directory=os.path.join(HERE, "static")), name="static")
@@ -377,6 +379,7 @@ def plan():
         "coach_changes": len(planedit.overrides_for(today)),
         "checkin": history.get_checkin(DB_PATH, today),
         "snow_today": history.snow_days(DB_PATH, 5).get(today),
+        "garmin_acts": garmin_offers(today),
         "snow_sport": bool({"skiing", "snowboarding"} & set(selected_sports())),
         "last_scores": {"kidney": last.get("kidney_flank_pain"), "pelvic_floor": last.get("pelvic_floor_tightness")},
         "cooldown": {"note": mindbody.cooldown_note(kidney, pf, day_focus, cool_cards), "cards": cool_cards,
@@ -385,7 +388,7 @@ def plan():
         "warmup": warmup_cards,
         "strength": [with_progress(how_to(n, why.get(n)), last, phase) for n in w["strength"]],
         "cardio": {"text": w["cardio"], "minutes": w.get("cardio_minutes"), "note": w.get("cardio_note"),
-                   "type": w.get("cardio_type"), "images": CARDIO_IMAGES.get(w.get("cardio_type"), [])},
+                   "type": w.get("cardio_type")},
         "extra_cardio": w.get("extra_cardio"),
         "session2": planedit.session2_names(today),
         "done": _done_today(today),
@@ -415,6 +418,8 @@ class Completion(BaseModel):
     tracker: list[dict] = []
     checks: dict[str, bool] = {}   # daily non-negotiables ticked today
     session: int = 1          # 2 = the second session of the day, logged on its own
+    cardio_garmin_ids: list[str] = []   # cardio your watch recorded today, ticked to log instead of the planned minutes
+    date: str | None = None   # set when the phone saved it offline and sends it later
 
 
 def _records(log_id, names):
@@ -426,10 +431,40 @@ def _records(log_id, names):
     return prs
 
 
+OFFLINE_DAYS = 3     # a workout saved on the phone offline is still accepted this many days later
+
+
+def _workout_for(day):
+    if day == history.local_today():
+        return todays_workout()
+    return planedit.apply(_generate(day), planedit.overrides_for(day))
+
+
+def _garmin_cardio(w, ids, day):
+    """Today's cardio as your watch recorded it: the minutes and type of the ticked activities."""
+    acts = [a for a in (garmin_sync.get_activity(i) for i in ids)
+            if a and a["date"] == day and a["kind"] in garmin_sync.CARDIO_KINDS]
+    if not acts:
+        return w, []
+    minutes = sum(a["minutes"] for a in acts)
+    main = max(acts, key=lambda a: a["minutes"])
+    hr = [a["avg_hr"] for a in acts if a.get("avg_hr")]
+    what = ", ".join(f"{a['minutes']} min {a['label'].lower()}" for a in acts)
+    w = dict(w, cardio_minutes=minutes, cardio_type=main["kind"], cardio_planned_minutes=w.get("cardio_minutes"),
+             cardio=f"{what} (from Garmin{f', average heart rate {round(sum(hr) / len(hr))}' if hr else ''})",
+             cardio_source="garmin", garmin_ids=[a["activity_id"] for a in acts])
+    return w, [a["activity_id"] for a in acts]
+
+
 @app.post("/api/complete")
 def complete(c: Completion):
     today = history.local_today()
-    w = todays_workout()
+    if c.date and c.date != today:
+        oldest = (datetime.date.fromisoformat(today) - datetime.timedelta(days=OFFLINE_DAYS)).isoformat()
+        if not (oldest <= c.date < today):
+            raise HTTPException(400, "That workout is too old to add from the phone. Add it to History by hand.")
+        today = c.date      # the day it was done
+    w = _workout_for(today)
     names2 = set(planedit.session2_names(today))
     if str(c.session) in _done_today(today):
         raise HTTPException(409, "Already logged today.")
@@ -440,7 +475,7 @@ def complete(c: Completion):
                          if w.get("extra_cardio") else "")}
         rows = [r for r in c.tracker if _page_row(r).get("exercise") in names2]
         log_id = history.complete_workout(DB_PATH, c.rpe, c.pelvic_floor, c.kidney, c.notes, w2,
-                                          [_history_row(_page_row(r)) for r in rows])
+                                          [_history_row(_page_row(r)) for r in rows], date=today)
         prs = _records(log_id, {_page_row(r).get("exercise") for r in rows})
         _ha_refresh_soon()
         return {"ok": True, "log_id": log_id, "prs": prs}
@@ -450,11 +485,13 @@ def complete(c: Completion):
     first["accessories"] = [a for a in first.get("accessories", []) if a["name"] not in names2]
     checks = c.checks or (history.load_draft(DB_PATH, today) or {}).get("checks") or {}
     first["warmup_done"] = [n for n in w.get("warmup", []) if checks.get(n)]
+    first, garmin_ids = _garmin_cardio(first, c.cardio_garmin_ids, today)
     first["day_type"] = insights.day_type(first, today, selected_sports())
     mine = [r for r in c.tracker if _page_row(r).get("exercise") not in names2]
     kept = [r for r in c.tracker if _page_row(r).get("exercise") in names2]
     log_id = history.complete_workout(DB_PATH, c.rpe, c.pelvic_floor, c.kidney, c.notes, first,
-                                      [_history_row(_page_row(r)) for r in mine])
+                                      [_history_row(_page_row(r)) for r in mine], date=today)
+    garmin_sync.mark(garmin_ids, "logged", log_id)
     if kept:
         history.save_draft(DB_PATH, kept, {}, today)
     prs = _records(log_id, {_page_row(r).get("exercise") for r in mine})
@@ -467,9 +504,30 @@ def workout_history(limit: int = 60):
     return {"workouts": history.get_history(DB_PATH, limit), "exercises": history.logged_exercises(DB_PATH)}
 
 
+def bothered_dates(name):
+    """Every day you tapped "Bothered me" on an exercise (the log, plus the start of its last pause)."""
+    s = library.load_settings()
+    dates = {b["date"] for b in (s.get("bothered_log") or []) if b.get("name") == name}
+    p = (s.get("paused") or {}).get(name)
+    if p and p.get("since"):
+        dates.add(p["since"])
+    return sorted(dates)
+
+
 @app.get("/api/progress")
 def progress(exercise: str):
-    return {"exercise": exercise, "days": history.exercise_progress(DB_PATH, exercise)}
+    """One exercise over time: weight (or reps, or hold seconds) per day, with the days it bothered you."""
+    days = history.exercise_progress(DB_PATH, exercise)
+    info = how_to(exercise)
+    if info.get("hold"):
+        kind = "hold"
+    elif any(d["top_weight_lbs"] for d in days):
+        kind = "weight"
+    else:
+        kind = "reps"
+    p = paused().get(exercise)
+    return {"exercise": exercise, "kind": kind, "days": days, "bothered": bothered_dates(exercise),
+            "paused_until": p["until"] if p else None}
 
 
 @app.get("/api/trends")
@@ -1045,8 +1103,12 @@ def pause_exercise(p: PauseRequest):
     today = datetime.date.fromisoformat(history.local_today())
     days = max(1, min(p.days, 60))
     all_p = library.load_settings().get("paused") or {}
-    all_p[p.name.strip()[:120]] = {"since": today.isoformat(), "until": (today + datetime.timedelta(days=days - 1)).isoformat()}
-    library.save_settings({"paused": all_p})
+    name = p.name.strip()[:120]
+    all_p[name] = {"since": today.isoformat(), "until": (today + datetime.timedelta(days=days - 1)).isoformat()}
+    log = [b for b in (library.load_settings().get("bothered_log") or [])
+           if not (b.get("name") == name and b.get("date") == today.isoformat())]
+    log.append({"name": name, "date": today.isoformat()})
+    library.save_settings({"paused": all_p, "bothered_log": log[-500:]})
     return {"ok": True, "until": all_p[p.name.strip()[:120]]["until"]}
 
 
@@ -1130,6 +1192,11 @@ class SnowDay(BaseModel):
     kidney: int = 1
     pelvic_floor: int = 1
     notes: str = ""
+    date: str | None = None          # a day in the last two weeks; today when not given
+    garmin_ids: list[str] = []       # the watch activities this snow day came from
+
+
+SNOW_BACK_DAYS = 14
 
 
 @app.post("/api/snowday")
@@ -1138,15 +1205,71 @@ def log_snow_day(s: SnowDay):
     if s.sport not in ("skiing", "snowboarding"):
         raise HTTPException(400, "Choose skiing or snowboarding.")
     today = history.local_today()
+    day = s.date or today
+    oldest = (datetime.date.fromisoformat(today) - datetime.timedelta(days=SNOW_BACK_DAYS)).isoformat()
+    if not (oldest <= day <= today):
+        raise HTTPException(400, "Pick a day in the last two weeks.")
+    if day in history.snow_days(DB_PATH, 60):
+        garmin_sync.mark(s.garmin_ids, "logged")
+        raise HTTPException(409, "That day already has a snow day logged.")
     hours = max(0.5, min(float(s.hours), 12))
     workout = {"type": "snow", "sport": s.sport, "hours": hours, "strength": [],
-               "cardio": f"{hours:g} h {s.sport}", "cardio_type": "snow", "cardio_minutes": int(hours * 60)}
-    draft = history.load_draft(DB_PATH, today)       # keep anything already typed in today's gym workout
-    log_id = history.complete_workout(DB_PATH, s.rpe, s.pelvic_floor, s.kidney, s.notes, workout, [])
+               "cardio": f"{hours:g} h {s.sport}" + (" (from Garmin)" if s.garmin_ids else ""),
+               "cardio_type": "snow", "cardio_minutes": int(hours * 60)}
+    if s.garmin_ids:
+        workout["garmin_ids"] = s.garmin_ids
+    draft = history.load_draft(DB_PATH, day)       # keep anything already typed in that day's gym workout
+    log_id = history.complete_workout(DB_PATH, s.rpe, s.pelvic_floor, s.kidney, s.notes, workout, [], date=day)
     if draft:
-        history.save_draft(DB_PATH, draft.get("tracker", []), draft.get("checks", {}), today)
+        history.save_draft(DB_PATH, draft.get("tracker", []), draft.get("checks", {}), day)
+    garmin_sync.mark(s.garmin_ids, "logged", log_id)
     _ha_refresh_soon()
     return {"ok": True, "log_id": log_id}
+
+
+# --- Garmin activities on Today: ski days to log, and today's cardio to log instead of the planned minutes ---------
+
+def garmin_offers(today):
+    """None when Garmin isn't connected. Snow: one offer per day in the last week with no snow day logged yet.
+    Cardio: today's walks, runs, rides, rows and swims that aren't logged yet."""
+    if not garmin_sync.connected():
+        return None
+    since = (datetime.date.fromisoformat(today) - datetime.timedelta(days=7)).isoformat()
+    logged = set(history.snow_days(DB_PATH, 60))
+    acts = garmin_sync.activities(since)
+    days = {}
+    for a in acts:
+        if a["kind"] in garmin_sync.SNOW_KINDS and a["date"] not in logged:
+            d = days.setdefault(a["date"], {"date": a["date"], "kind": a["kind"], "minutes": 0, "names": [], "ids": []})
+            d["minutes"] += a["minutes"]
+            d["ids"].append(a["activity_id"])
+            if a["name"] and a["name"] not in d["names"]:
+                d["names"].append(a["name"])
+            if d["kind"] == "snow":
+                d["kind"] = a["kind"]
+    snow = [dict(d, label=garmin_sync.KIND_LABELS[d["kind"]]) for _, d in sorted(days.items())]
+    cardio = [{k: a[k] for k in ("activity_id", "kind", "label", "name", "minutes", "avg_hr", "distance_km", "start")}
+              for a in acts if a["kind"] in garmin_sync.CARDIO_KINDS and a["date"] == today]
+    return {"snow": snow, "cardio": cardio}
+
+
+class ActivityIds(BaseModel):
+    ids: list[str]
+
+
+@app.post("/api/garmin/activities/check")
+def garmin_check_activities():
+    ok, msg = garmin_sync.sync_activities(datetime.date.fromisoformat(history.local_today()))
+    if not ok:
+        raise HTTPException(502, msg)
+    return {"ok": True, "message": msg, "offers": garmin_offers(history.local_today())}
+
+
+@app.post("/api/garmin/activities/ignore")
+def garmin_ignore_activities(a: ActivityIds):
+    """'Not a snow day': it stops being offered."""
+    garmin_sync.mark(a.ids, "ignored")
+    return {"ok": True}
 
 
 @app.on_event("startup")
@@ -1461,6 +1584,40 @@ def yoga_picture(name: str):
 @app.get("/api/mindbody")
 def mind_body():
     return mindbody.cards()
+
+
+class PosePhoto(BaseModel):
+    slug: str
+    data: str      # the JPEG, base64 (the phone shrinks it first, so it is a few hundred KB)
+
+
+@app.get("/api/mindbody/photo/{slug}")
+def own_pose_photo(slug: str):
+    path = mindbody.own_photo_path(slug)
+    if not path or not os.path.exists(path):
+        raise HTTPException(404, "No photo for that pose")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=2592000"})
+
+
+@app.post("/api/mindbody/photo")
+def save_pose_photo(p: PosePhoto):
+    """Your own photo of a pose, shown in Mind & Body and in cool-downs instead of any other picture of it."""
+    try:
+        data = base64.b64decode(p.data.split(",", 1)[-1], validate=True)
+    except (ValueError, binascii.Error):
+        raise HTTPException(400, "That photo couldn't be read.")
+    err = mindbody.save_own_photo(p.slug, data)
+    if err:
+        raise HTTPException(400, err)
+    return {"ok": True}
+
+
+@app.delete("/api/mindbody/photo/{slug}")
+def delete_pose_photo(slug: str):
+    if not mindbody.own_photo_path(slug):
+        raise HTTPException(404, "No such pose")
+    mindbody.delete_own_photo(slug)
+    return {"ok": True}
 
 
 @app.get("/api/meditation")

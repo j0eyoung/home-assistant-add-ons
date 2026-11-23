@@ -381,6 +381,53 @@ def media_base():
     return (library.load_settings().get("media_base_url") or "").rstrip("/")
 
 
+# Your own photo of a pose, added from the phone (Mind & Body > the pose > Add your photo). Kept in the add-on's
+# data folder, so Home Assistant backups include it. It is shown instead of any other picture of that pose.
+OWN_PHOTO_DIR = os.getenv("POSE_PHOTO_DIR", "/data/pose-photos")
+OWN_PHOTO_MAX_BYTES = 3 * 1024 * 1024
+
+
+def pose_slugs():
+    return {p["slug"] for p in YOGA}
+
+
+def own_photo_path(slug):
+    """The file for your photo of a pose (whether or not it exists yet); None for a name that isn't a pose."""
+    if slug not in pose_slugs():
+        return None
+    return os.path.join(OWN_PHOTO_DIR, f"{slug}.jpg")
+
+
+def save_own_photo(slug, data):
+    """Stores a JPEG for a pose. Returns an error message, or None when it worked."""
+    path = own_photo_path(slug)
+    if not path:
+        return "That pose isn't in the list."
+    if not data or len(data) > OWN_PHOTO_MAX_BYTES:
+        return "That photo is too large. Try a smaller one."
+    if not data.startswith(b"\xff\xd8"):
+        return "That doesn't look like a photo."
+    os.makedirs(OWN_PHOTO_DIR, exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
+    return None
+
+
+def delete_own_photo(slug):
+    path = own_photo_path(slug)
+    if path and os.path.exists(path):
+        os.remove(path)
+
+
+def _own_photo_url(slug):
+    path = own_photo_path(slug)
+    if not path or not os.path.exists(path):
+        return None
+    return f"api/mindbody/photo/{slug}?v={int(os.path.getmtime(path))}"
+
+
 def _yoga_card(p):
     base = media_base()
     n = PHOTOS.get(p["slug"], 0)
@@ -392,6 +439,9 @@ def _yoga_card(p):
         if os.path.exists(path):
             images = [f"static/yoga-extra/{p['slug']}.jpg"]
             credit = f"Photo: {extra[0]}, {extra[1]}, via Wikimedia Commons (resized)"
+    own = _own_photo_url(p["slug"])
+    if own:
+        images, credit = [own], "Your photo"
     unsafe = p["unsafe"]
     warning = _WHY[unsafe] if unsafe else p["caution"]
     return {
@@ -401,6 +451,7 @@ def _yoga_card(p):
         "muscles": p["muscles"], "equipment": "bodyweight", "level": p["level"],
         "sources": ["Yoga", PHOTO_SOURCE] if images and not credit else ["Yoga"], "credit": credit,
         "category": p["cat"], "cooldown": bool(p["cool"]) and not unsafe,
+        "slug": p["slug"], "own_photo": bool(own),
     }
 
 

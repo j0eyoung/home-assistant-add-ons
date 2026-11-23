@@ -234,13 +234,23 @@ def get_history(db_path, limit=60):
 
 
 def exercise_progress(db_path, exercise):
-    """Per workout day for one exercise: heaviest weight, total reps and sets done."""
+    """Per workout day for one exercise, from the sets you ticked done: the heaviest weight and the most reps at it
+    (for holds, reps hold the seconds), total reps, sets done, and every set as "weight x reps"."""
     conn = sqlite3.connect(db_path)
     rows = conn.execute(
-        """SELECT date, MAX(weight_lbs), SUM(reps), SUM(done)
-           FROM workout_sets WHERE exercise = ? GROUP BY date ORDER BY date""", (exercise,)).fetchall()
+        """SELECT date, weight_lbs, reps FROM workout_sets
+           WHERE exercise = ? AND done = 1 ORDER BY date, set_number, id""", (exercise,)).fetchall()
     conn.close()
-    return [{"date": d, "top_weight_lbs": w or 0, "total_reps": r or 0, "sets_done": s or 0} for d, w, r, s in rows]
+    days = {}
+    for d, w, r in rows:
+        days.setdefault(d, []).append((w or 0, r or 0))
+    out = []
+    for d, sets in sorted(days.items()):
+        top = max(w for w, _ in sets)
+        out.append({"date": d, "top_weight_lbs": top, "reps_at_top": max(r for w, r in sets if w == top),
+                    "best_reps": max(r for _, r in sets), "total_reps": sum(r for _, r in sets), "sets_done": len(sets),
+                    "sets": [[w, r] for w, r in sets]})
+    return out
 
 
 def last_session(db_path, exercise):
