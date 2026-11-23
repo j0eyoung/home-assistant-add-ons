@@ -3,4 +3,4 @@ dist/
 data/
 .env
 *.log
-.ha-skills-src/
+.skills-src/

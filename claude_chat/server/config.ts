@@ -32,7 +32,7 @@ const work = workDir()
 
 // Plugins shipped with the add-on and loaded in every chat (plugins/<name>/SOURCE.txt says where each came from).
 const appDir = path.resolve(import.meta.dirname, '..')
-const plugins = ['home-assistant-skills'].map((p) => path.join(appDir, 'plugins', p)).filter((p) => fs.existsSync(path.join(p, '.claude-plugin', 'plugin.json')))
+const plugins = ['home-assistant-skills', 'esphome-skills'].map((p) => path.join(appDir, 'plugins', p)).filter((p) => fs.existsSync(path.join(p, '.claude-plugin', 'plugin.json')))
 
 export const config = {
   onHA,

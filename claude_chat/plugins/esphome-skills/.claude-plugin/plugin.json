@@ -1,0 +1,7 @@
+{
+  "name": "esphome-skills",
+  "description": "ESPHome device YAML, external components, Home Assistant integration and debugging (from poolski/agent-skills)",
+  "repository": "https://github.com/poolski/agent-skills",
+  "license": "MIT",
+  "version": "0.2.0"
+}

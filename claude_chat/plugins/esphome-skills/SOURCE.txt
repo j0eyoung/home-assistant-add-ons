@@ -1,0 +1,3 @@
+esphome-skills 0.2.0, copied from https://github.com/poolski/agent-skills
+commit 17a08927f6755a89ab1efd0ee69ee19a47061f42 (2026-05-22)
+Refresh with: node scripts/update-skills.mjs esphome-skills

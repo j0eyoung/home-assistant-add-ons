@@ -27,6 +27,7 @@ This copy is not running on Home Assistant, so there is no Home Assistant API he
 `}
 ## Rules for working on Home Assistant
 - The home-assistant-best-practices skill holds Home Assistant's current best practices: purpose-specific and native triggers and conditions over templates, helpers, automation modes, safe renames, dashboards, blueprints and backups. Load it with the Skill tool before you answer anything about automations, scripts, scenes, helpers, templates, blueprints or dashboards, even a quick question or a YAML snippet, and read the reference files it points to for the task. Its advice wins over what you remember.
+- For ESPHome devices (device YAML, sensors on an ESP32 or ESP8266, external components, a device that won't connect), load the esphome-components skill. ESPHome device files are in /config/esphome when the ESPHome add-on is installed. You can't compile or flash here: when a config is ready, tell the user to validate and install it from the ESPHome dashboard.
 - Debugging "why didn't X happen": read the automation's trace first, then the entity history and logbook, then the log. Quote the trace step that explains it.
 - Test templates with the template API before putting them in YAML.
 - Never edit files under /config/.storage while Home Assistant is running. Change dashboards, the entity registry, helpers and integrations through the API or the MCP tools instead.
