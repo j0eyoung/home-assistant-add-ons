@@ -57,4 +57,25 @@ export const config = {
   version: process.env.ADDON_VERSION ?? '0.1.0',
 }
 
-if (config.homeDir) fs.mkdirSync(config.homeDir, { recursive: true })
+// Claude Code deletes saved chats older than cleanupPeriodDays (30 by default) each
+// time it starts. Keep them until they're deleted here, unless a period is already set.
+export function keepChats(settingsFile: string): void {
+  try {
+    const s = fs.existsSync(settingsFile) ? JSON.parse(fs.readFileSync(settingsFile, 'utf8')) : {}
+    if (s.cleanupPeriodDays !== undefined) return
+    s.cleanupPeriodDays = 36500
+    fs.mkdirSync(path.dirname(settingsFile), { recursive: true })
+    fs.writeFileSync(settingsFile, JSON.stringify(s, null, 2) + '\n')
+  } catch (e: any) {
+    console.warn(`could not set cleanupPeriodDays in ${settingsFile}: ${e.message}`)
+  }
+}
+
+if (config.homeDir) {
+  fs.mkdirSync(config.homeDir, { recursive: true })
+  // The chat list, chat history, rename and delete read Claude Code's saved chats from
+  // this process's HOME, so it must be the HOME Claude Code runs with (see claudeEnv).
+  // Set before the Agent SDK is first used: it remembers the folder.
+  process.env.HOME = config.homeDir
+  keepChats(path.join(config.homeDir, '.claude', 'settings.json'))
+}

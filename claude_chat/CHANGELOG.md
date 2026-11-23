@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - Chats Stay Put
+
+### 🐞 Fixes
+* **Chats no longer disappear from the list.** A chat used to drop off the list an hour after you left it, or when the add-on restarted or updated. Nothing was lost: every chat was still saved, and after this update they all show on the list again. Renaming and deleting a chat now stick, too. Chats you deleted before this update weren't really deleted, so they come back as well: delete them again and they're gone for good.
+* Claude Code no longer deletes chats older than 30 days. They stay until you delete them. If you've set your own `cleanupPeriodDays` in Claude Code's settings, that's kept.
+
 ## 0.2.0 - Quotes and Skills
 
 ### 🌟 Features
