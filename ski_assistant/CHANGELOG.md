@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.0 - Trail Map for Your Phone
+
+### 🌟 Features
+* **A full-screen trail map.** On a phone the map in the page no longer grabs your finger while you scroll past it: tap it (or "Open the map") and it fills the screen with big zoom buttons. Close it with Close or your phone's back button. On a computer, "Full screen" does the same, and Escape closes it.
+* **Tap a run or lift for its name.** Its name, colour, whether it's open and whether it's groomed show in a card along the bottom, and the line is outlined. The tap picks the line nearest your finger, so a lift beside a run no longer gets in the way.
+* **Run names on the map** once you zoom in: the open runs, or just the open greens and blues in the learner view.
+* **Find it on the map.** Tap a lift or trail in "Open right now" and the map opens on it.
+
+### 🔧 Improvements
+* In full screen the legend folds away behind a "Key" button.
+
 ## 0.11.0 - Learning to Ski
 
 ### 🌟 Features

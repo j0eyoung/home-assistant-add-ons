@@ -293,9 +293,17 @@ async function openResort(id, band) {
        ${d.info.openskimap_url ? `${SEP}<a href="${esc(d.info.openskimap_url)}" target="_blank" rel="noopener">Trail map (OpenSkiMap)</a>` : ''}
        ${d.info.beginner_pct != null ? `${SEP}<span class="mute">${d.info.beginner_pct}% of runs are green or blue</span>` : ''}</p></div>
    <div class="card" id="tmapcard"><h3>Trail map${rep.lifts || rep.trails ? ': what’s open' : ''}</h3>
-     <label class="inline check"><input type="checkbox" id="tmaplearn"${learnPref() ? ' checked' : ''} onchange="learnMap(this.checked)"> Learner view: greens and blues stand out</label>
-     <div id="tmap" class="tmap"><p class="mute">The map loads when you scroll to it.</p></div>
-     <div class="legend" id="tmaplegend"></div><p class="fine" id="tmapnote"></p></div>
+     <div class="tmapwrap" id="tmapwrap">
+      <div class="tmapbar"><b class="tmapname">${esc(d.resort.name)}</b>
+       <label class="inline check"><input type="checkbox" id="tmaplearn"${learnPref() ? ' checked' : ''} onchange="learnMap(this.checked)"> Learner view</label>
+       <button type="button" class="tmapkeybtn" aria-expanded="false" onclick="mapKey()">Key</button>
+       <button type="button" id="tmapfull" onclick="mapFull(!mapIsFull())">Full screen</button></div>
+      <div class="tmapbox">
+       <div id="tmap" class="tmap"><p class="mute">The map loads when you scroll to it.</p></div>
+       <button type="button" class="tmapopen primary" id="tmapopen" hidden onclick="mapFull(true)">Open the map</button>
+       <div class="tmapinfo" id="tmapinfo" role="status" hidden></div></div>
+      <div class="legend tmapkey" id="tmaplegend"></div></div>
+     <p class="fine" id="tmapnote"></p></div>
    ${d.info.webcam_images.length ? `<div class="card"><h3>Webcams right now</h3><div class="cams">${d.info.webcam_images.map(u =>
      `<a href="${esc(d.info.webcams_url || u)}" target="_blank" rel="noopener"><img loading="lazy" width="640" height="360" alt="${esc(d.resort.name)} webcam" src="${esc(u)}${u.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 300000)}"></a>`).join('')}</div></div>` : ''}
    <div class="card"><h3>Next 48 hours: snow per hour</h3>${snow48 >= 0.05 ? '<div class="chart" id="c_h_snow"></div>' : '<p class="mute">No snow in the next 48 hours.</p>'}
@@ -332,6 +340,8 @@ async function openResort(id, band) {
   if ($('c_h_snow')) Charts.add(() => barChart($('c_h_snow'), hrs.map(h => ({ v: h.snow_in, tip: htip(h) })), { height: 120, labels: hl, labelEvery: 6, floorMax: 0.5, title: 'Hourly snow' }));
   Charts.add(() => lineChart($('c_h_temp'), [{ name: 'Temperature', color: 'var(--s2)', values: hrs.map(h => h.temp_f) }],
     { height: 120, labels: hl, labelEvery: 6, unit: '°', title: 'Hourly temperature', tip: i => htip(hrs[i]) }));
+  const ol = box.querySelector('details.openlist');
+  if (ol) ol.addEventListener('click', e => { const b = e.target.closest('.runlink'); if (b) showOnMap(b.dataset.run, !!b.dataset.lift); });
   watchTrailMap(id);
   scrollTo(0, 0);
 }
@@ -343,6 +353,8 @@ const LVL_COLOR = { green: '#2f9e44', blue: '#1c7ed6', black: '#141410', double:
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const lvlMark = l => l ? `<i class="lvl ${l}" title="${LVL[l]}" aria-label="${LVL[l]}"></i>` : '<i class="lvl none" aria-hidden="true"></i>';
 const easyRun = x => x.level === 'green' || x.level === 'blue';
+// A name in "Open right now" that finds the lift or trail on the map (the click is handled on the list)
+const runLink = (name, lift) => `<button type="button" class="runlink" data-run="${esc(name)}"${lift ? ' data-lift="1"' : ''}>${esc(name)}</button>`;
 // How the snow feels that day, from the forecast: firm after a thaw and a hard freeze, flat light under thick cloud
 const feelText = x => [x.surface === 'firm' ? '<span class="warnnote">firm all day</span>' : x.surface === 'softens' ? 'firm until midday' : '',
   x.flat_light ? 'flat light' : ''].filter(Boolean).join(SEP);
@@ -373,12 +385,12 @@ function openList(rep) {
     const l = openL.filter(here), t = openT.filter(here), w = waiting.filter(here);
     let h = m ? `<h4>${esc(m.name)} <span class="mute">${m.status ? esc(m.status) + SEP : ''}lifts ${m.lifts_open} of ${m.lifts_total}${SEP}trails ${m.trails_open} of ${m.trails_total}</span></h4>` : '';
     if (!l.length && !t.length && !w.length) return h + '<p class="mute">Nothing open.</p>';
-    if (l.length) h += `<p><b>Lifts</b>: ${l.map(x => esc(x.name)).join(', ')}</p>`;
+    if (l.length) h += `<p><b>Lifts</b>: ${l.map(x => runLink(x.name, true)).join(', ')}</p>`;
     if (w.length) h += `<p><b>On hold or opening later</b>: ${w.map(x => `${esc(x.name)} <span class="mute">(${x.status === 'hold' ? 'on hold' : 'scheduled'})</span>`).join(', ')}</p>`;
     if (t.length) {
       // Greens and blues first, as their own group: they're the runs for a skis day
       const byLvl = (a, b) => ((LVL_ORDER.indexOf(a.level) + 6) % 6) - ((LVL_ORDER.indexOf(b.level) + 6) % 6) || a.name.localeCompare(b.name);
-      const li = x => `<li>${lvlMark(x.level)}${esc(x.name)}${x.groomed ? ' <span class="mute">groomed</span>' : ''}</li>`;
+      const li = x => `<li>${lvlMark(x.level)}${runLink(x.name)}${x.groomed ? ' <span class="mute">groomed</span>' : ''}</li>`;
       const easy = t.filter(easyRun).sort(byLvl), rest = t.filter(x => !easyRun(x)).sort(byLvl);
       const g = easy.filter(x => x.groomed).length;
       if (easy.length) h += `<p><b>Greens and blues</b> <span class="mute">${easy.length}${g === easy.length ? ', all groomed' : g ? `, ${g} groomed` : ''}</span></p><ul class="trails">${easy.map(li).join('')}</ul>`;
@@ -392,16 +404,64 @@ function openList(rep) {
 }
 
 /* ---------- Trail map: OpenStreetMap runs and lifts, coloured by the resort's live status ---------- */
-let TMAP = null;
+// On a phone the map in the page is a picture you tap to open full screen, so swiping down the page never gets
+// caught panning the map. Full screen has the zoom buttons, a Key button for the legend, and closes with Close,
+// Escape or the phone's back button.
+const COARSE = matchMedia('(pointer: coarse)').matches;
+let TMAP = null, TMAP_ID = null, TMAP_READY = null, TMAP_SHOW = null, TMAP_INFO = null, TMAP_FIT = null;
 function watchTrailMap(id) {
   if (TMAP) { TMAP.remove(); TMAP = null; }
-  TMAP_DRAW = null;
+  TMAP_DRAW = TMAP_SHOW = TMAP_INFO = TMAP_READY = TMAP_FIT = null;
+  TMAP_ID = id;
+  document.body.classList.remove('mapfull');
   const card = $('tmapcard');
   if (!card) return;
   // Build it only when it scrolls into view: the first map for a resort asks OpenStreetMap, which can take a while
-  if (!('IntersectionObserver' in window)) { loadTrailMap(id); return; }
-  const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); loadTrailMap(id); } }, { rootMargin: '200px' });
+  if (!('IntersectionObserver' in window)) { ensureMap(); return; }
+  const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); ensureMap(); } }, { rootMargin: '200px' });
   io.observe(card);
+}
+function ensureMap() { return TMAP_READY || (TMAP_READY = loadTrailMap(TMAP_ID)); }
+const mapIsFull = () => !!($('tmapwrap') && $('tmapwrap').classList.contains('full'));
+function mapInteractive() {
+  const m = TMAP, on = mapIsFull() || !COARSE;
+  if (!m) return;
+  for (const h of ['dragging', 'touchZoom', 'doubleClickZoom', 'boxZoom', 'keyboard']) if (m[h]) on ? m[h].enable() : m[h].disable();
+  mapIsFull() ? m.scrollWheelZoom.enable() : m.scrollWheelZoom.disable();
+  if (on && !m.zoomControl._map) m.zoomControl.addTo(m);
+  if (!on && m.zoomControl._map) m.zoomControl.remove();
+  $('tmapopen').hidden = on;
+}
+function mapFull(on, fromBack = false) {
+  const w = $('tmapwrap');
+  if (!w || !TMAP || mapIsFull() === on) return;
+  w.classList.toggle('full', on);
+  w.classList.remove('keyon');
+  document.body.classList.toggle('mapfull', on);
+  $('tmapfull').textContent = on ? 'Close' : 'Full screen';
+  mapInteractive();
+  // The phone's back button closes the map instead of leaving the resort page
+  if (on) history.pushState({ tmap: 1 }, '');
+  else if (!fromBack && history.state && history.state.tmap) history.back();
+  if (!on && TMAP_INFO) TMAP_INFO();
+  // Same view, sized to the new box
+  setTimeout(() => { if (TMAP) { TMAP.invalidateSize(); if (TMAP_FIT) TMAP_FIT(); } }, 60);
+}
+function mapKey() {
+  const w = $('tmapwrap'), on = !w.classList.contains('keyon');
+  $('tmaplegend').style.top = w.querySelector('.tmapbar').offsetHeight + 8 + 'px';  // just under the bar
+  w.classList.toggle('keyon', on);
+  w.querySelector('.tmapkeybtn').setAttribute('aria-expanded', on);
+}
+addEventListener('popstate', () => { if (mapIsFull()) mapFull(false, true); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && mapIsFull()) mapFull(false); });
+// A lift or trail tapped in "Open right now": open the map on it
+async function showOnMap(name, lift) {
+  if (!TMAP_ID) return;
+  await ensureMap();
+  if (!TMAP_SHOW) return;
+  if (COARSE) mapFull(true); else $('tmapcard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setTimeout(() => TMAP_SHOW(name, lift), 80);
 }
 function baseLayer(cfg, maxZoom) {
   // With a CARTO key (add-on option) use CARTO's basemap, light or dark to match the page. Without one fall back
@@ -423,24 +483,81 @@ async function loadTrailMap(id) {
   try {
     if (!window.L) await loadLeaflet();
     [d, cfg] = await Promise.all([api(`resort/${id}/trailmap`), api('map').catch(() => ({ carto_key: '' }))]);
-  } catch (e) { if ($('tmap') === box) box.innerHTML = `<p class="mute">${esc(e.message)}</p>`; return; }
+  } catch (e) { if ($('tmap') === box) box.innerHTML = `<p class="mute">${esc(e.message)}</p>`; TMAP_READY = null; return; }
   if ($('tmap') !== box) return;  // moved on to another resort meanwhile
   box.innerHTML = '';
   box.classList.add('live');
   TMAP = L.map(box, { preferCanvas: true, scrollWheelZoom: false, zoomSnap: 0.5 });
   baseLayer(cfg, 17).addTo(TMAP);
-  const R = L.canvas({ tolerance: 8 }), hover = matchMedia('(hover: hover)').matches;
+  mapInteractive();
+  // A finger needs a wider target than a mouse
+  const R = L.canvas({ tolerance: COARSE ? 16 : 8 }), hover = matchMedia('(hover: hover)').matches;
   const WORD = { open: 'Open', hold: 'On hold', scheduled: 'Opening later', closed: 'Closed' };
   const st = f => d.has_status ? (f.s || 'none') : 'all';
-  const group = L.layerGroup().addTo(TMAP);
-  const add = (f, lift, styles) => {
-    const what = `<b>${esc(f.n || (lift ? 'Unnamed lift' : 'Unnamed run'))}</b>`
-      + (!lift && f.l ? SEP + LVL[f.l] : '') + (d.has_status ? SEP + (WORD[f.s] || 'Not in the resort’s report') : '')
-      + (f.g ? SEP + 'groomed' : '');
-    for (const line of f.c) for (const s of styles) {
-      const pl = L.polyline(line, { renderer: R, lineCap: 'round', lineJoin: 'round', ...s }).addTo(group);
-      if (s.hit) { pl.bindPopup(what); if (hover) pl.bindTooltip(what, { sticky: true }); }
+  const group = L.layerGroup().addTo(TMAP), labels = L.layerGroup(), mark = L.layerGroup().addTo(TMAP);
+  const what = (f, lift) => `<b>${esc(f.n || (lift ? 'Unnamed lift' : 'Unnamed run'))}</b>`
+    + (!lift && f.l ? SEP + LVL[f.l] : '') + (d.has_status ? SEP + (WORD[f.s] || 'Not in the resort’s report') : '')
+    + (f.g ? SEP + 'groomed' : '');
+  // Tapping a line shows its name in a card along the bottom of the map and rings the line
+  const info = $('tmapinfo');
+  const hideInfo = () => { info.hidden = true; mark.clearLayers(); };
+  const showInfo = (f, lift, text) => {
+    mark.clearLayers();
+    // Redrawn on top in its own colour, thicker, with a dark ring
+    const c = f && (lift ? LIFT : LVL_COLOR[f.l] || '#5c6670');
+    if (f) for (const line of f.c) for (const s of [{ color: '#141410', weight: 15, opacity: .55 }, { color: c, weight: 7 }])
+      L.polyline(line, { renderer: R, lineCap: 'round', lineJoin: 'round', interactive: false, ...s }).addTo(mark);
+    info.innerHTML = `<span>${text || what(f, lift)}</span><button type="button" aria-label="Close" onclick="TMAP_INFO && TMAP_INFO()">✕</button>`;
+    info.hidden = false;
+  };
+  TMAP_INFO = hideInfo;
+  // A tap picks the line nearest the finger, not the one drawn on top: lifts are drawn over runs, and a lift
+  // running beside a run would otherwise win every tap near it
+  const feats = [];
+  const nearest = p => {
+    let best = null, bd = COARSE ? 24 : 12;
+    for (const x of feats) for (const line of x.f.c) {
+      let prev = null;
+      for (const ll of line) {
+        const q = TMAP.latLngToLayerPoint(ll);
+        if (prev) { const dd = L.LineUtil.pointToSegmentDistance(p, prev, q); if (dd < bd) { bd = dd; best = x; } }
+        prev = q;
+      }
     }
+    return best;
+  };
+  TMAP.on('click', e => {
+    if (!mapIsFull() && COARSE) { mapFull(true); return; }  // in the page on a phone a tap opens full screen
+    const x = nearest(e.layerPoint);
+    if (x) showInfo(x.f, x.lift); else hideInfo();
+  });
+  const add = (f, lift, styles) => {
+    feats.push({ f, lift });
+    for (const line of f.c) for (const s of styles) {
+      // Only the coloured line takes the mouse, for its hover name; taps go through the map's click above
+      const pl = L.polyline(line, { renderer: R, lineCap: 'round', lineJoin: 'round', ...s, interactive: !!(s.hit && hover) }).addTo(group);
+      if (s.hit && hover) pl.bindTooltip(what(f, lift), { sticky: true });
+    }
+  };
+  // Names on the open runs once you zoom in (in the learner view, only the open greens and blues). The more
+  // runs get a name, the further in it waits: every run at a resort whose report doesn't say what's open
+  let labelZoom = 15;
+  const label = learn => {
+    labelZoom = !d.has_status ? 16 : learn ? 15 : 15.5;
+    labels.clearLayers();
+    d.runs.filter(f => f.n && (!d.has_status || f.s === 'open') && (!learn || easy(f))).forEach(f => {
+      const line = f.c.reduce((a, b) => b.length > a.length ? b : a);
+      labels.addLayer(L.tooltip({ permanent: true, direction: 'center', className: 'runlabel', interactive: false })
+        .setLatLng(line[Math.floor(line.length / 2)]).setContent(esc(f.n)));
+    });
+  };
+  const syncLabels = () => TMAP.getZoom() >= labelZoom ? labels.addTo(TMAP) : labels.remove();
+  TMAP.on('zoomend', syncLabels);
+  TMAP_SHOW = (name, lift) => {
+    const fs = (lift ? d.lifts : d.runs).filter(f => (f.m || []).includes(name));
+    if (!fs.length) { showInfo(null, lift, `<b>${esc(name)}</b>${SEP}not found on the map`); return; }
+    TMAP.fitBounds(L.latLngBounds(fs.flatMap(f => f.c.flat())).pad(0.6), { maxZoom: 16 });
+    showInfo({ ...fs[0], c: fs.flatMap(f => f.c) }, lift);
   };
   const CASE = { color: '#ffffff', opacity: .92 }, GREY = '#868e96', LIFT = '#e03131', DARK = '#495057';
   const easy = f => f.l === 'green' || f.l === 'blue';
@@ -479,12 +596,17 @@ async function loadTrailMap(id) {
   const liftKey = `<span>${sw(LIFT, 0, 1)}Lift running</span><span>${sw(LIFT, 1)}Lift opening later or on hold</span>`;
   const draw = learn => {
     group.clearLayers();
+    feats.length = 0;
+    hideInfo();
+    label(learn);
     [...d.runs].sort((a, b) => rank(a, learn) - rank(b, learn)).forEach(f => add(f, false, runStyle(f, learn)));
     [...d.lifts].sort((a, b) => order[st(a)] - order[st(b)]).forEach(f => add(f, true, liftStyle(f)));
     // The learner view frames the open greens and blues (early in the season they're a patch by the base)
     const pts = learn && d.has_status ? d.runs.filter(f => st(f) === 'open' && easy(f)).flatMap(f => f.c.flat()) : [];
-    if (pts.length) TMAP.fitBounds(L.latLngBounds(pts).pad(0.5), { maxZoom: 15 });
-    else TMAP.fitBounds(d.bounds, { padding: [12, 12] });
+    TMAP_FIT = pts.length ? () => TMAP.fitBounds(L.latLngBounds(pts).pad(0.5), { maxZoom: 15 })
+                          : () => TMAP.fitBounds(d.bounds, { padding: [12, 12] });
+    TMAP_FIT();
+    syncLabels();
     $('tmaplegend').innerHTML = learn
       ? (d.has_status
         ? `<span>${sw(LVL_COLOR.green, 0, 1, 0, 1)}${sw(LVL_COLOR.blue, 0, 1, 0, 1)}Groomed green or blue, open</span><span>${sw(LVL_COLOR.green, 0, 1)}${sw(LVL_COLOR.blue, 0, 1)}Green or blue, open</span>
@@ -502,7 +624,7 @@ async function loadTrailMap(id) {
 
   const [mr, nr] = d.matched.runs, [ml, nl] = d.matched.lifts;
   $('tmapnote').innerHTML = (d.has_status
-    ? `Open or closed comes from the resort’s live report, matched by name: ${mr} of ${nr} named runs and ${ml} of ${nl} lifts on the map. Tap a line for its name.`
+    ? `Open or closed comes from the resort’s live report, matched by name: ${mr} of ${nr} named runs and ${ml} of ${nl} lifts on the map. Tap a line for its name, or a name in “Open right now” to find it.`
     : 'This resort’s report doesn’t name its lifts and runs, so every run is drawn in its colour without open or closed. Tap a line for its name.')
     + (d.unmapped_open.length ? ` Open but not found on the map: ${d.unmapped_open.map(esc).join(', ')}.` : '')
     + ' Runs and lifts from OpenStreetMap, the data OpenSkiMap draws.';

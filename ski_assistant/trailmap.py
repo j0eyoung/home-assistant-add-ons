@@ -107,10 +107,12 @@ def for_resort(r):
         f["status"] = _best(hits) if has_status else None
         f["level"] = next((x.get("level") for x in hits if x.get("level")), None) or f["level"]
         f["groomed"] = any(x.get("groomed") for x in hits)
+        f["match"] = sorted({x["name"] for x in hits})
     for f in lifts:
         hits = lift_idx.find(f["name"])
         used_lifts |= {id(x) for x in hits}
         f["status"] = _best(hits) if has_status else None
+        f["match"] = sorted({x["name"] for x in hits})
     lat = [p[0] for f in runs + lifts for line in f["lines"] for p in line]
     lon = [p[1] for f in runs + lifts for line in f["lines"] for p in line]
     named = lambda fs: sum(1 for f in fs if f["name"])
@@ -128,6 +130,8 @@ def _out(f):
     out = {"n": f["name"], "l": f.get("level"), "s": f.get("status"), "c": f["lines"]}
     if f.get("groomed"):
         out["g"] = 1
+    if f.get("match"):
+        out["m"] = f["match"]  # the report's names for it, so a name in the open list can find it on the map
     return out
 
 
