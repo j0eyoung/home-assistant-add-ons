@@ -253,10 +253,12 @@ async function openResort(id, band) {
   const past = d.daily.filter(x => x.date < today).slice(-5);
   const rep = d.reported || {}, sn = d.snotel || {};
   const total = (a, b) => ip(future.slice(a, b).reduce((s, x) => s + x.snow_in, 0));
+  const gb = (rep.trails || []).filter(easyRun), gbOpen = gb.filter(x => x.status === 'open');
   const ledger = [['Reported base', rep.base_in != null ? ip(rep.base_in) : null], ['Reported last 24 hours', rep.new_24h_in != null ? ip(rep.new_24h_in) : null],
     ['Season total', rep.season_in ? ip(rep.season_in) : null],
     ['Lifts open', rep.lifts_total != null && rep.lifts_open != null ? `${rep.lifts_open} of ${rep.lifts_total}` : null],
     ['Trails open', rep.trails_total != null && rep.trails_open != null ? `${rep.trails_open} of ${rep.trails_total}` : null],
+    ['Greens and blues open', gb.length ? `${gbOpen.length} of ${gb.length}${gbOpen.length ? `, ${gbOpen.filter(x => x.groomed).length} groomed` : ''}` : null],
     ['Terrain open', rep.terrain_open_pct != null ? rep.terrain_open_pct + '%' : null],
     [`SNOTEL snow depth${sn.as_of ? ', ' + monthDay(String(sn.as_of).slice(0, 10)) : ''}`, sn.depth_in != null ? ip(sn.depth_in) : null],
     ['SNOTEL change, last 72 hours', sn.new_72h_in != null ? ip(sn.new_72h_in) : null]].filter(([, v]) => v != null && v !== '');
@@ -291,6 +293,7 @@ async function openResort(id, band) {
        ${d.info.openskimap_url ? `${SEP}<a href="${esc(d.info.openskimap_url)}" target="_blank" rel="noopener">Trail map (OpenSkiMap)</a>` : ''}
        ${d.info.beginner_pct != null ? `${SEP}<span class="mute">${d.info.beginner_pct}% of runs are green or blue</span>` : ''}</p></div>
    <div class="card" id="tmapcard"><h3>Trail map${rep.lifts || rep.trails ? ': what’s open' : ''}</h3>
+     <label class="inline check"><input type="checkbox" id="tmaplearn"${learnPref() ? ' checked' : ''} onchange="learnMap(this.checked)"> Learner view: greens and blues stand out</label>
      <div id="tmap" class="tmap"><p class="mute">The map loads when you scroll to it.</p></div>
      <div class="legend" id="tmaplegend"></div><p class="fine" id="tmapnote"></p></div>
    ${d.info.webcam_images.length ? `<div class="card"><h3>Webcams right now</h3><div class="cams">${d.info.webcam_images.map(u =>
@@ -305,9 +308,9 @@ async function openResort(id, band) {
        `${esc(m)} ${v.mean_miss_in != null ? 'off by ' + v.mean_miss_in + '" water a day' : 'no data'} over ${v.days} wet days, weight ${Math.round(v.weight * 100)}%`).join(SEP)
        : 'Each model gets checked against SNOTEL every day; the blend leans toward the better one once there are 5 wet days to judge.'}</p></div>
    <div class="card wrap"><h3>Day by day</h3><table class="daytable">
-     <tr><th>Day</th><th class="num">Snow</th><th class="num">Day / night</th><th>Quality</th><th class="num">High / low</th><th class="num">Wind / gust</th><th class="num">Freezing level</th></tr>
+     <tr><th>Day</th><th class="num">Snow</th><th class="num">Day / night</th><th>Quality / surface</th><th class="num">High / low</th><th class="num">Wind / gust</th><th class="num">Freezing level</th></tr>
      ${future.map(x => `<tr><td>${dayLabel(x.date)}</td><td class="num"><b>${inch(x.snow_in)}</b></td><td class="num">${inch(x.snow_day_in)} / ${inch(x.snow_night_in)}</td>
-       <td>${x.quality === 'rain' || x.quality === 'mixed' ? `<span class="warnnote">${esc(x.quality)}</span>` : esc(x.quality || '')}</td>
+       <td>${[x.quality === 'rain' || x.quality === 'mixed' ? `<span class="warnnote">${esc(x.quality)}</span>` : esc(x.quality || ''), feelText(x)].filter(Boolean).join(SEP)}</td>
        <td class="num">${Math.round(x.tmax_f)}° / ${Math.round(x.tmin_f)}°</td><td class="num">${Math.round(x.wind_mph)} / ${Math.round(x.gust_mph)} mph</td>
        <td class="num">${x.freezing_ft ? x.freezing_ft.toLocaleString() + ' ft' : '-'}</td></tr>`).join('')}</table></div>`;
 
@@ -339,6 +342,24 @@ const LVL_ORDER = ['green', 'blue', 'black', 'double', 'park'];
 const LVL_COLOR = { green: '#2f9e44', blue: '#1c7ed6', black: '#141410', double: '#141410', park: '#f08c00' };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const lvlMark = l => l ? `<i class="lvl ${l}" title="${LVL[l]}" aria-label="${LVL[l]}"></i>` : '<i class="lvl none" aria-hidden="true"></i>';
+const easyRun = x => x.level === 'green' || x.level === 'blue';
+// How the snow feels that day, from the forecast: firm after a thaw and a hard freeze, flat light under thick cloud
+const feelText = x => [x.surface === 'firm' ? '<span class="warnnote">firm all day</span>' : x.surface === 'softens' ? 'firm until midday' : '',
+  x.flat_light ? 'flat light' : ''].filter(Boolean).join(SEP);
+// Open greens and blues for a skis day ({open, groomed, of, estimated, remembered} from ranking)
+const learnerText = t => !t ? '' : t.estimated
+  ? `about ${t.open} ${t.open === 1 ? 'green or blue' : 'greens and blues'} open (estimated from the run count)`
+  : `${t.open} ${t.open === 1 ? 'green or blue' : 'greens and blues'} open${t.open ? `, ${t.groomed} groomed` : ''}${t.remembered ? ' at the last midday report' : ''}`;
+// The trail map's learner view: remembered once you change it, otherwise on when Plan's "Skis day" is ticked
+function learnPref() {
+  try { const v = localStorage.getItem('ski_learnmap'); if (v != null) return v === '1'; } catch (e) {}
+  return !!($('skis') && $('skis').checked);
+}
+let TMAP_DRAW = null;
+function learnMap(on) {
+  try { localStorage.setItem('ski_learnmap', on ? '1' : '0'); } catch (e) {}
+  if (TMAP_DRAW) TMAP_DRAW(on);
+}
 // The resort's live lift and trail status by name, folded under the ledger (grouped by mountain at Aspen)
 function openList(rep) {
   if (!rep.lifts && !rep.trails) return '';
@@ -355,8 +376,13 @@ function openList(rep) {
     if (l.length) h += `<p><b>Lifts</b>: ${l.map(x => esc(x.name)).join(', ')}</p>`;
     if (w.length) h += `<p><b>On hold or opening later</b>: ${w.map(x => `${esc(x.name)} <span class="mute">(${x.status === 'hold' ? 'on hold' : 'scheduled'})</span>`).join(', ')}</p>`;
     if (t.length) {
-      const sorted = [...t].sort((a, b) => ((LVL_ORDER.indexOf(a.level) + 6) % 6) - ((LVL_ORDER.indexOf(b.level) + 6) % 6) || a.name.localeCompare(b.name));
-      h += `<p><b>Trails</b></p><ul class="trails">${sorted.map(x => `<li>${lvlMark(x.level)}${esc(x.name)}${x.groomed ? ' <span class="mute">groomed</span>' : ''}</li>`).join('')}</ul>`;
+      // Greens and blues first, as their own group: they're the runs for a skis day
+      const byLvl = (a, b) => ((LVL_ORDER.indexOf(a.level) + 6) % 6) - ((LVL_ORDER.indexOf(b.level) + 6) % 6) || a.name.localeCompare(b.name);
+      const li = x => `<li>${lvlMark(x.level)}${esc(x.name)}${x.groomed ? ' <span class="mute">groomed</span>' : ''}</li>`;
+      const easy = t.filter(easyRun).sort(byLvl), rest = t.filter(x => !easyRun(x)).sort(byLvl);
+      const g = easy.filter(x => x.groomed).length;
+      if (easy.length) h += `<p><b>Greens and blues</b> <span class="mute">${easy.length}${g === easy.length ? ', all groomed' : g ? `, ${g} groomed` : ''}</span></p><ul class="trails">${easy.map(li).join('')}</ul>`;
+      if (rest.length) h += `<p><b>${rest.every(x => x.level) ? 'Blacks and park' : 'Other trails'}</b> <span class="mute">${rest.length}</span></p><ul class="trails">${rest.map(li).join('')}</ul>`;
     }
     return h;
   };
@@ -369,6 +395,7 @@ function openList(rep) {
 let TMAP = null;
 function watchTrailMap(id) {
   if (TMAP) { TMAP.remove(); TMAP = null; }
+  TMAP_DRAW = null;
   const card = $('tmapcard');
   if (!card) return;
   // Build it only when it scrolls into view: the first map for a resort asks OpenStreetMap, which can take a while
@@ -405,22 +432,32 @@ async function loadTrailMap(id) {
   const R = L.canvas({ tolerance: 8 }), hover = matchMedia('(hover: hover)').matches;
   const WORD = { open: 'Open', hold: 'On hold', scheduled: 'Opening later', closed: 'Closed' };
   const st = f => d.has_status ? (f.s || 'none') : 'all';
+  const group = L.layerGroup().addTo(TMAP);
   const add = (f, lift, styles) => {
     const what = `<b>${esc(f.n || (lift ? 'Unnamed lift' : 'Unnamed run'))}</b>`
-      + (!lift && f.l ? SEP + LVL[f.l] : '') + (d.has_status ? SEP + (WORD[f.s] || 'Not in the resort’s report') : '');
+      + (!lift && f.l ? SEP + LVL[f.l] : '') + (d.has_status ? SEP + (WORD[f.s] || 'Not in the resort’s report') : '')
+      + (f.g ? SEP + 'groomed' : '');
     for (const line of f.c) for (const s of styles) {
-      const pl = L.polyline(line, { renderer: R, lineCap: 'round', lineJoin: 'round', ...s }).addTo(TMAP);
+      const pl = L.polyline(line, { renderer: R, lineCap: 'round', lineJoin: 'round', ...s }).addTo(group);
       if (s.hit) { pl.bindPopup(what); if (hover) pl.bindTooltip(what, { sticky: true }); }
     }
   };
   const CASE = { color: '#ffffff', opacity: .92 }, GREY = '#868e96', LIFT = '#e03131', DARK = '#495057';
-  const runStyle = f => {
+  const easy = f => f.l === 'green' || f.l === 'blue';
+  // Learner view: open greens and blues stand out (groomed ones thickest), open blacks and park fade back
+  const shown = f => st(f) === 'open' || st(f) === 'all';
+  const runStyle = (f, learn) => {
     const c = LVL_COLOR[f.l] || '#5c6670';
+    if (learn && shown(f)) {
+      if (!easy(f)) return [{ color: c, weight: 2, opacity: .3, hit: true }];
+      if (f.g) return [{ ...CASE, weight: 10 }, { color: c, weight: 6, hit: true }];
+      return [{ ...CASE, weight: 7 }, { color: c, weight: 4, hit: true }];
+    }
     switch (st(f)) {
       case 'open': return [{ ...CASE, weight: 7 }, { color: c, weight: 4, hit: true }];
       case 'all': return [{ ...CASE, weight: 5, opacity: .55 }, { color: c, weight: 2.5, opacity: .85, hit: true }];
-      case 'none': return [{ color: GREY, weight: 1.5, opacity: .7, dashArray: '2 5', hit: true }];
-      default: return [{ color: GREY, weight: 2, opacity: .8, hit: true }];
+      case 'none': return [{ color: GREY, weight: 1.5, opacity: learn ? .45 : .7, dashArray: '2 5', hit: true }];
+      default: return [{ color: GREY, weight: 2, opacity: learn ? .5 : .8, hit: true }];
     }
   };
   const liftStyle = f => {
@@ -433,19 +470,36 @@ async function loadTrailMap(id) {
       default: return [{ color: DARK, weight: 2, opacity: .85, dashArray: '7 5', hit: true }];
     }
   };
-  // Closed and unknown first, so open runs and every lift draw on top
+  // Closed and unknown first, so open runs and every lift draw on top (in the learner view, faded runs go under
+  // the greens and blues, groomed ones last)
   const order = { none: 0, closed: 1, all: 2, scheduled: 2, hold: 3, open: 4 };
-  [...d.runs].sort((a, b) => order[st(a)] - order[st(b)]).forEach(f => add(f, false, runStyle(f)));
-  [...d.lifts].sort((a, b) => order[st(a)] - order[st(b)]).forEach(f => add(f, true, liftStyle(f)));
-  TMAP.fitBounds(d.bounds, { padding: [12, 12] });
-
+  const rank = (f, learn) => learn && shown(f) ? (easy(f) ? (f.g ? 6 : 5) : 1.5) : order[st(f)];
   // Swatches are drawn as on the map: open runs and running lifts carry a white edge
-  const sw = (c, dash, edge) => `<i class="sw" style="background:${dash ? `repeating-linear-gradient(90deg, ${c} 0 5px, transparent 5px 8px)` : c}${edge ? '; box-shadow: 0 0 0 1.5px #fff' : ''}"></i>`;
-  $('tmaplegend').innerHTML = d.has_status
-    ? `<span>${sw(LVL_COLOR.green, 0, 1)}Open green</span><span>${sw(LVL_COLOR.blue, 0, 1)}Open blue</span><span>${sw(LVL_COLOR.black, 0, 1)}Open black</span>
-       <span>${sw(LVL_COLOR.park, 0, 1)}Open park</span><span>${sw(LIFT, 0, 1)}Lift running</span><span>${sw(LIFT, 1)}Lift opening later or on hold</span>
-       <span>${sw(GREY)}Closed run</span><span>${sw('#adb5bd', 1)}Lift closed, or not in the report</span>`
-    : `<span>${sw(LVL_COLOR.green, 0, 1)}Green</span><span>${sw(LVL_COLOR.blue, 0, 1)}Blue</span><span>${sw(LVL_COLOR.black, 0, 1)}Black</span><span>${sw(LIFT, 0, 1)}Lift</span>`;
+  const sw = (c, dash, edge, op, thick) => `<i class="sw${thick ? ' thick' : ''}" style="background:${dash ? `repeating-linear-gradient(90deg, ${c} 0 5px, transparent 5px 8px)` : c}${edge ? '; box-shadow: 0 0 0 1.5px #fff' : ''}${op ? '; opacity:' + op : ''}"></i>`;
+  const liftKey = `<span>${sw(LIFT, 0, 1)}Lift running</span><span>${sw(LIFT, 1)}Lift opening later or on hold</span>`;
+  const draw = learn => {
+    group.clearLayers();
+    [...d.runs].sort((a, b) => rank(a, learn) - rank(b, learn)).forEach(f => add(f, false, runStyle(f, learn)));
+    [...d.lifts].sort((a, b) => order[st(a)] - order[st(b)]).forEach(f => add(f, true, liftStyle(f)));
+    // The learner view frames the open greens and blues (early in the season they're a patch by the base)
+    const pts = learn && d.has_status ? d.runs.filter(f => st(f) === 'open' && easy(f)).flatMap(f => f.c.flat()) : [];
+    if (pts.length) TMAP.fitBounds(L.latLngBounds(pts).pad(0.5), { maxZoom: 15 });
+    else TMAP.fitBounds(d.bounds, { padding: [12, 12] });
+    $('tmaplegend').innerHTML = learn
+      ? (d.has_status
+        ? `<span>${sw(LVL_COLOR.green, 0, 1, 0, 1)}${sw(LVL_COLOR.blue, 0, 1, 0, 1)}Groomed green or blue, open</span><span>${sw(LVL_COLOR.green, 0, 1)}${sw(LVL_COLOR.blue, 0, 1)}Green or blue, open</span>
+           <span>${sw(LVL_COLOR.black, 0, 0, .3)}${sw(LVL_COLOR.park, 0, 0, .3)}Black or park, open</span>${liftKey}
+           <span>${sw(GREY, 0, 0, .5)}Closed run</span><span>${sw('#adb5bd', 1)}Lift closed, or not in the report</span>`
+        : `<span>${sw(LVL_COLOR.green, 0, 1)}Green</span><span>${sw(LVL_COLOR.blue, 0, 1)}Blue</span><span>${sw(LVL_COLOR.black, 0, 0, .3)}Black or park</span><span>${sw(LIFT, 0, 1)}Lift</span>`)
+      : (d.has_status
+        ? `<span>${sw(LVL_COLOR.green, 0, 1)}Open green</span><span>${sw(LVL_COLOR.blue, 0, 1)}Open blue</span><span>${sw(LVL_COLOR.black, 0, 1)}Open black</span>
+           <span>${sw(LVL_COLOR.park, 0, 1)}Open park</span>${liftKey}
+           <span>${sw(GREY)}Closed run</span><span>${sw('#adb5bd', 1)}Lift closed, or not in the report</span>`
+        : `<span>${sw(LVL_COLOR.green, 0, 1)}Green</span><span>${sw(LVL_COLOR.blue, 0, 1)}Blue</span><span>${sw(LVL_COLOR.black, 0, 1)}Black</span><span>${sw(LIFT, 0, 1)}Lift</span>`);
+  };
+  draw($('tmaplearn') ? $('tmaplearn').checked : learnPref());
+  TMAP_DRAW = draw;
+
   const [mr, nr] = d.matched.runs, [ml, nl] = d.matched.lifts;
   $('tmapnote').innerHTML = (d.has_status
     ? `Open or closed comes from the resort’s live report, matched by name: ${mr} of ${nr} named runs and ${ml} of ${nl} lifts on the map. Tap a line for its name.`
@@ -527,9 +581,12 @@ async function rank() {
   let rows;
   try { rows = await api(q); } catch (e) { t.innerHTML = `<tr><td>${esc(e.message)}</td></tr>`; return; }
   const frac = (o, n) => o != null && n != null ? `${o}/${n}` : '-';
+  const skis = $('skis').checked;
+  // Under the resort's name: open greens and blues on a skis day, and firm snow or flat light any day
+  const under = r => { const s = [skis ? learnerText(r.learner) : '', feelText(r)].filter(Boolean).join(SEP); return s ? `<br><span class="small">${s}</span>` : ''; };
   t.innerHTML = '<tr><th>Resort</th><th class="num">Score</th><th class="num">Fresh</th><th class="num">Gust</th><th class="num">High</th><th class="num">Base</th><th class="num">Lifts</th><th class="num">Trails</th><th>Leave</th></tr>' +
     rows.map(r => r.error ? `<tr><td>${esc(r.resort)}</td><td colspan=8>${esc(r.error)}</td></tr>` :
-      `<tr${r.not_open ? ' class="notopen"' : ''}><td>${esc(r.resort)}${r.not_open ? ' <span class="mute">not open yet</span>' : ''}</td><td class="num">${r.not_open ? '-' : r.score}</td><td class="num">${inch(r.fresh_in)}</td><td class="num">${Math.round(r.gust_mph)}</td><td class="num">${Math.round(r.tmax_f)}°</td>
+      `<tr${r.not_open ? ' class="notopen"' : ''}><td>${esc(r.resort)}${r.not_open ? ' <span class="mute">not open yet</span>' : under(r)}</td><td class="num">${r.not_open ? '-' : r.score}</td><td class="num">${inch(r.fresh_in)}</td><td class="num">${Math.round(r.gust_mph)}</td><td class="num">${Math.round(r.tmax_f)}°</td>
        <td class="num">${r.snowpack ? inch(r.snowpack.depth_in) : '-'}</td><td class="num">${frac(r.live && r.live.lifts_open, r.live && r.live.lifts_total)}</td><td class="num">${frac(r.live && r.live.trails_open, r.live && r.live.trails_total)}</td>
        <td>${t12(r.leave.leave_at)} <span class="mute">(${hm(r.leave.drive_min)})</span></td></tr>`).join('');
   const top = rows.find(r => !r.error && !r.not_open) || rows.find(r => !r.error);
@@ -545,7 +602,8 @@ async function rank() {
       <div class="panel">${leaveText(top.leave, true)}${trafficText(top.traffic)}
         <p><b>Wear</b> (feels like ${top.gear.feels_like_f}°F): ${top.gear.wear.map(esc).join(', ')}</p>
         ${top.gear.notes.length ? `<p><b>Also</b>: ${top.gear.notes.map(esc).join('; ')}</p>` : ''}
-        ${top.beginner_pct != null ? `<p class="mute">${top.beginner_pct}% of runs are green or blue.</p>` : ''}
+        ${skis ? `<p><b>Learning</b>: ${top.learner ? learnerText(top.learner) + '. ' : 'Its report doesn’t say which runs are open. '}${top.beginner_pct != null ? `${top.beginner_pct}% of the mountain is green or blue.` : ''}</p>`
+          : top.beginner_pct != null ? `<p class="mute">${top.beginner_pct}% of runs are green or blue.</p>` : ''}
         ${top.transit.length ? '<p><b>Shuttle / transit</b></p><ul>' + top.transit.map(x => `<li><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>: <span class="mute">${esc(x.note)}</span></li>`).join('') + '</ul>' : ''}</div>
     </div></div>` : '';
 }

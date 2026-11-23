@@ -12,7 +12,8 @@ import util
 SYSTEM = """You are a ski and snowboard trip planner for one rider in Colorado. Answer from the JSON data only;
 if the data does not cover something, say so. The rider has an Ikon full pass and a Keystone pass, mostly
 snowboards, and is learning to ski. Give one clear pick, the leave time, and one or two reasons
-(snow, wind, crowds, drive). Mention a runner-up only if it is close. Keep it under 120 words, plain text."""
+(snow, wind, crowds, drive). On a skis day, open groomed greens and blues ("learner"), firm snow ("surface")
+and flat light count too. Mention a runner-up only if it is close. Keep it under 120 words, plain text."""
 
 
 def available():
@@ -20,7 +21,8 @@ def available():
 
 
 def _compact(rows):
-    keep = ("resort", "score", "fresh_in", "tmax_f", "tmin_f", "gust_mph", "leave", "beginner_pct", "live", "pass")
+    keep = ("resort", "score", "fresh_in", "tmax_f", "tmin_f", "gust_mph", "leave", "beginner_pct", "learner",
+            "surface", "flat_light", "live", "pass")
     return [{k: r.get(k) for k in keep} for r in rows if "error" not in r]
 
 

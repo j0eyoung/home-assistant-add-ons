@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.0 - Learning to Ski
+
+### 🌟 Features
+* **A skis day goes by what's open today.** With "Skis day" ticked on the Plan tab, a quarter of the score is about learning: how many greens and blues are open today (groomed ones count most), how much of the mountain is green or blue, whether the snow is firm, the wind and the light. Early in the season that favours the resort with the most easy runs open, not the one with the most on paper. The Plan list shows each resort's open greens and blues under its name.
+* **How the snow will feel.** The morning after a thaw and a hard freeze, the forecast warns of firm, icy snow, and says whether it softens by midday or stays firm. Thick cloud from 9am to 3pm is marked as flat light, with a reminder to bring a low-light lens. Both show on the Plan tab and in each resort's day-by-day table.
+* **Learner view on the trail map.** One tick makes open groomed greens and blues stand out, fades the blacks and park, and zooms to where the easy runs are. The map remembers your choice, and it starts on when "Skis day" is ticked.
+
+### 🔧 Improvements
+* "Open right now" lists greens and blues first, as their own group, and the resort page shows how many greens and blues are open and groomed.
+
 ## 0.10.0 - Open Lifts and Trails, Trail Map
 
 ### 🌟 Features

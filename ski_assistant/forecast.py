@@ -201,8 +201,11 @@ def _daily(hours, times):
         day = stamp.date()
         d = days.setdefault(day.isoformat(), {"date": day.isoformat(), "snow_day_in": 0.0, "snow_night_in": 0.0,
                                               "rain_in": 0.0, "water_in": 0.0, "model_snow_in": 0.0,
-                                              "temps": [], "wind": 0.0, "gust": 0.0, "freeze": [], "slr_w": 0.0})
+                                              "temps": [], "wind": 0.0, "gust": 0.0, "freeze": [], "slr_w": 0.0,
+                                              "cloud": []})
         d["temps"].append(h["temp_f"])
+        if 9 <= stamp.hour < 15 and h.get("cloud") is not None:
+            d["cloud"].append(h["cloud"])  # the light while you ride
         d["wind"] = max(d["wind"], h["wind_mph"])
         d["gust"] = max(d["gust"], h["gust_mph"])
         if h["freezing_ft"] is not None:
@@ -232,8 +235,27 @@ def _daily(hours, times):
                     "tmax_f": round(max(d["temps"]), 1), "tmin_f": round(min(d["temps"]), 1),
                     "wind_mph": round(d["wind"], 1), "gust_mph": round(d["gust"], 1),
                     "freezing_ft": round(min(d["freeze"]) / 100) * 100 if d["freeze"] else None,
+                    "cloud_day": round(sum(d["cloud"]) / len(d["cloud"])) if d["cloud"] else None,
                     "hours": len(d["temps"])})
-    return sorted(out, key=lambda x: x["date"])
+    out.sort(key=lambda x: x["date"])
+    _surfaces(out)
+    return out
+
+
+# Snow surface: the morning after a thaw (a high of 34F or more, or rain) and a hard refreeze (a low of 28F or
+# less) the snow is firm and icy, unless 2" fell overnight to cover it. A high of 30F or more in the Colorado sun
+# softens it by midday; a colder day stays firm. Grooming breaks the crust up, so it only counts for that morning.
+THAW_F, REFREEZE_F, SOFTEN_F, COVER_IN, FLAT_CLOUD = 34, 28, 30, 2.0, 85
+
+
+def _surfaces(days):
+    """Marks each day's "surface" ("firm" all day, "softens" by midday, or None) and "flat_light" (cloud cover of
+    85% or more from 9am to 3pm)."""
+    for prev, d in zip([None] + days[:-1], days):
+        crust = (prev is not None and (prev["tmax_f"] >= THAW_F or prev["rain_in"] >= 0.05)
+                 and d["tmin_f"] <= REFREEZE_F and prev["snow_night_in"] < COVER_IN)
+        d["surface"] = ("softens" if d["tmax_f"] >= SOFTEN_F else "firm") if crust else None
+        d["flat_light"] = d["cloud_day"] is not None and d["cloud_day"] >= FLAT_CLOUD
 
 
 def daily(r, band="mid"):

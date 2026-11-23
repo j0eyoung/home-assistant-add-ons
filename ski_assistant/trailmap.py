@@ -106,6 +106,7 @@ def for_resort(r):
         used_runs |= {id(x) for x in hits}
         f["status"] = _best(hits) if has_status else None
         f["level"] = next((x.get("level") for x in hits if x.get("level")), None) or f["level"]
+        f["groomed"] = any(x.get("groomed") for x in hits)
     for f in lifts:
         hits = lift_idx.find(f["name"])
         used_lifts |= {id(x) for x in hits}
@@ -124,7 +125,10 @@ def for_resort(r):
 
 
 def _out(f):
-    return {"n": f["name"], "l": f.get("level"), "s": f.get("status"), "c": f["lines"]}
+    out = {"n": f["name"], "l": f.get("level"), "s": f.get("status"), "c": f["lines"]}
+    if f.get("groomed"):
+        out["g"] = 1
+    return out
 
 
 def _best(items):

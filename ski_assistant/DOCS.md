@@ -35,8 +35,21 @@ Leave times and drive times start from the first line of **Departure points** un
 
 A resort whose report says it isn't open for the season yet (or has closed for it), or that has no lifts running in the middle of the day, drops to the bottom of the Plan list and is never the best bet. A resort you add without a live report is always treated as open.
 
+## Skis days
+
+Tick **Skis day** on the Plan tab when you're skiing rather than riding. A quarter of the score then goes to learning:
+
+- **Open greens and blues (10 points):** from today's live report. A groomed one counts fully and an ungroomed one half, and 12 or more gets all 10. Keystone's report doesn't say which runs are open, so it gets the middle value of the other resorts.
+- **How much of the mountain is green or blue (5 points).**
+- **The snow surface (5 points):** none when the snow stays firm and icy all day, half when it's firm first thing but softens by midday.
+- **Wind and light (5 points):** calm wind, and clear enough skies to see the bumps.
+
+The open runs are today's, used for every day you plan: early in the season what's open now is the best guess for the next few days.
+
+**Firm snow** is forecast for the morning after a thaw (a high of 34°F or more, or rain) and a hard refreeze (a low of 28°F or less), unless 2 inches fell overnight to cover it. **Flat light** means 85% cloud or more from 9am to 3pm.
+
 ## Open lifts and trails, and the trail map
 
 Each resort page shows how many lifts and trails are open, and **Open right now** lists them by name, from the feeds the resorts' own websites use: MtnPowder (Winter Park, Arapahoe Basin, Steamboat), POWDR (Copper, Eldora) and Aspen Snowmass's own report (all four mountains). Keystone's site blocks the add-on, so it only has lift and run counts from OnTheSnow, without names. These are unofficial feeds, so a resort can drop out for a while if its site changes.
 
-The trail map draws each resort's runs and lifts from OpenStreetMap (the data OpenSkiMap shows) and colours them by matching names with the resort's report, which finds about 9 in 10 runs. A run the report names but the map can't find is listed under the map. The runs and lifts for the built-in resorts ship with the add-on; for a resort you add in `ski_resorts.json`, the first map is fetched from OpenStreetMap and can take a minute.
+The trail map draws each resort's runs and lifts from OpenStreetMap (the data OpenSkiMap shows) and colours them by matching names with the resort's report, which finds about 9 in 10 runs. A run the report names but the map can't find is listed under the map. **Learner view**, above the map, makes open groomed greens and blues stand out, fades the blacks and park, and zooms to the easy runs. The runs and lifts for the built-in resorts ship with the add-on; for a resort you add in `ski_resorts.json`, the first map is fetched from OpenStreetMap and can take a minute.

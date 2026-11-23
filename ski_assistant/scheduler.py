@@ -204,7 +204,7 @@ def packing_list(resort_id, date_iso, skis=False):
     items = ["Pass", "Helmet and goggles", "Gloves", "Water and snacks"]
     if row:
         items = row["gear"]["wear"] + [n for n in row["gear"]["notes"]
-                                       if not n.startswith(("Powder day", "Skis:", "Expect lift"))] + items
+                                       if not n.startswith(("Powder day", "Skis:", "Expect lift", "Firm"))] + items
         if row["tmax_f"] < 20:
             items.append("Hand warmers")
     items.append("Skis, poles and ski boots" if skis else "Board and boots")

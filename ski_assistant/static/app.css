@@ -351,3 +351,7 @@ details.fold > summary::before { content: ""; width: 9px; height: 9px; border-ri
 details.fold[open] > summary::before { transform: rotate(45deg); }
 details.fold > summary:hover { background: var(--panel-2); border-radius: var(--r); }
 details.fold > .controls { padding: 0 16px 14px; margin: 0; }
+
+.legend i.sw.thick { height: 7px; border-radius: 3px; }
+.legend i.sw + i.sw { margin-left: -2px; }
+#tmapcard .check { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 6px; }

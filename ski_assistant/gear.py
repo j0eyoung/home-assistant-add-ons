@@ -25,6 +25,13 @@ def call(day, fresh_in=0.0, skis=False):
         notes.append("Sunny: dark lens and sunscreen")
     if gust >= 35:
         notes += ["Windy: cover your face", "Expect lift holds up high"]
+    surface = day.get("surface")
+    if surface == "firm":
+        notes.append("Firm, icy snow all day: a thaw froze hard overnight")
+    elif surface == "softens":
+        notes.append("Firm, icy snow first thing (a thaw froze overnight), softer by midday")
+    if day.get("flat_light") and fresh_in < 4:
+        notes.append("Flat light: low-light lens for goggles")
     if skis:
         notes.append("Skis: pack the ski boot bag; stick to greens and blues while learning")
     return {"feels_like_f": round(eff), "wear": wear, "notes": notes}

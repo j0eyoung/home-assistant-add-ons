@@ -4,7 +4,8 @@ import forecast as fc
 
 
 def forecast(r, days=None, past_days=None):
-    """Daily list of dicts: date, snow_in, tmax_f, tmin_f, wind_mph, gust_mph, quality, rain_in
-    (the past 5 days are included; callers filter by date)."""
-    return [{k: d[k] for k in ("date", "snow_in", "snow_day_in", "tmax_f", "tmin_f", "wind_mph", "gust_mph", "quality", "rain_in")}
+    """Daily list of dicts: date, snow_in, tmax_f, tmin_f, wind_mph, gust_mph, quality, rain_in, cloud_day,
+    surface, flat_light (the past 5 days are included; callers filter by date)."""
+    return [{k: d[k] for k in ("date", "snow_in", "snow_day_in", "snow_night_in", "tmax_f", "tmin_f", "wind_mph",
+                               "gust_mph", "quality", "rain_in", "cloud_day", "surface", "flat_light")}
             for d in fc.daily(r)]

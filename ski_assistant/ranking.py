@@ -1,14 +1,16 @@
 """Best-day ranking. Score 0-100 per resort per date from fresh snow, wind, temperature, crowds, drive.
 A resort that is not open for the season yet (or has closed for it) is listed last and never picked.
 
-Weights are plain constants so they are easy to tune. On a "skis" day the score is 85% the normal score plus
-15% for how much of the mountain is green and blue (the learning-to-ski bias)."""
+Weights are plain constants so they are easy to tune. On a "skis" day the score is 75% the normal score plus
+25 points for learning: open groomed greens and blues, the mountain's green-and-blue share, a snow surface that
+isn't firm, calm wind and good light (learner.py)."""
 import datetime as dt
 import os
 
 import drive
 import ha
 import gear
+import learner
 import livestatus
 import resortinfo
 import settings
@@ -20,7 +22,6 @@ import weather
 
 # Max points per factor (sum 100)
 W_SNOW, W_WIND, W_TEMP, W_CROWD, W_DRIVE = 40, 15, 10, 15, 20  # drive was 10 until 0.9.0
-SKI_BIAS = 15  # share of the score given to beginner terrain on a skis day
 POWDER_IN = float(os.getenv("POWDER_ALERT_INCHES", "6"))
 
 
@@ -88,15 +89,24 @@ def best_days(resorts, date=None, skis=False, include_paid=True, departure=None)
         score, parts = score_day(r, day, fresh, leave["drive_min"])
         pct = resortinfo.beginner_pct(r)
         live = livestatus.live_status(r)
-        if skis:
-            score = round(score * (100 - SKI_BIAS) / 100 + SKI_BIAS * (pct if pct is not None else 50) / 100, 1)
+        open_gb = learner.terrain(r, live, pct)  # every day, so the midday count is there for evening plans
         rows.append({"resort": r["name"], "id": r["id"], "pass": r.get("pass"), "score": score, "parts": parts,
+                     "_day": day,
                      "fresh_in": fresh, "tmax_f": day["tmax_f"], "tmin_f": day["tmin_f"],
                      "wind_mph": day["wind_mph"], "gust_mph": day["gust_mph"], "leave": leave,
-                     "beginner_pct": pct, "gear": gear.call(day, fresh, skis), "transit": transit.for_resort(r),
+                     "beginner_pct": pct, "learner": open_gb, "surface": day["surface"],
+                     "flat_light": day["flat_light"], "cloud_day": day["cloud_day"],
+                     "gear": gear.call(day, fresh, skis), "transit": transit.for_resort(r),
                      "snowpack": snotel.resort_snowpack(r), "live": livestatus.summary(live),
                      "not_open": livestatus.season_state(r, live) == "not_open",
                      "traffic": traffic.for_resort(r, sensors) if live_today else None})
+    # A skis day's learning points; a resort that doesn't say which runs are open gets the others' middle value
+    known = sorted(learner.runs(x["learner"]) for x in rows if x.get("learner") and x["learner"]["open"])
+    fill = known[len(known) // 2] if known else None
+    for x in rows:
+        day = x.pop("_day", None)
+        if skis and day:
+            x["score"], x["parts"]["learning"] = learner.score(x["score"], day, x["learner"], x["beginner_pct"], fill)
     rows.sort(key=lambda x: (bool(x.get("not_open")), -x.get("score", -1)))
     return rows
 
