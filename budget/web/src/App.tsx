@@ -11,8 +11,11 @@ import { RecurringPage } from './Recurring.tsx'
 import { SafeToSpend } from './SafeToSpend.tsx'
 import { Sign } from './Sign.tsx'
 import { Transactions } from './Transactions.tsx'
+import type { Mode as TxMode } from './Transactions.tsx'
+import { UntilPayday } from './UntilPayday.tsx'
+import { YearPage } from './Year.tsx'
 
-const TABS = ['Dashboard', 'Transactions', 'Budget', 'Recurring', 'Debt', 'Plan', 'Accounts', 'Ask'] as const
+const TABS = ['Dashboard', 'Transactions', 'Budget', 'Recurring', 'Debt', 'Plan', 'Year', 'Accounts', 'Ask'] as const
 type Tab = (typeof TABS)[number]
 
 export function App() {
@@ -27,6 +30,14 @@ export function App() {
   }, [])
   useEffect(loadStatus, [loadStatus])
   const setReviewCount = useCallback((n: number) => setStatus((s) => (s ? { ...s, toReview: n } : s)), [])
+  const setOwed = useCallback((o: { total: number; count: number }) =>
+    setStatus((s) => (s ? { ...s, owedToYou: { ...o, oldest: s.owedToYou?.oldest ?? null } } : s)), [])
+  // Which list the Transactions tab opens on when the dashboard sends you there.
+  const [txStart, setTxStart] = useState<TxMode | null>(null)
+  const openTab = (t: Tab, mode: TxMode | null = null) => {
+    setTxStart(mode)
+    setTab(t)
+  }
   // On a phone the tabs scroll sideways; keep the current one in view. (Block
   // body: newer browsers return a promise from scrollIntoView, which React
   // would take for a cleanup function.)
@@ -44,7 +55,7 @@ export function App() {
           <nav aria-label="Sections">
             {TABS.map((t) => (
               <button key={t} ref={t === tab ? activeTab : undefined} className={t === tab ? 'active' : ''} aria-current={t === tab ? 'page' : undefined}
-                onClick={() => setTab(t)}>
+                onClick={() => openTab(t)}>
                 {t}{t === 'Transactions' && toReview > 0 && <span className="count" aria-label={`${toReview} to review`}>{toReview}</span>}
               </button>
             ))}
@@ -65,16 +76,20 @@ export function App() {
       )}
       <main>
         {tab === 'Dashboard' && (
-          <Dashboard month={month} status={status} onError={setError} onOpenPlan={() => setTab('Plan')}
-            onOpenReview={() => setTab('Transactions')} onOpenBudget={() => setTab('Budget')} />
+          <Dashboard month={month} status={status} onError={setError} onOpenPlan={() => openTab('Plan')}
+            onOpenReview={() => openTab('Transactions', 'review')} onOpenBudget={() => openTab('Budget')}
+            onOpenOwed={() => openTab('Transactions', 'owed')} />
         )}
         {tab === 'Transactions' && (
-          <Transactions month={month} toReview={toReview} startInReview={toReview > 0} onError={setError} onReviewCount={setReviewCount} />
+          <Transactions month={month} toReview={toReview} owedCount={status?.owedToYou?.count ?? 0}
+            startMode={txStart ?? (toReview > 0 ? 'review' : 'all')} onError={setError} onReviewCount={setReviewCount}
+            onOwed={setOwed} onStatus={loadStatus} />
         )}
         {tab === 'Budget' && <Budget month={month} onError={setError} />}
         {tab === 'Recurring' && <RecurringPage onError={setError} />}
         {tab === 'Debt' && <DebtPage onError={setError} />}
         {tab === 'Plan' && <PlanPage status={status} onError={setError} />}
+        {tab === 'Year' && <YearPage onError={setError} />}
         {tab === 'Accounts' && <Accounts status={status} onError={setError} onStatus={loadStatus} />}
         {tab === 'Ask' && <Ask status={status} onError={setError} />}
       </main>
@@ -86,13 +101,15 @@ export function App() {
 type PageProps = { onError: (message: string) => void }
 type Tracked = { id: number; name: string; total: number; since: string; thisMonth: number }
 
-function Dashboard({ month, status, onError, onOpenPlan, onOpenReview, onOpenBudget }: PageProps & {
+function Dashboard({ month, status, onError, onOpenPlan, onOpenReview, onOpenBudget, onOpenOwed }: PageProps & {
   month: string
   status: Status | null
   onOpenPlan: () => void
   onOpenReview: () => void
   onOpenBudget: () => void
+  onOpenOwed: () => void
 }) {
+  const owedToYou = status?.owedToYou
   // null while the month loads, so nothing shows as $0 in the meantime.
   const [rows, setRows] = useState<BudgetRow[] | null>(null)
   const [worth, setWorth] = useState<{ date: string; assets: number; debts: number }[]>([])
@@ -136,6 +153,7 @@ function Dashboard({ month, status, onError, onOpenPlan, onOpenReview, onOpenBud
         {side && (
           <div className="dash-side">
             {current && <SafeToSpend onError={onError} onOpenPlan={onOpenPlan} />}
+            {current && <UntilPayday onError={onError} />}
             {toReview > 0 && (
               <button className="service" onClick={onOpenReview}>
                 <span>
@@ -157,6 +175,14 @@ function Dashboard({ month, status, onError, onOpenPlan, onOpenReview, onOpenBud
           <div><dt>Income</dt><dd>{shown(income)}<small>{income - spent >= 0 ? '+' : '−'}{dollars(Math.abs(income - spent))} after spending</small></dd></div>
           <div><dt>Pre-tax savings</dt><dd>{shown(saved)}<small>401k, HSA, investments</small></dd></div>
           <div><dt>Net worth</dt><dd>{latest ? dollars(latest.assets - latest.debts) : '—'}<small>{latest ? `${dollars(latest.debts)} owed` : 'connect an account'}</small></dd></div>
+          {owedToYou && owedToYou.count > 0 && (
+            <div>
+              <dt>Owed to you</dt>
+              <dd>{dollars(owedToYou.total)}<small>
+                <button className="link left quiet" onClick={onOpenOwed}>{owedToYou.count} {owedToYou.count === 1 ? 'charge' : 'charges'} to be paid back</button>
+              </small></dd>
+            </div>
+          )}
           {tracked.map((t) => {
             const months = Math.max(1, monthsBetween(t.since.slice(0, 7), thisMonth()) + 1)
             return (

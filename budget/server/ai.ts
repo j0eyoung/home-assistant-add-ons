@@ -32,7 +32,8 @@ export async function categorizeWithAi(maxTransactions = 200): Promise<number> {
 async function categorize(maxTransactions: number): Promise<number> {
   const builtin = applyBuiltinRules()
   if (!(await available())) return builtin
-  const categories = db.prepare('SELECT id, name FROM categories').all() as { id: number; name: string }[]
+  // Reimbursable is the user's call only: the AI can't know who'll pay a charge back.
+  const categories = db.prepare(`SELECT id, name FROM categories WHERE kind != 'reimbursable'`).all() as { id: number; name: string }[]
   const byName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]))
   const rows = db
     .prepare(`SELECT t.id, t.name, t.merchant, t.amount, a.name AS account, a.type AS account_type
@@ -44,7 +45,7 @@ async function categorize(maxTransactions: number): Promise<number> {
   const examples = (db.prepare(`
     SELECT COALESCE(t.merchant, t.name) AS description, c.name AS category, MAX(t.date) AS last
     FROM transactions t JOIN categories c ON c.id = t.category_id
-    WHERE (t.category_source = 'user' OR (t.category_source = 'ai' AND t.reviewed = 1))
+    WHERE (t.category_source = 'user' OR (t.category_source = 'ai' AND t.reviewed = 1)) AND c.kind != 'reimbursable'
       AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
     GROUP BY lower(COALESCE(t.merchant, t.name)) ORDER BY last DESC LIMIT 80`).all() as { description: string; category: string }[])
     .map((e) => `${e.description} => ${e.category}`)

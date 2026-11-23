@@ -28,7 +28,7 @@ It is the owner's own system, not a bank's or an aggregator's: private data on t
 
 ## Capabilities and Constraints
 
-- Tabs: Dashboard, Transactions (To review queue and the month's list), Budget, Recurring, Debt, Plan, Accounts, Ask (questions answered by Claude over the data).
+- Tabs: Dashboard, Transactions (To review queue, the month's list, and Owed to you), Budget, Recurring, Debt, Plan, Year, Accounts, Ask (questions answered by Claude over the data).
 - Text in tables and lists is never cut off; it wraps. Short values stay on one line.
 - Runs on ARM hardware with little memory: light dependencies, no heavy charting libraries.
 - Frontend URLs stay relative (Home Assistant ingress).

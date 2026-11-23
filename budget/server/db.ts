@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY,
   name TEXT UNIQUE NOT NULL,
-  kind TEXT NOT NULL DEFAULT 'expense' -- expense | income | savings | transfer
+  kind TEXT NOT NULL DEFAULT 'expense' -- expense | income | savings | transfer | reimbursable
 );
 CREATE TABLE IF NOT EXISTS transactions (
   id TEXT PRIMARY KEY,
@@ -156,6 +156,13 @@ const trackAdded = addColumn('categories', 'track', 'INTEGER NOT NULL DEFAULT 0'
 // 1 once the user has looked at a transaction's category (confirmed it,
 // changed it or split it). See NEEDS_REVIEW.
 addColumn('transactions', 'reviewed', 'INTEGER NOT NULL DEFAULT 0')
+// Card and loan due dates: day of the month the payment is due (1-31, the
+// month's last day in shorter months), and whether the bank pays it itself.
+addColumn('accounts', 'due_day', 'INTEGER')
+addColumn('accounts', 'autopay', 'INTEGER NOT NULL DEFAULT 0')
+// On a Reimbursable charge: the deposit that paid it back, or 'manual' when
+// the money came some way the app can't see. See server/reimburse.ts.
+addColumn('transactions', 'repaid_by', 'TEXT')
 
 // The Transactions tab's "To review" queue: posted transactions from the last
 // REVIEW_DAYS whose category is a guess (the AI's, or only the default 'Other')
@@ -226,11 +233,22 @@ const SEED_CATEGORIES: [string, string][] = [
   ['Interest', 'expense'],
   ['Legal', 'expense'],
   ['Other', 'expense'],
+  // Charges someone will pay back (work travel, a shared bill) and the deposits
+  // that pay them back. The kind counts as nothing: not spending, income,
+  // savings or a debt payment. The AI never picks it.
+  ['Reimbursable', 'reimbursable'],
 ]
 const seedCategories = () => {
   const seed = db.prepare('INSERT OR IGNORE INTO categories (name, kind) VALUES (?, ?)')
   for (const [name, kind] of SEED_CATEGORIES) seed.run(name, kind)
+  // A Reimbursable category the user made themselves (as an expense) becomes the real one.
+  if (!db.prepare(`SELECT 1 FROM categories WHERE kind = 'reimbursable'`).get()) {
+    db.prepare(`UPDATE categories SET kind = 'reimbursable' WHERE name = 'Reimbursable'`).run()
+  }
 }
+
+export const reimbursableId = (): number | null =>
+  (db.prepare(`SELECT id FROM categories WHERE kind = 'reimbursable' ORDER BY id LIMIT 1`).get() as { id: number } | undefined)?.id ?? null
 seedCategories()
 if (trackAdded) db.prepare(`UPDATE categories SET track = 1 WHERE name = 'Legal'`).run()
 
@@ -318,10 +336,10 @@ export const SCHEMA_DOC = `SQLite tables and views:
 ledger(id, transaction_id, account_id, date 'YYYY-MM-DD', name, merchant, amount, pending 0/1, category_id, category_source, notes)
   USE THIS for any totals or category questions: it is the transactions table with split transactions replaced by their parts.
   amount > 0 is money spent/leaving the account; amount < 0 is money received (income, refunds).
-transactions(id, account_id, date, name, merchant, amount, pending, category_id, category_source, notes)  raw rows; split parents still appear here.
+transactions(id, account_id, date, name, merchant, amount, pending, category_id, category_source, notes, repaid_by)  raw rows; split parents still appear here. repaid_by: on a Reimbursable charge, the id of the deposit that paid it back, or 'manual'; null = still owed.
 splits(id, transaction_id, amount, category_id)  parts of a split transaction.
-accounts(id, source, org_name, name, type, balance, available, currency, balance_date, apr, min_payment, in_plan, promo_apr, promo_end)
-  type is depository | credit | loan | investment | other. balance is signed: negative means money owed (credit cards, loans, mortgage). apr is percent; promo_apr applies until promo_end.
-categories(id, name, kind, track)  kind is expense | income | savings | transfer. Only kind='expense' counts as spending. 'savings' is pre-tax 401k/HSA contributions and investment activity (dividends, sweeps) inside investment accounts.
+accounts(id, source, org_name, name, type, balance, available, currency, balance_date, apr, min_payment, in_plan, promo_apr, promo_end, due_day, autopay)
+  type is depository | credit | loan | investment | other. balance is signed: negative means money owed (credit cards, loans, mortgage). apr is percent; promo_apr applies until promo_end. due_day is the day of the month a payment is due; autopay 1 = the bank pays it automatically.
+categories(id, name, kind, track)  kind is expense | income | savings | transfer | reimbursable. Only kind='expense' counts as spending. 'savings' is pre-tax 401k/HSA contributions and investment activity (dividends, sweeps) inside investment accounts. 'reimbursable' (the Reimbursable category) is charges someone will pay back and the deposits that paid them back; it counts as neither spending nor income.
 budgets(category_id, amount)  monthly target per category.
 balance_snapshots(date, account_id, balance)  one row per account per day synced (signed like accounts.balance).`

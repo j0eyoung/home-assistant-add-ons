@@ -1,18 +1,21 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { api, money, monthLabel } from './api.ts'
+import { api, money, monthLabel, useNarrow } from './api.ts'
 import type { Category, Transaction } from './api.ts'
 import { Icon } from './Icon.tsx'
+import { OwedList } from './Owed.tsx'
 import { photoToJpeg } from './photo.ts'
 import { SplitEditor } from './SplitEditor.tsx'
 import type { Proposal } from './SplitEditor.tsx'
 
 const CADENCES = ['weekly', 'every 2 weeks', 'twice a month', 'monthly', 'quarterly', 'yearly']
-const KINDS: [Category['kind'], string][] = [['expense', 'Spending'], ['income', 'Income'], ['savings', 'Savings'], ['transfer', 'Transfers']]
+const KINDS: [Category['kind'], string][] = [
+  ['expense', 'Spending'], ['income', 'Income'], ['savings', 'Savings'], ['transfer', 'Transfers'], ['reimbursable', 'Paid back later'],
+]
 // Matches REVIEW_DAYS in server/db.ts.
 const REVIEW_DAYS = 60
 
 type OnError = (message: string) => void
-type Mode = 'review' | 'all'
+export type Mode = 'review' | 'all' | 'owed'
 // What's open under a transaction; one at a time.
 type Panel =
   | { kind: 'split'; proposal?: Proposal }
@@ -61,14 +64,19 @@ export function CategorySelect({ categories, value, onChange, placeholder }: {
   )
 }
 
-export function Transactions({ month, toReview, startInReview, onError, onReviewCount }: {
+export function Transactions({ month, toReview, owedCount, startMode, onError, onReviewCount, onOwed, onStatus }: {
   month: string
   toReview: number
-  startInReview: boolean
+  owedCount: number
+  startMode: Mode
   onError: OnError
   onReviewCount: (n: number) => void
+  // The Owed to you list reports its count; a move in or out of Reimbursable reloads the status.
+  onOwed: (owed: { total: number; count: number }) => void
+  onStatus: () => void
 }) {
-  const [mode, setMode] = useState<Mode>(startInReview ? 'review' : 'all')
+  const [mode, setMode] = useState<Mode>(startMode)
+  const narrow = useNarrow()
   const [rows, setRows] = useState<Transaction[]>([])
   const [loaded, setLoaded] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
@@ -87,6 +95,7 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
   const receiptFor = useRef<Transaction | null>(null)
 
   const load = useCallback(() => {
+    if (mode === 'owed') return
     const params = new URLSearchParams(mode === 'review' ? { review: '1' } : { month })
     if (mode === 'all' && q) params.set('q', q)
     if (mode === 'all' && category) params.set('category', category)
@@ -118,6 +127,7 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
   }
 
   const categoryName = (id: number | null) => categories.find((c) => c.id === id)?.name ?? '—'
+  const isReimbursable = (id: number | null) => categories.some((c) => c.id === id && c.kind === 'reimbursable')
   const flash = (text: string) => {
     setToast(text)
     window.setTimeout(() => setToast((current) => (current === text ? '' : current)), 6000)
@@ -153,6 +163,7 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
       const r = await patch(t, { category_id: categoryId })
       setRows((rs) => rs.map((x) => (x.id === t.id ? { ...x, category_id: categoryId, category_source: 'user' } : x)))
       touched([t.id])
+      if (isReimbursable(categoryId) || isReimbursable(t.category_id)) onStatus()
       setOpen({ id: t.id, panel: { kind: 'rule', categoryId, others: r.others } })
     } catch (e) {
       fail(e)
@@ -187,9 +198,11 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
 
   const bulkCategory = async (categoryId: number) => {
     const ids = [...selected]
+    const leaving = rows.some((t) => selected.has(t.id) && isReimbursable(t.category_id))
     if (await bulk({ category_id: categoryId }, ids)) {
       flash(`Moved ${plural(ids.length, 'transaction')} to ${categoryName(categoryId)}.`)
       load()
+      if (isReimbursable(categoryId) || leaving) onStatus()
     }
   }
 
@@ -261,6 +274,23 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
     }
   }
 
+  // Shortcut to the Reimbursable category, without the "always?" offer: a
+  // merchant is rarely always paid back.
+  const reimbursable = categories.find((c) => c.kind === 'reimbursable')
+  const paidBackLater = async (t: Transaction) => {
+    if (!reimbursable) return
+    try {
+      await patch(t, { category_id: reimbursable.id })
+      setRows((rs) => rs.map((x) => (x.id === t.id ? { ...x, category_id: reimbursable.id, category_source: 'user' } : x)))
+      touched([t.id])
+      setOpen(null)
+      onStatus()
+      flash(`${label(t)} is in Owed to you until it's paid back. It no longer counts as spending.`)
+    } catch (e) {
+      fail(e)
+    }
+  }
+
   const markRecurring = async (t: Transaction, cadence: string) => {
     try {
       await api('recurring', 'PUT', { label: label(t), status: 'yes', cadence })
@@ -280,6 +310,9 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
         {!t.pending && <button className="mini" onClick={() => togglePanel(t, { kind: 'split' })}>split</button>}
         {!t.pending && t.amount > 0 && <button className="mini" onClick={() => pickReceipt(t)}>receipt</button>}
         {t.amount > 0 && <button className="mini" onClick={() => togglePanel(t, { kind: 'recurring' })}>recurring</button>}
+        {t.amount > 0 && !t.splits.length && reimbursable && t.category_id !== reimbursable.id && (
+          <button className="mini" onClick={() => paidBackLater(t)}>paid back later</button>
+        )}
       </>
     )
 
@@ -347,6 +380,9 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
           <button role="tab" aria-selected={mode === 'all'} className={mode === 'all' ? 'active' : ''} onClick={() => switchMode('all')}>
             All in {monthLabel(month, false)}
           </button>
+          <button role="tab" aria-selected={mode === 'owed'} className={mode === 'owed' ? 'active' : ''} onClick={() => switchMode('owed')}>
+            {narrow ? 'Owed' : 'Owed to you'}{owedCount ? <span className="count">{owedCount}</span> : null}
+          </button>
         </div>
         {mode === 'all' && (
           <>
@@ -365,7 +401,9 @@ export function Transactions({ month, toReview, startInReview, onError, onReview
 
       {toast && <p className="toast" role="status" onClick={() => setToast('')}>{toast}</p>}
 
-      {mode === 'review' ? (
+      {mode === 'owed' ? (
+        <OwedList onError={onError} onCount={onOwed} />
+      ) : mode === 'review' ? (
         <>
           {remaining > 0 ? (
             <div className="review-head">

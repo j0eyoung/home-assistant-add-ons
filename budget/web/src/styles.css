@@ -393,10 +393,47 @@ tr.day-row th span { float: right; color: var(--ink-3); font-weight: 600; }
 .merge-hint { padding: 12px 16px; margin: 0 0 10px; border-radius: 10px; background: var(--orange); color: #101614; outline: 2px solid #101614; outline-offset: -5px; }
 .merge-hint select { color: var(--ink); }
 
+/* Links that act as buttons (downloads). */
+a.button {
+  display: inline-flex; align-items: center; padding: 8px 14px; font-weight: 600; color: var(--ink); text-decoration: none;
+  background: var(--surface); border: 1px solid var(--rule-strong); border-radius: var(--radius-sm); white-space: nowrap;
+}
+a.button:hover { background: var(--surface-2); border-color: var(--ink-3); }
+
+/* Year tab */
+.year-table td.num, .year-months td.num { white-space: nowrap; }
+.year-months th, .year-months td { padding: 8px 6px; font-size: 14px; }
+tr.month-list-row td { padding-top: 0; font-size: 14px; color: var(--ink-2); }
+.month-list { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.month-list span { white-space: nowrap; }
+.figures dd small .over { display: inline; }
+.figures dd small button.link { font-size: 14px; font-weight: 400; text-align: left; color: var(--ink-3); text-decoration-color: currentColor; }
+
+/* Owed to you: deposits and charges to pick from when matching a repayment. */
+.owed-total { font-size: 19px; white-space: nowrap; }
+.match-panel h3 { margin: 4px 0 8px; }
+.choice-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.choice { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm); cursor: pointer; }
+.choice.on { border-color: var(--sign); box-shadow: inset 0 0 0 1px var(--sign); background: var(--sign-tint); }
+/* On a narrow card the amount drops under the description instead of squeezing it. */
+.choice .grow-text { flex: 1 1 180px; }
+.choice > strong { margin-left: auto; }
+.grow-text { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.nowrap { white-space: nowrap; }
+.owed-paid { margin-top: 16px; }
+.owed-paid .line > span:last-child { display: inline-flex; align-items: center; gap: 6px; }
+
 /* Budget, debt and recurring tables */
 th.track, td.track { width: 100px; text-align: center; }
 .debt-table th.pace, .debt-table td.pace { width: 32%; }
 .debt-table th.plan, .debt-table td.plan { width: 70px; text-align: center; }
+.debt-table th.due, .debt-table td.due { width: 96px; }
+/* Room for the account's due-date line under its name. */
+.debt-table td:first-child { min-width: 200px; }
+input.amount.day { width: 64px; }
+/* Construction orange for a warning in running text (a payment due soon). */
+.warn-text { color: var(--orange-ink); }
+label.autopay { display: flex; gap: 6px; margin-top: 6px; white-space: nowrap; }
 .recurring-table th.cadence, .recurring-table td.cadence { width: 160px; }
 .recurring-table td.cadence select { width: 100%; }
 .recurring-table th.actions, .recurring-table td.actions { width: 160px; text-align: right; }
@@ -504,6 +541,18 @@ table.form-table { width: auto; max-width: 100%; }
   .tx-table tr.split-row td.category { margin: 0 0 0 auto; }
   .tx-table tr.panel-row { display: block; padding: 0 2px 8px 32px; }
 
+  /* Debts: each account becomes a block, its figures and inputs labelled underneath. */
+  .debt-table thead { display: none; }
+  .debt-table, .debt-table tbody, .debt-table tfoot { display: block; }
+  .debt-table tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+  .debt-table tbody tr:hover td { background: none; }
+  .debt-table td { display: block; width: auto; padding: 0; border: none; text-align: left; }
+  .debt-table td:first-child { grid-column: 1 / -1; }
+  .debt-table td:empty, .debt-table td.opt, .debt-table td.pace { display: none; }
+  .debt-table td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--ink-3); }
+  .debt-table th.due, .debt-table td.due, .debt-table th.plan, .debt-table td.plan { width: auto; text-align: left; }
+  .debt-table tfoot tr { border-bottom: 0; }
+
   .plan-table thead { display: none; }
   .plan-table, .plan-table tbody { display: block; }
   .plan-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
@@ -518,6 +567,17 @@ table.form-table { width: auto; max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* A service panel with a warning in it turns construction orange, dark legends. */
+.service.caution-panel { background: var(--orange); color: #101614; outline-color: #101614; }
+.service.caution-panel h2, .service.caution-panel .small, .service.caution-panel summary,
+.service.caution-panel .figure span { color: #101614; }
+.service.caution-panel .line { border-color: rgba(16, 22, 20, 0.22); }
+.service.caution-panel button { color: #101614; border-color: rgba(16, 22, 20, 0.5); }
+.service.caution-panel button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.25); }
+.service.caution-panel :focus-visible { outline-color: #101614; }
+.service .strong-line { font-weight: 700; }
+.service select, .service input { color: var(--ink); }
 
 /* Service panel text roles */
 .svc-title { display: block; color: var(--blue-ink-2); font-size: 16px; font-weight: 700; }

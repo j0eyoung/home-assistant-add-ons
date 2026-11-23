@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.0 - Payday Forecast, Due Dates, Paid Back and the Year
+
+### 🌟 Features
+* **Until payday.** A new panel beside the month shows where your checking account goes before the next paycheck: the regular bills charged to it, card and loan payments due before payday, and everyday spending at your usual pace. It shows the lowest point and the day, and turns orange (with a line in Needs attention) if that drops below the amount you want to keep there, $200 unless you change it. Payday comes from your paycheck in the Plan tab.
+* **Card and loan due dates.** Set each one's due day and whether it's on autopay in the Debt tab. Needs attention tells you when a payment is due in the next 5 days and hasn't been made, or when one was missed. Autopay cards only warn about missed payments. Each account shows when it's next due and when it was last paid.
+* **Paid back later.** Put a charge someone will pay you back for (work travel, a shared bill) in the new Reimbursable category, or tap **paid back later** on it. It stops counting as spending and waits in the new **Owed to you** list in Transactions. When the money comes in, match it to the deposit (it then doesn't count as income either), or mark it paid back another way. The total owed shows in the month's figures.
+* **Year tab.** The year's income, spending, what's left over and pre-tax savings against the same months last year, spending by category with a monthly average and month by month, and a tax-time list: Taxes & Giving with its transactions, Health, HSA and 401k contributions, interest paid, and an estimate of loan interest.
+* **Download your transactions** as a spreadsheet (CSV) for a year or for everything, from the Year tab. Money out shows as negative, the way banks write it.
+
+### 🔧 Improvements
+* The morning check mentions a missed or soon-due payment, checking running low before payday, and money that has been owed to you for over a month.
+* On a phone, the Debt tab shows each account as a block with its figures labelled, instead of a table you have to scroll sideways.
+* Other add-ons reading the summary also get the payday forecast, payments due and what's owed to you.
+
 ## 0.7.0 - New Look
 
 ### 🌟 Features

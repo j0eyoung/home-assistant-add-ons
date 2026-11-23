@@ -52,6 +52,32 @@ const dayNum = (date: string) => Math.round(Date.parse(`${date}T00:00:00Z`) / DA
 export const monthsBetween = (from: string, to: string) =>
   (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + Number(to.slice(5, 7)) - Number(from.slice(5, 7))
 
+// The first payday after `date` (YYYY-MM-DD). Weekly and biweekly count from
+// lastPayday. Monthly pay lands on lastPayday's day of the month; twice-a-month
+// pay on that day and the one 15 days off it (the 15th and the last day when
+// lastPayday is at the month's end). Days past a month's end land on its last day.
+export function nextPayday(inc: Income, date: string): string {
+  const fromDay = (n: number) => new Date(n * DAY).toISOString().slice(0, 10)
+  const after = dayNum(date)
+  if (inc.schedule === 'weekly' || inc.schedule === 'biweekly') {
+    const step = inc.schedule === 'weekly' ? 7 : 14
+    const anchor = dayNum(inc.lastPayday)
+    // The smallest anchor + k * step that is after `date` (k may be negative).
+    return fromDay(anchor + Math.ceil((after + 1 - anchor) / step) * step)
+  }
+  const d = Number(inc.lastPayday.slice(8, 10))
+  const days = inc.schedule === 'monthly' ? [d] : d >= 28 ? [15, 31] : d > 15 ? [d - 15, d] : [d, d + 15]
+  for (let k = 0; k < 3; k++) {
+    const month = addMonths(date.slice(0, 7), k)
+    const last = Number(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).toISOString().slice(8, 10))
+    for (const day of days) {
+      const candidate = `${month}-${String(Math.min(day, last)).padStart(2, '0')}`
+      if (candidate > date) return candidate
+    }
+  }
+  return fromDay(after + 30)
+}
+
 // How many paychecks land in a month.
 export function paychecksIn(inc: Income, month: string): number {
   if (inc.schedule === 'semimonthly') return 2

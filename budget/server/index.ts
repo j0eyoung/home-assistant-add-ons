@@ -7,8 +7,11 @@ import { briefingData, cachedBriefing, generateBriefing } from './briefing.ts'
 import { authStatus, loginState, logout, sendLoginCode, startLogin } from './claude.ts'
 import { config } from './config.ts'
 import { NEEDS_REVIEW, backupDb, categoryIdByName, db, listBackups, meta, restoreBackup, runReadOnly } from './db.ts'
-import { debtSummary } from './debts.ts'
+import { cardsDue, debtSummary } from './debts.ts'
+import { forecast, forecastBrief, saveForecastSettings } from './forecast.ts'
 import { mergeAccount, replacements } from './merge.ts'
+import { markPaidBack, matchDeposit, owedBrief, reimbursements, undoPaidBack } from './reimburse.ts'
+import { exportCsv, yearReport } from './year.ts'
 import { syncHealth } from './health.ts'
 import { importPlan, planBrief, planDebtOrder, planReport, resetPlan, savePlan } from './plan.ts'
 import { addMonths, budgetRows, currentMonth, today } from './queries.ts'
@@ -33,6 +36,14 @@ app.use((req, res, next) => {
 })
 
 const ACCOUNT_TYPES = ['depository', 'credit', 'loan', 'investment', 'other']
+const orNull = <T>(f: () => T): T | null => {
+  try {
+    return f()
+  } catch (err: any) {
+    console.error(err)
+    return null
+  }
+}
 const optionalNumber = (v: unknown) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v))
 
 async function syncAndCategorize() {
@@ -68,11 +79,21 @@ app.get('/api/status', async (_req, res) => {
   } else if (waiting && failure) {
     health.issues.push(`AI categorization failed: ${failure.message}`)
   }
+  // Money warnings: a card payment missed or due soon, and checking running low before payday.
+  const warnings: string[] = []
+  try {
+    for (const c of cardsDue()) if (c.message) warnings.push(c.message)
+    const f = forecast()
+    if (f?.warning) warnings.push(f.warning)
+  } catch (err: any) {
+    console.error('Due dates or forecast failed:', err.message)
+  }
   if (waiting && ai && Date.now() - lastAutoCategorize > 30 * 60 * 1000) {
     lastAutoCategorize = Date.now()
     categorizeWithAi(2000).catch((err) => console.error('Categorizing waiting transactions failed:', err.message))
   }
-  res.json({ connected: isConnected(), lastSync: meta.get('last_sync'), aiConfigured: ai, health, waiting, toReview: toReview() })
+  health.issues.push(...warnings)
+  res.json({ connected: isConnected(), lastSync: meta.get('last_sync'), aiConfigured: ai, health, waiting, toReview: toReview(), owedToYou: owedBrief() })
 })
 
 const toReview = () => (db.prepare(`SELECT COUNT(*) AS n FROM transactions t WHERE ${NEEDS_REVIEW}`).get() as { n: number }).n
@@ -154,6 +175,11 @@ function updateAccount(id: string, body: Record<string, unknown>): boolean {
     const end = typeof body.promo_end === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.promo_end) ? body.promo_end : null
     db.prepare('UPDATE accounts SET promo_end = ? WHERE id = ?').run(end, id)
   }
+  if ('due_day' in body) {
+    const day = optionalNumber(body.due_day)
+    db.prepare('UPDATE accounts SET due_day = ? WHERE id = ?').run(day != null && Number.isInteger(day) && day >= 1 && day <= 31 ? day : null, id)
+  }
+  if ('autopay' in body) db.prepare('UPDATE accounts SET autopay = ? WHERE id = ?').run(body.autopay ? 1 : 0, id)
   if (account.source === 'manual' && body.balance != null) {
     const balance = Number(body.balance) || 0
     db.prepare('UPDATE accounts SET balance = ?, balance_date = ?, updated_at = ? WHERE id = ?').run(balance, today(), new Date().toISOString(), id)
@@ -281,7 +307,7 @@ app.get('/api/transactions', (req, res) => {
     params.push(`%${req.query.q}%`, `%${req.query.q}%`, `%${req.query.q}%`)
   }
   const rows = db.prepare(`
-    SELECT t.id, t.date, t.name, t.merchant, t.amount, t.pending, t.category_id, t.category_source, t.reviewed, t.notes, a.name AS account_name
+    SELECT t.id, t.date, t.name, t.merchant, t.amount, t.pending, t.category_id, t.category_source, t.reviewed, t.notes, t.repaid_by, a.name AS account_name
     FROM transactions t LEFT JOIN accounts a ON a.id = t.account_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY t.date DESC, t.id LIMIT 1000`).all(...params) as any[]
@@ -504,6 +530,52 @@ app.get('/api/safe-to-spend', (_req, res) => {
   res.json(safeToSpend())
 })
 
+app.get('/api/forecast', (_req, res) => {
+  res.json(forecast())
+})
+
+// Body: {accountId?, threshold?}. A blank accountId goes back to picking the
+// account paychecks land in; a blank threshold to the default.
+app.put('/api/forecast', (req, res) => {
+  saveForecastSettings(req.body ?? {})
+  res.json(forecast())
+})
+
+// Charges in Reimbursable still waiting to be paid back, recent paid-back ones,
+// and deposits that could be the repayment.
+app.get('/api/reimbursements', (_req, res) => {
+  res.json(reimbursements())
+})
+
+// Body: {deposit, charges: [transaction ids]}.
+app.post('/api/reimbursements/match', (req, res) => {
+  matchDeposit(String(req.body?.deposit ?? ''), Array.isArray(req.body?.charges) ? req.body.charges : [])
+  res.json(reimbursements())
+})
+
+app.post('/api/reimbursements/:id/paid', (req, res) => {
+  markPaidBack(req.params.id)
+  res.json(reimbursements())
+})
+
+app.post('/api/reimbursements/:id/undo', (req, res) => {
+  undoPaidBack(req.params.id)
+  res.json(reimbursements())
+})
+
+app.get('/api/year', (req, res) => {
+  res.json(yearReport(String(req.query.year || currentMonth().slice(0, 4))))
+})
+
+// ?year=2026 or ?year=all. Amounts are bank style (money out negative).
+app.get('/api/export.csv', (req, res) => {
+  const year = String(req.query.year || currentMonth().slice(0, 4))
+  const csv = exportCsv(year)
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+  res.setHeader('Content-Disposition', `attachment; filename="budget-${year === 'all' ? 'all' : year}.csv"`)
+  res.send(`﻿${csv}`)
+})
+
 app.get('/api/plan', (_req, res) => {
   res.json(planReport())
 })
@@ -577,6 +649,11 @@ app.get('/api/summary', (_req, res) => {
     plan: planBrief(),
     safeToSpend: safeToSpendBrief(),
     toReview: toReview(),
+    // Added in 0.8.0. A failure here leaves the field null rather than breaking the summary.
+    forecast: orNull(forecastBrief),
+    cardsDue: orNull(() => cardsDue().filter((c) => c.message)
+      .map((c) => ({ name: c.name, due: c.due, lastDue: c.lastDue, status: c.status, lastPayment: c.lastPayment, message: c.message }))),
+    owedToYou: orNull(owedBrief),
   })
 })
 

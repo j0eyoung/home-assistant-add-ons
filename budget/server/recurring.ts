@@ -4,7 +4,7 @@ import { today } from './queries.ts'
 // Finds subscriptions and bills: the same merchant charging a similar amount
 // on a regular schedule. Works from the ledger, so split parts count.
 
-type Charge = { date: string; amount: number; category: string; label: string }
+type Charge = { date: string; amount: number; category: string; label: string; account_id: string }
 
 type Override = { merchant_key: string; status: 'yes' | 'no'; cadence: string | null }
 
@@ -23,6 +23,7 @@ export type Recurring = {
   variable: boolean
   increase: { from: number; to: number } | null
   stopped: boolean
+  accountId: string // account of the latest charge
 }
 
 export const CADENCES = [
@@ -53,7 +54,7 @@ export const normalize = (label: string) =>
 
 export function detectRecurring(): Recurring[] {
   const charges = db.prepare(`
-    SELECT l.date, l.amount, c.name AS category, COALESCE(l.merchant, l.name) AS label
+    SELECT l.date, l.amount, c.name AS category, COALESCE(l.merchant, l.name) AS label, l.account_id
     FROM ledger l JOIN categories c ON c.id = l.category_id
     WHERE c.kind = 'expense' AND l.amount > 0 AND l.pending = 0 AND l.date >= date('now', '-400 days')
     ORDER BY l.date`).all() as Charge[]
@@ -145,6 +146,7 @@ export function detectRecurring(): Recurring[] {
         variable,
         increase: !variable && last.amount > base * 1.02 && last.amount - base >= 0.5 ? { from: base, to: last.amount } : null,
         stopped: now - lastDay > cadence.days * 1.6 + 3,
+        accountId: last.account_id,
       })
     }
   }

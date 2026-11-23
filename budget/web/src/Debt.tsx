@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { estimateMinimum, promoDeadline, simulatePayoff } from '../../shared/payoff.ts'
 import type { DebtState, Payoff, Strategy } from '../../shared/payoff.ts'
-import { addMonths, api, dollars, money, monthLabel, pref, thisMonth } from './api.ts'
+import { addMonths, api, dollars, money, monthLabel, pref, shortDate, thisMonth } from './api.ts'
 import { Icon } from './Icon.tsx'
 
 type Debt = {
@@ -20,6 +20,27 @@ type Debt = {
   payments_per_month: number | null
   paydown_per_month: number | null
   history_days: number
+  due_day: number | null
+  autopay: boolean
+  due: {
+    due: string
+    lastDue: string
+    status: 'paid' | 'not due yet' | 'due soon' | 'missed' | 'unknown'
+    lastPayment: { date: string; amount: number } | null
+  } | null
+}
+
+// "Next due Nov 28 · paid Nov 3, $250", with the missed and due-soon states in words.
+function dueLine(d: Debt): { text: string; tone: '' | 'over' | 'warn-text' } | null {
+  if (!d.due) return null
+  const paid = d.due.lastPayment ? `last paid ${shortDate(d.due.lastPayment.date)}, ${money(d.due.lastPayment.amount)}` : 'no payments seen'
+  switch (d.due.status) {
+    case 'missed': return { text: `Was due ${shortDate(d.due.lastDue)}, no payment since · ${paid}`, tone: 'over' }
+    case 'due soon': return { text: `Due ${shortDate(d.due.due)}, not paid yet · ${paid}`, tone: 'warn-text' }
+    case 'paid': return { text: `Next due ${shortDate(d.due.due)} · paid ${d.due.lastPayment ? `${shortDate(d.due.lastPayment.date)}, ${money(d.due.lastPayment.amount)}` : ''}`, tone: '' }
+    case 'unknown': return { text: `Next due ${shortDate(d.due.due)} · payments to it don't show here`, tone: '' }
+    default: return { text: `Next due ${shortDate(d.due.due)} · ${paid}`, tone: '' }
+  }
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
@@ -116,17 +137,22 @@ export function DebtPage({ onError }: { onError: (message: string) => void }) {
                 <tr>
                   <th>Account</th><th className="num">Owed</th><th className="num">APR %</th>
                   <th className="num opt" title="Promotional rate, e.g. 0% on a balance transfer">Promo %</th><th className="promo opt">Promo ends</th>
-                  <th className="num">Min / mo</th><th className="pace">Current pace</th><th className="plan">In plan</th>
+                  <th className="num">Min / mo</th><th className="due" title="Day of the month the payment is due">Due day</th>
+                  <th className="pace">Current pace</th><th className="plan">In plan</th>
                 </tr>
               </thead>
               <tbody>
                 {debts.map((d) => {
                   const min = minimumFor(d)
+                  const due = dueLine(d)
                   return (
                     <tr key={d.id}>
-                      <td title={d.org_name ?? ''}>{d.name}<div className="muted">{d.org_name}</div></td>
-                      <td className="num">{money(d.owed)}</td>
-                      <td className="num">
+                      <td title={d.org_name ?? ''}>
+                        {d.name}<div className="muted">{d.org_name}</div>
+                        {due && <div className={`small ${due.tone || 'muted'}`}>{due.text}</div>}
+                      </td>
+                      <td className="num" data-label="Owed">{money(d.owed)}</td>
+                      <td className="num" data-label="APR %">
                         <input className="amount small" type="number" min="0" step="0.01" placeholder="rate" defaultValue={d.apr ?? ''} key={`apr${d.apr}`}
                           onBlur={(e) => (e.target.value === '' ? null : Number(e.target.value)) !== d.apr && patch(d, { apr: e.target.value })} />
                       </td>
@@ -138,26 +164,34 @@ export function DebtPage({ onError }: { onError: (message: string) => void }) {
                         <input type="date" defaultValue={d.promo_end ?? ''} key={`end${d.promo_end}`}
                           onBlur={(e) => (e.target.value || null) !== d.promo_end && patch(d, { promo_end: e.target.value || null, ...(e.target.value && d.promo_apr == null ? { promo_apr: 0 } : {}) })} />
                       </td>
-                      <td className="num">
+                      <td className="num" data-label="Min / mo">
                         <input className="amount small" type="number" min="0" step="1" placeholder={`${min.value} est.`} defaultValue={d.min_payment ?? ''} key={`min${d.min_payment}`}
                           onBlur={(e) => (e.target.value === '' ? null : Number(e.target.value)) !== d.min_payment && patch(d, { min_payment: e.target.value })} />
                       </td>
+                      <td className="due" data-label="Due day">
+                        <input className="amount day" type="number" min="1" max="31" step="1" placeholder="day" defaultValue={d.due_day ?? ''} key={`due${d.due_day}`}
+                          aria-label={`${d.name} due day`}
+                          onBlur={(e) => (e.target.value === '' ? null : Number(e.target.value)) !== d.due_day && patch(d, { due_day: e.target.value })} />
+                        {d.due_day != null && (
+                          <label className="small autopay"><input type="checkbox" checked={d.autopay} onChange={(e) => patch(d, { autopay: e.target.checked })} />autopay</label>
+                        )}
+                      </td>
                       <td className="pace muted">{currentPace(d)}</td>
-                      <td className="plan"><input type="checkbox" checked={d.in_plan} onChange={(e) => patch(d, { in_plan: e.target.checked })} /></td>
+                      <td className="plan" data-label="In plan"><input type="checkbox" checked={d.in_plan} onChange={(e) => patch(d, { in_plan: e.target.checked })} /></td>
                     </tr>
                   )
                 })}
               </tbody>
               <tfoot>
                 <tr>
-                  <td>Total</td><td className="num">{money(totalOwed)}</td><td /><td className="opt" /><td className="opt" />
-                  <td className="num">{dollars(totalMin)}</td><td className="pace" /><td className="plan" />
+                  <td>Total</td><td className="num" data-label="Owed">{money(totalOwed)}</td><td /><td className="opt" /><td className="opt" />
+                  <td className="num" data-label="Min / mo">{dollars(totalMin)}</td><td className="due" /><td className="pace" /><td className="plan" />
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
-        <p className="muted">Current pace averages the last ~90 days of payments and new charges per account. Blank minimums are estimated; enter the real ones from your statements. A promo rate (like 0% on a card) applies until its end date. Leave a mortgage out of the plan: its payment is already part of your spending.</p>
+        <p className="muted">Current pace averages the last ~90 days of payments and new charges per account. Blank minimums are estimated; enter the real ones from your statements. A promo rate (like 0% on a card) applies until its end date. Leave a mortgage out of the plan: its payment is already part of your spending. With a due day set, Needs attention says when a payment is due in the next 5 days and hasn't been made, or was missed; tick autopay to hear only about missed ones.</p>
       </section>
 
       {planDebts.length > 0 && (

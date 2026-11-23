@@ -1,6 +1,9 @@
 import { askClaude } from './claude.ts'
 import { db, meta } from './db.ts'
+import { cardsDue } from './debts.ts'
+import { forecastBrief } from './forecast.ts'
 import { syncHealth } from './health.ts'
+import { owedBrief } from './reimburse.ts'
 import { safeToSpendBrief } from './allowance.ts'
 import { planBrief } from './plan.ts'
 import { budgetRows, currentMonth, today } from './queries.ts'
@@ -39,12 +42,15 @@ export function briefingData() {
     connectionIssues: syncHealth().issues,
     plan: planBrief(),
     safeToSpend: safeToSpendBrief(),
+    untilPayday: forecastBrief(),
+    cardPayments: cardsDue().filter((c) => c.message).map((c) => c.message),
+    owedToYou: owedBrief(),
   }
 }
 
 export async function generateBriefing(): Promise<Briefing> {
   const data = briefingData()
-  const text = (await askClaude(`You write a short morning money check for one person. Using only the data below, list up to 4 things worth their attention today, one per line starting with "- ", plain text, specific dollar amounts. Worth flagging: unusually large recent charges, bills due in the next few days, price increases, categories over budget or pacing to go over (monthElapsed is the fraction of the month gone), broken account connections. From their payoff plan (plan): a bonus or third paycheck that just landed and the goal the plan sends it to (plan.windfalls), new charges in the last few days on the card they're paying off (plan.focus.recentCharges), and plan.warnings only if nothing more pressing. Weekly safe-to-spend (safeToSpend): how much is left of this week's spending money (bills excluded) and how many days are left; mention it when it's over or nearly gone. Do not give investment advice. If nothing stands out, reply exactly: Nothing to flag today.
+  const text = (await askClaude(`You write a short morning money check for one person. Using only the data below, list up to 4 things worth their attention today, one per line starting with "- ", plain text, specific dollar amounts. Worth flagging: unusually large recent charges, bills due in the next few days, price increases, categories over budget or pacing to go over (monthElapsed is the fraction of the month gone), broken account connections. From their payoff plan (plan): a bonus or third paycheck that just landed and the goal the plan sends it to (plan.windfalls), new charges in the last few days on the card they're paying off (plan.focus.recentCharges), and plan.warnings only if nothing more pressing. Weekly safe-to-spend (safeToSpend): how much is left of this week's spending money (bills excluded) and how many days are left; mention it when it's over or nearly gone. A card or loan payment that was missed or is due soon (cardPayments) is always worth flagging. Checking running low before payday (untilPayday.warning) is worth flagging. Money owed back to them (owedToYou) only when the oldest charge is more than 30 days old. Do not give investment advice. If nothing stands out, reply exactly: Nothing to flag today.
 
 ${JSON.stringify(data)}`)).trim()
   const briefing = { date: data.date, text, createdAt: new Date().toISOString() }

@@ -60,8 +60,9 @@ export const pref = {
   },
 }
 
-export type Category = { id: number; name: string; kind: 'expense' | 'income' | 'savings' | 'transfer'; track?: number }
+export type Category = { id: number; name: string; kind: 'expense' | 'income' | 'savings' | 'transfer' | 'reimbursable'; track?: number }
 export type BudgetRow = Category & { budget: number; spent: number; prev: number; avg3: number; track: number }
+export type OwedBrief = { total: number; count: number; oldest: string | null }
 export type Status = {
   connected: boolean
   lastSync: string | null
@@ -69,7 +70,15 @@ export type Status = {
   health?: { issues: string[]; lastBackup: string | null }
   // Transactions in the review queue (see NEEDS_REVIEW in server/db.ts).
   toReview?: number
+  // Reimbursable charges still waiting to be paid back.
+  owedToYou?: OwedBrief
 }
+
+// Short dates for lists: "Nov 28" (and the year when it isn't this year).
+export const shortDate = (d: string) =>
+  new Date(`${d}T00:00:00Z`).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: d.slice(0, 4) === thisMonth().slice(0, 4) ? undefined : 'numeric', timeZone: 'UTC',
+  })
 export type Split = { id: number; transaction_id: string; amount: number; category_id: number }
 export type Transaction = {
   id: string
@@ -82,6 +91,8 @@ export type Transaction = {
   category_source: string
   reviewed: number
   notes: string | null
+  // On a Reimbursable charge: the deposit that paid it back, 'manual', or null while owed.
+  repaid_by?: string | null
   account_name: string | null
   splits: Split[]
 }
