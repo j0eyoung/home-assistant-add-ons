@@ -6,7 +6,8 @@ export const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']
 
 // Built-in tools that only read. Claude Code already allows most of these;
 // listing them keeps reads outside the working folder (/share, /addon_configs) quiet too.
-export const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS', 'TodoWrite', 'WebSearch', 'WebFetch', 'ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool']
+// Skill only loads a skill's instructions (such as the bundled Home Assistant best practices).
+export const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS', 'TodoWrite', 'WebSearch', 'WebFetch', 'ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool', 'Skill']
 
 const MCP_WRITE = /(call|set|create|update|delete|remove|restart|reload|rename|enable|disable|toggle|turn|trigger|fire|install|uninstall|write|save|execute|run|start|stop|backup|restore|edit|add|assign|import|apply|move|reset|purge|send|notify)/i
 const MCP_READ = /(get|list|search|find|read|fetch|describe|overview|history|logbook|trace|check|render|status|info|state|statistics|logs|query|show|summar|evaluate|explain|count|validate)/i

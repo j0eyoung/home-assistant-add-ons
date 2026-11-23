@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Mention, ModelOption, SlashCommand } from '../../shared/types.ts'
-import { MODES, EFFORTS } from '../../shared/types.ts'
+import { MODES, EFFORTS, asBlockquote } from '../../shared/types.ts'
 import { api, readImage } from './api.ts'
 import { Icon } from './Icon.tsx'
 
@@ -19,6 +19,10 @@ type Props = {
   onSend: (o: Outgoing) => void
   onStop: () => void
   draft?: { text: string; n: number } | null
+  // Text picked with "Quote" in the conversation; each new n adds one quote above the message
+  quote?: { text: string; n: number } | null
+  // Quotes belong to one chat: they are dropped when this changes
+  scope?: string
   big?: boolean
 }
 
@@ -31,6 +35,7 @@ export function Composer(p: Props) {
   const [text, setText] = useState('')
   const [images, setImages] = useState<Img[]>([])
   const [mentions, setMentions] = useState<Mention[]>([])
+  const [quotes, setQuotes] = useState<string[]>([])
   const [popup, setPopup] = useState<Popup>(null)
   const [menu, setMenu] = useState<'mode' | 'model' | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -47,6 +52,15 @@ export function Composer(p: Props) {
       }, 0)
     }
   }, [p.draft?.n])
+
+  useEffect(() => {
+    const q = p.quote?.text.trim()
+    if (!q) return
+    setQuotes((cur) => (cur.includes(q) ? cur : [...cur, q]))
+    setTimeout(() => ta.current?.focus(), 0)
+  }, [p.quote?.n])
+
+  useEffect(() => setQuotes([]), [p.scope])
 
   useEffect(() => {
     const el = ta.current
@@ -117,12 +131,14 @@ export function Composer(p: Props) {
 
   const send = () => {
     const t = text.trim()
-    if (!t && !images.length) return
+    if (!t && !images.length && !quotes.length) return
     const used = mentions.filter((m) => text.includes(m.label))
-    p.onSend({ text: t, images: images.map(({ data, mediaType }) => ({ data, mediaType })), mentions: used })
+    const body = [...quotes.map(asBlockquote), t].filter(Boolean).join('\n\n')
+    p.onSend({ text: body, images: images.map(({ data, mediaType }) => ({ data, mediaType })), mentions: used })
     setText('')
     setImages([])
     setMentions([])
+    setQuotes([])
     setPopup(null)
   }
 
@@ -186,6 +202,19 @@ export function Composer(p: Props) {
                   <span className="pdetail">{c.description}</span>
                 </button>
               ))}
+        </div>
+      )}
+      {quotes.length > 0 && (
+        <div className="quotes">
+          {quotes.map((q, i) => (
+            <div className="quotechip" key={q}>
+              <Icon name="quote" size={14} />
+              <div className="quotetext">{q}</div>
+              <button type="button" className="iconbtn" aria-label="Remove quote" title="Remove quote" onClick={() => setQuotes(quotes.filter((_, k) => k !== i))}>
+                <Icon name="x" size={12} />
+              </button>
+            </div>
+          ))}
         </div>
       )}
       {images.length > 0 && (
@@ -280,7 +309,7 @@ export function Composer(p: Props) {
             <Icon name="stop" />
           </button>
         ) : null}
-        <button type="button" className="sendbtn" aria-label="Send" title="Send (Enter)" onClick={send} disabled={!text.trim() && !images.length}>
+        <button type="button" className="sendbtn" aria-label="Send" title="Send (Enter)" onClick={send} disabled={!text.trim() && !images.length && !quotes.length}>
           <Icon name="up" />
         </button>
       </div>

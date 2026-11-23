@@ -90,7 +90,8 @@ function toolLabel(name: string, input: any): { icon: string; verb: string; targ
     case 'Agent':
       return { icon: 'robot', verb: 'Helper', target: input.description ?? '' }
     case 'Skill':
-      return { icon: 'bolt', verb: 'Used skill', target: input.skill ?? input.name ?? '' }
+      // "home-assistant-skills:home-assistant-best-practices" reads as "home assistant best practices"
+      return { icon: 'bolt', verb: 'Used skill', target: String(input.skill ?? input.name ?? '').replace(/^[^:]+:/, '').replace(/-/g, ' ') }
     default:
       if (name.startsWith('mcp__')) {
         const [, server, ...rest] = name.split('__')

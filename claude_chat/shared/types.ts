@@ -130,3 +130,26 @@ export function stripContext(text: string): string {
   const i = text.indexOf(CONTEXT_OPEN)
   return (i >= 0 ? text.slice(0, i) : text).trimEnd()
 }
+
+// Quoted text travels in the message as a Markdown blockquote, so Claude reads it as a quote
+// and the chat history (Claude Code's own session files) keeps it.
+export function asBlockquote(text: string): string {
+  return text
+    .trim()
+    .split('\n')
+    .map((l) => (l.trim() ? `> ${l}` : '>'))
+    .join('\n')
+}
+
+// A message split into its quoted parts and the user's own text, in order.
+export function splitQuotes(text: string): { quote: boolean; text: string }[] {
+  const parts: { quote: boolean; text: string }[] = []
+  for (const line of text.split('\n')) {
+    const quote = /^>/.test(line)
+    const body = quote ? line.replace(/^>\s?/, '') : line
+    const last = parts[parts.length - 1]
+    if (last && last.quote === quote) last.text += '\n' + body
+    else parts.push({ quote, text: body })
+  }
+  return parts.map((p) => ({ ...p, text: p.text.replace(/^\s*\n|\n\s*$/g, '').trimEnd() })).filter((p) => p.text.trim())
+}

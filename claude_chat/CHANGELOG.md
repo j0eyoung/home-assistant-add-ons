@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 - Quotes and Best Practices
+
+### 🌟 Features
+* **Quote part of a reply.** Select any text in the conversation and tap **Quote**. It sits above your next message so you can ask about that exact line, and it shows as a quote in the chat afterwards. You can add several quotes to one message and remove one with ×.
+* **Home Assistant best practices built in.** Claude now has the Home Assistant best-practices skill from homeassistant-ai/skills, the people behind ha-mcp. Before writing or changing automations, scripts, scenes, helpers, templates, blueprints or dashboards, Claude reads it: native triggers and conditions instead of templates, the right helper, the right automation mode, checking what uses an entity before renaming it, and safe backups.
+
+### 🔧 Improvements
+* Loading a skill never asks for approval, and it shows in the chat as "Used skill home assistant best practices".
+* A chat that starts with a quote is named after your question, not the quoted text.
+
 ## 0.1.1 - Health Check Takeover
 
 ### 🐞 Fixes

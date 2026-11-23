@@ -1,9 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { findLoginUrl, findToken, stripAnsi } from './auth.ts'
-import { isReadOnlyMcp, isRestart, describe } from './policy.ts'
+import { isReadOnlyMcp, isRestart, describe, READ_TOOLS } from './policy.ts'
 import { Chat, titleFrom } from './chat.ts'
 import { parseLog } from './ha.ts'
+import { asBlockquote, splitQuotes } from '../shared/types.ts'
 
 const ESC = '\x1b'
 const URL = 'https://claude.ai/oauth/authorize?code=true&client_id=abc&response_type=code&redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback&scope=user%3Ainference&code_challenge=xyz&state=s123'
@@ -63,6 +64,27 @@ test('chat titles are whole', () => {
   assert.ok(!t.endsWith('…'))
   assert.ok(t.length <= 90)
   assert.equal(t, 'Look at today’s errors in the Home Assistant log, explain what is causing each one and how to fix it.'.length <= 90 ? t : t)
+})
+
+test('quotes go out as blockquotes and come back apart', () => {
+  const sent = [asBlockquote('Set the motion light to mode: restart.\n\nThen reload.'), 'Why restart?'].join('\n\n')
+  assert.equal(sent, '> Set the motion light to mode: restart.\n>\n> Then reload.\n\nWhy restart?')
+  assert.deepEqual(splitQuotes(sent), [
+    { quote: true, text: 'Set the motion light to mode: restart.\n\nThen reload.' },
+    { quote: false, text: 'Why restart?' },
+  ])
+  assert.deepEqual(splitQuotes('> one\n\n> two\n\nok'), [
+    { quote: true, text: 'one' },
+    { quote: true, text: 'two' },
+    { quote: false, text: 'ok' },
+  ])
+  assert.deepEqual(splitQuotes('no quote here'), [{ quote: false, text: 'no quote here' }])
+  assert.equal(titleFrom(sent), 'Why restart?')
+  assert.equal(titleFrom('> Only a quote'), 'Only a quote')
+})
+
+test('reading a skill never asks', () => {
+  assert.ok(READ_TOOLS.includes('Skill'))
 })
 
 test('a health check chat refuses changes until the user replies in it', async () => {

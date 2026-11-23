@@ -26,6 +26,7 @@ ${onHA ? `## Where things are
 This copy is not running on Home Assistant, so there is no Home Assistant API here.
 `}
 ## Rules for working on Home Assistant
+- The home-assistant-best-practices skill holds Home Assistant's current best practices: purpose-specific and native triggers and conditions over templates, helpers, automation modes, safe renames, dashboards, blueprints and backups. Load it with the Skill tool before you answer anything about automations, scripts, scenes, helpers, templates, blueprints or dashboards, even a quick question or a YAML snippet, and read the reference files it points to for the task. Its advice wins over what you remember.
 - Debugging "why didn't X happen": read the automation's trace first, then the entity history and logbook, then the log. Quote the trace step that explains it.
 - Test templates with the template API before putting them in YAML.
 - Never edit files under /config/.storage while Home Assistant is running. Change dashboards, the entity registry, helpers and integrations through the API or the MCP tools instead.

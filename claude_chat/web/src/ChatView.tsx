@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AppState, ChatStatus, Item } from '../../shared/types.ts'
+import { splitQuotes } from '../../shared/types.ts'
 import { api } from './api.ts'
 import { Icon } from './Icon.tsx'
 import { Markdown } from './Markdown.tsx'
@@ -31,11 +32,100 @@ function Elapsed({ since }: { since: number }) {
   return <>{s < 60 ? `${s}s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`}</>
 }
 
+// Select text in the conversation and a "Quote" button appears by it; the quote goes above your next message.
+type Picked = { text: string; x: number; y: number; below: boolean }
+
+function useQuotePicker(scroller: React.RefObject<HTMLDivElement | null>) {
+  const [picked, setPicked] = useState<Picked | null>(null)
+  const pressing = useRef(false)
+  const dragging = useRef(false)
+
+  useEffect(() => {
+    // On a phone the system's own copy menu sits above the selection, so the button goes below it
+    const coarse = window.matchMedia('(pointer: coarse)').matches
+    let raf = 0
+    const update = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        const el = scroller.current
+        const s = window.getSelection()
+        const text = s && !s.isCollapsed && s.rangeCount ? s.toString().trim() : ''
+        if (!el || !s || !text || !el.contains(s.anchorNode) || !el.contains(s.focusNode)) {
+          if (!pressing.current) setPicked(null)
+          return
+        }
+        if (dragging.current) return setPicked(null)
+        const r = s.getRangeAt(0).getBoundingClientRect()
+        const box = el.getBoundingClientRect()
+        const below = coarse || r.top - 44 < box.top
+        const y = Math.min(Math.max(below ? r.bottom + 8 : r.top - 8, box.top + 44), box.bottom - 8)
+        const x = Math.min(Math.max(r.left + r.width / 2, box.left + 60), box.right - 60)
+        setPicked({ text, x, y, below })
+      })
+    }
+    const down = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && !(e.target as HTMLElement).closest('.quotebtn')) dragging.current = true
+    }
+    const up = () => {
+      if (!dragging.current) return
+      dragging.current = false
+      update()
+    }
+    const el = scroller.current
+    document.addEventListener('selectionchange', update)
+    document.addEventListener('pointerdown', down)
+    document.addEventListener('pointerup', up)
+    el?.addEventListener('scroll', update, { passive: true })
+    return () => {
+      cancelAnimationFrame(raf)
+      document.removeEventListener('selectionchange', update)
+      document.removeEventListener('pointerdown', down)
+      document.removeEventListener('pointerup', up)
+      el?.removeEventListener('scroll', update)
+    }
+  }, [])
+
+  const clear = () => {
+    pressing.current = false
+    window.getSelection()?.removeAllRanges()
+    setPicked(null)
+  }
+  return { picked, pressing, clear }
+}
+
+function UserText({ text }: { text: string }) {
+  const parts = useMemo(() => splitQuotes(text), [text])
+  if (!parts.some((x) => x.quote)) return <div className="usertext">{text}</div>
+  return (
+    <>
+      {parts.map((x, i) =>
+        x.quote ? (
+          <div key={i} className="userquote">
+            {x.text}
+          </div>
+        ) : (
+          <div key={i} className="usertext">
+            {x.text}
+          </div>
+        ),
+      )}
+    </>
+  )
+}
+
 export function ChatView(p: Props) {
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const [runSince, setRunSince] = useState(Date.now())
+  const [quote, setQuote] = useState<{ text: string; n: number } | null>(null)
+  const { picked, pressing, clear } = useQuotePicker(scroller)
   const { chat } = p
+
+  const addQuote = () => {
+    if (!picked) return
+    setQuote((q) => ({ text: picked.text, n: (q?.n ?? 0) + 1 }))
+    clear()
+  }
 
   useEffect(() => {
     if (chat.status === 'running') setRunSince((x) => (x && Date.now() - x < 2000 ? x : Date.now()))
@@ -87,7 +177,7 @@ export function ChatView(p: Props) {
                         <Icon name="image" size={14} /> {it.images} picture{it.images > 1 ? 's' : ''}
                       </span>
                     ) : null}
-                    <div className="usertext">{it.text}</div>
+                    <UserText text={it.text} />
                   </div>
                 )
               case 'text':
@@ -139,8 +229,24 @@ export function ChatView(p: Props) {
           {lastText === undefined && chat.status === 'idle' && top.length > 0 && <div className="spacer" />}
         </div>
       </div>
+      {picked && (
+        <button
+          type="button"
+          className={`quotebtn ${picked.below ? 'below' : 'above'}`}
+          style={{ left: picked.x, top: picked.y }}
+          onPointerDown={() => (pressing.current = true)}
+          onPointerCancel={() => (pressing.current = false)}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={addQuote}
+        >
+          <Icon name="quote" size={14} />
+          Quote
+        </button>
+      )}
       <div className="composerdock">
         <Composer
+          quote={quote}
+          scope={chat.id}
           placeholder="Reply to Claude…"
           running={chat.status !== 'idle'}
           models={p.state?.models ?? []}

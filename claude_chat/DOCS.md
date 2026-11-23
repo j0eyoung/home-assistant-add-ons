@@ -17,7 +17,9 @@ Settings › Account shows which sign-in is in use. Signing in on the page takes
 - **Home screen.** Cards show today's log errors, unavailable entities, waiting updates and your last backup. They come straight from Home Assistant and use no Claude usage until you tap one, which starts a chat about it.
 - **@ mentions.** Type `@` and pick an entity or area. Claude gets its current state and attributes with your message.
 - **Slash commands.** Type `/` for Claude Code commands such as `/compact` (summarize a long chat) and your own commands in `/config/.claude/commands`.
+- **Quote.** Select any text in the conversation and tap **Quote**. It goes above your next message, so you can ask about one line of Claude's answer. Add several quotes to one message; × removes one.
 - **Pictures.** Paste, drop or attach screenshots.
+- **Home Assistant best practices.** Claude Chat comes with the [Home Assistant best-practices skill](https://github.com/homeassistant-ai/skills) (MIT licence): native triggers and conditions over templates, the right helper, automation modes, safe renames, dashboards, blueprints and backups. Claude loads it before writing or changing automations, scripts, scenes, helpers or dashboards. Add your own skills as folders with a `SKILL.md` in `/config/.claude/skills`.
 - **Model, effort and approvals** are in the chat box. New chats start with the add-on's options (Sonnet, high effort, "Ask before edits").
 
 ### Approval modes

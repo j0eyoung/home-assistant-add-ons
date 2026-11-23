@@ -38,6 +38,7 @@ const PATHS: Record<string, string> = {
   clock: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2',
   at: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0zM16 12v1.5a2.5 2.5 0 0 0 5 0V12a9 9 0 1 0-3.5 7.1',
   slash: 'M15 4L9 20',
+  quote: 'M5 7h5v5H5zM10 12c0 3-1.5 5-4 6M14 7h5v5h-5zM19 12c0 3-1.5 5-4 6',
 }
 
 export function Icon({ name, size = 16, className }: { name: string; size?: number; className?: string }) {

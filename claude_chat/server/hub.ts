@@ -179,7 +179,7 @@ export class Hub implements ChatHost {
       [Symbol.asyncIterator]: () => ({ next: () => new Promise((resolve) => (close = () => resolve({ value: undefined, done: true }))) }),
     }
     try {
-      const q = query({ prompt, options: { cwd: config.workDir, env: claudeEnv(), settingSources: ['user', 'project', 'local'], persistSession: false } })
+      const q = query({ prompt, options: { cwd: config.workDir, env: claudeEnv(), settingSources: ['user', 'project', 'local'], plugins: config.plugins, persistSession: false } })
       const r = await Promise.race([q.initializationResult(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 60000))])
       this.absorbInit(r)
       close()

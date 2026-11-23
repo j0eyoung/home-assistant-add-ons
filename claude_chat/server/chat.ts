@@ -9,7 +9,7 @@ import { systemAppend } from './prompt.ts'
 import { READ_TOOLS, EDIT_TOOLS, isReadOnlyMcp, isRestart, describe, alwaysKey, filePathOf } from './policy.ts'
 import * as undoStore from './undo.ts'
 import { getSettings } from './settings.ts'
-import { CONTEXT_OPEN, CONTEXT_CLOSE, stripContext } from '../shared/types.ts'
+import { CONTEXT_OPEN, CONTEXT_CLOSE, splitQuotes, stripContext } from '../shared/types.ts'
 import type { Item, ChatStatus, Mention, Question, ServerMsg } from '../shared/types.ts'
 
 // One conversation. While it is open, a Claude Code process runs for it in
@@ -236,6 +236,7 @@ export class Chat {
       systemPrompt: { type: 'preset', preset: 'claude_code', append: await systemAppend() },
       env: claudeEnv(),
       mcpServers: haMcpServers(),
+      plugins: config.plugins,
       stderr: (d: string) => {
         if (/error|fail/i.test(d)) console.error(`[claude ${this.id.slice(0, 8)}] ${d.trim()}`)
       },
@@ -626,7 +627,10 @@ function haMcpServers(): Options['mcpServers'] {
 // A chat's name: its first line, whole when it is short; a long one stops at a
 // sentence or word end (the list wraps titles rather than cutting them off).
 export function titleFrom(text: string): string {
-  const first = text.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
+  // The user's own words name the chat; a message that is only a quote falls back to the quote
+  const parts = splitQuotes(text)
+  const own = parts.find((p) => !p.quote) ?? parts[0]
+  const first = own?.text.split('\n').map((l) => l.trim()).find(Boolean) ?? ''
   const t = first.replace(/\s+/g, ' ')
   if (!t) return 'New chat'
   if (t.length <= 90) return t

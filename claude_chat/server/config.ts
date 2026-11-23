@@ -30,6 +30,10 @@ function workDir(): string {
 
 const work = workDir()
 
+// Plugins shipped with the add-on and loaded in every chat (plugins/<name>/SOURCE.txt says where each came from).
+const appDir = path.resolve(import.meta.dirname, '..')
+const plugins = ['home-assistant-skills'].map((p) => path.join(appDir, 'plugins', p)).filter((p) => fs.existsSync(path.join(p, '.claude-plugin', 'plugin.json')))
+
 export const config = {
   onHA,
   port: Number(process.env.PORT ?? 8099),
@@ -47,6 +51,7 @@ export const config = {
   enableHaMcp: onHA && o.enable_ha_mcp !== false,
   haMcpVersion: str(o.ha_mcp_version, '7.11.0'),
   supervisorToken: process.env.SUPERVISOR_TOKEN ?? '',
+  plugins: plugins.map((p) => ({ type: 'local' as const, path: p })),
   // Sample Home Assistant data for working on the page away from Home Assistant
   demo: !onHA && process.env.DEMO_HA === '1',
   version: process.env.ADDON_VERSION ?? '0.1.0',
