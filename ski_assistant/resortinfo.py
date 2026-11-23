@@ -1,24 +1,40 @@
 """Static per-resort extras: share of green and blue terrain, OpenSkiMap link, webcam page.
-A resort's own keys in ski_resorts.json (beginner_pct, openskimap_id, webcams_url) override these.
+A resort's own keys in ski_resorts.json (beginner_pct, openskimap_id, openskimap_names, webcams_url) override these.
 
 beginner_pct is green + blue run length as a share of all downhill runs, from OpenSkiMap statistics
-(api.openskimap.org, October 2026). Data (c) OpenSkiMap.org contributors and OpenStreetMap contributors, ODbL."""
+(api.openskimap.org, October 2026). Data (c) OpenSkiMap.org contributors and OpenStreetMap contributors, ODbL.
+OpenSkiMap's ids change when it rebuilds (three of these had by November 2026), so ski_areas() finds each resort
+by its openskimap_names and the stored id is only a fallback."""
+import urllib.parse
+
+import httpjson
+import util
+
+OSM_SEARCH = "https://api.openskimap.org/search?query="
+OSM_FEATURE = "https://api.openskimap.org/features/"
 
 DEFAULT_INFO = {
     "winter_park": {"beginner_pct": 63, "openskimap_id": "eac3283b22abc1d56081b11e2c4867209961f982",
+                    "openskimap_names": ["Winter Park"],
                     "webcams_url": "https://www.winterparkresort.com/the-mountain/mountain-cams"},
-    "steamboat": {"beginner_pct": 55, "openskimap_id": "1b452491f464540026e80e10ab6d7290b414c1f6",
+    "steamboat": {"beginner_pct": 55, "openskimap_id": "5267096488ef4504f32f94de066e28cd88b7830e",
+                  "openskimap_names": ["Steamboat"],
                   "webcams_url": "https://www.steamboat.com/the-mountain/mountain-cams"},
     "copper": {"beginner_pct": 59, "openskimap_id": "0bab3102857cf4c7243d3db844c283a24413fa28",
+               "openskimap_names": ["Copper Mountain"],
                "webcams_url": "https://www.coppercolorado.com/the-mountain/webcams/"},
-    "eldora": {"beginner_pct": 64, "openskimap_id": "1f25a1eacb8cc9814282d91ae00fd9af7a533d0e",
+    "eldora": {"beginner_pct": 64, "openskimap_id": "a2909bf21b379e545b5be4f1dbe9b6c334e9e41c",
+               "openskimap_names": ["Eldora"],
                "webcams_url": "https://www.eldora.com/the-mountain/current-conditions/webcams/"},
     "abasin": {"beginner_pct": 43, "openskimap_id": "1e281ff389476a82150ad7ef7be5f1ea48edd5e5",
+               "openskimap_names": ["Arapahoe Basin"],
                "webcams_url": "https://www.arapahoebasin.com/mountain-cams/"},
-    "aspen_snowmass": {"beginner_pct": 72, "openskimap_id": "ab35349ba4e03d734a486561e99d5be0b772449f",
+    "aspen_snowmass": {"beginner_pct": 72, "openskimap_id": "03b56bd47b26c384d82474a2fb4b3fbc3a0c4a31",
+                       "openskimap_names": ["Aspen Snowmass", "Aspen Mountain", "Aspen Highlands", "Buttermilk"],
                        "webcams_url": "https://www.aspensnowmass.com/four-mountains/mountain-cams"},
     # Vail's site blocks scripts, so this page couldn't be checked; it follows Vail's usual URL pattern
     "keystone": {"beginner_pct": 55, "openskimap_id": "7d855b81e131f7cb7bdbc7b55e47a18d3ccb5e67",
+                 "openskimap_names": ["Keystone"],
                  "webcams_url": "https://www.keystoneresort.com/the-mountain/mountain-conditions/mountain-cams.aspx"},
 }
 
@@ -62,8 +78,46 @@ def parking_needed(r, date_iso):
     return p
 
 
+def ski_areas(r):
+    """The resort's ski areas on OpenSkiMap (GeoJSON features with their outline), found by name nearest the resort.
+    OpenSkiMap's ids change when it rebuilds, so the stored openskimap_id is only the fallback. Aspen Snowmass
+    has four areas, one per mountain."""
+    names = r.get("openskimap_names") or DEFAULT_INFO.get(r["id"], {}).get("openskimap_names") or [r["name"]]
+    out = []
+    for name in names:
+        try:
+            feats = httpjson.get(OSM_SEARCH + urllib.parse.quote(name), ttl=7 * 86400, stale_max=30 * 86400)
+        except Exception:
+            continue
+        areas = [f for f in feats if f.get("properties", {}).get("type") == "skiArea"
+                 and (f.get("geometry") or {}).get("type") in ("Polygon", "MultiPolygon")]
+        named = [f for f in areas if name.lower() in str(f["properties"].get("name") or "").lower()] or areas
+        near = [(util.miles(r["lat"], r["lon"], *_centre(f)), f) for f in named]
+        near = [x for x in near if x[0] <= 15]
+        if near:
+            best = min(near, key=lambda x: x[0])[1]
+            if all(best["properties"]["id"] != f["properties"]["id"] for f in out):
+                out.append(best)
+    if not out and info(r)["openskimap_id"]:
+        try:
+            out.append(httpjson.get(f"{OSM_FEATURE}{info(r)['openskimap_id']}.geojson", ttl=7 * 86400))
+        except Exception:
+            pass
+    return out
+
+
+def _centre(f):
+    g = f["geometry"]
+    ring = g["coordinates"][0] if g["type"] == "Polygon" else g["coordinates"][0][0]
+    return sum(p[1] for p in ring) / len(ring), sum(p[0] for p in ring) / len(ring)
+
+
 def openskimap_url(r):
-    oid = info(r)["openskimap_id"]
+    try:
+        areas = ski_areas(r)
+    except Exception:
+        areas = []
+    oid = areas[0]["properties"]["id"] if areas else info(r)["openskimap_id"]
     return f"https://openskimap.org/?obj={oid}" if oid else None
 
 

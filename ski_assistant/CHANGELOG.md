@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.0 - Open Lifts and Trails, Trail Map
+
+### 🌟 Features
+* **Which lifts and trails are open, by name.** On a resort's page, "On the mountain" now shows trails open next to lifts open, and "Open right now" folds out the open lifts and the open trails with their colour (green, blue, black, double black, park) and whether they're groomed. Aspen Snowmass lists each of its four mountains.
+* **A trail map of what's open.** Each resort page has a map of its runs and lifts: open runs in their trail colour, closed runs grey, running lifts red, lifts opening later dashed. Tap a line for its name. Keystone's report doesn't name its runs, so its map shows every run in its colour.
+* **More resorts report in.** Steamboat and Aspen Snowmass now have live reports (lifts, trails, snow), Copper and Eldora add trails to their lift counts, and Keystone gets its lift count from OnTheSnow.
+
+### 🔧 Improvements
+* The Plan table has a Trails column beside Lifts.
+
+### 🐞 Fixes
+* The "Trail map (OpenSkiMap)" link works again for Steamboat, Eldora and Aspen Snowmass (OpenSkiMap had changed their ids).
+
 ## 0.9.0 - Free Days, Dashboard Card, Shorter Drives
 
 ### 🌟 Features

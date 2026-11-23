@@ -94,7 +94,7 @@ def best_days(resorts, date=None, skis=False, include_paid=True, departure=None)
                      "fresh_in": fresh, "tmax_f": day["tmax_f"], "tmin_f": day["tmin_f"],
                      "wind_mph": day["wind_mph"], "gust_mph": day["gust_mph"], "leave": leave,
                      "beginner_pct": pct, "gear": gear.call(day, fresh, skis), "transit": transit.for_resort(r),
-                     "snowpack": snotel.resort_snowpack(r), "live": live,
+                     "snowpack": snotel.resort_snowpack(r), "live": livestatus.summary(live),
                      "not_open": livestatus.season_state(r, live) == "not_open",
                      "traffic": traffic.for_resort(r, sensors) if live_today else None})
     rows.sort(key=lambda x: (bool(x.get("not_open")), -x.get("score", -1)))

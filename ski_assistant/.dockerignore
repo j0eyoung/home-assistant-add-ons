@@ -4,3 +4,4 @@ __pycache__/
 .github/
 HANDOFF.md
 tools/
+.cache/

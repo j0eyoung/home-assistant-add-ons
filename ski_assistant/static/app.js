@@ -254,7 +254,9 @@ async function openResort(id, band) {
   const rep = d.reported || {}, sn = d.snotel || {};
   const total = (a, b) => ip(future.slice(a, b).reduce((s, x) => s + x.snow_in, 0));
   const ledger = [['Reported base', rep.base_in != null ? ip(rep.base_in) : null], ['Reported last 24 hours', rep.new_24h_in != null ? ip(rep.new_24h_in) : null],
-    ['Season total', rep.season_in ? ip(rep.season_in) : null], ['Lifts open', rep.lifts_total != null ? `${rep.lifts_open} of ${rep.lifts_total}` : null],
+    ['Season total', rep.season_in ? ip(rep.season_in) : null],
+    ['Lifts open', rep.lifts_total != null && rep.lifts_open != null ? `${rep.lifts_open} of ${rep.lifts_total}` : null],
+    ['Trails open', rep.trails_total != null && rep.trails_open != null ? `${rep.trails_open} of ${rep.trails_total}` : null],
     ['Terrain open', rep.terrain_open_pct != null ? rep.terrain_open_pct + '%' : null],
     [`SNOTEL snow depth${sn.as_of ? ', ' + monthDay(String(sn.as_of).slice(0, 10)) : ''}`, sn.depth_in != null ? ip(sn.depth_in) : null],
     ['SNOTEL change, last 72 hours', sn.new_72h_in != null ? ip(sn.new_72h_in) : null]].filter(([, v]) => v != null && v !== '');
@@ -274,6 +276,8 @@ async function openResort(id, band) {
     </div>
     <div class="col-b"><div class="panel"><h3>On the mountain</h3>
      ${ledger.length ? `<dl class="ledger">${ledger.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>` : '<p class="mute">No report from the resort right now.</p>'}
+     ${openList(rep)}
+     ${rep.source ? `<p class="fine">Lift and run counts from ${esc(rep.source)}${rep.as_of ? ', updated ' + esc(rep.as_of) : ''}. The resort doesn’t publish them by name in a form the add-on can read.</p>` : ''}
      ${rep.status ? `<p class="fine">Resort status: ${esc(rep.status)}${rep.conditions ? SEP + esc(rep.conditions) : ''}</p>` : ''}
      ${d.as_of ? `<p class="fine">Forecast from ${clock(d.as_of)}.${Date.now() / 1000 - d.as_of > 5400 ? ' Open-Meteo hasn’t answered since then, so this is the last good forecast.' : ''}</p>` : ''}</div></div>
    </div>
@@ -286,6 +290,9 @@ async function openResort(id, band) {
      <p>${d.info.webcams_url ? `<a href="${esc(d.info.webcams_url)}" target="_blank" rel="noopener">Webcams</a>` : ''}
        ${d.info.openskimap_url ? `${SEP}<a href="${esc(d.info.openskimap_url)}" target="_blank" rel="noopener">Trail map (OpenSkiMap)</a>` : ''}
        ${d.info.beginner_pct != null ? `${SEP}<span class="mute">${d.info.beginner_pct}% of runs are green or blue</span>` : ''}</p></div>
+   <div class="card" id="tmapcard"><h3>Trail map${rep.lifts || rep.trails ? ': what’s open' : ''}</h3>
+     <div id="tmap" class="tmap"><p class="mute">The map loads when you scroll to it.</p></div>
+     <div class="legend" id="tmaplegend"></div><p class="fine" id="tmapnote"></p></div>
    ${d.info.webcam_images.length ? `<div class="card"><h3>Webcams right now</h3><div class="cams">${d.info.webcam_images.map(u =>
      `<a href="${esc(d.info.webcams_url || u)}" target="_blank" rel="noopener"><img loading="lazy" width="640" height="360" alt="${esc(d.resort.name)} webcam" src="${esc(u)}${u.includes('?') ? '&' : '?'}t=${Math.floor(Date.now() / 300000)}"></a>`).join('')}</div></div>` : ''}
    <div class="card"><h3>Next 48 hours: snow per hour</h3>${snow48 >= 0.05 ? '<div class="chart" id="c_h_snow"></div>' : '<p class="mute">No snow in the next 48 hours.</p>'}
@@ -322,7 +329,129 @@ async function openResort(id, band) {
   if ($('c_h_snow')) Charts.add(() => barChart($('c_h_snow'), hrs.map(h => ({ v: h.snow_in, tip: htip(h) })), { height: 120, labels: hl, labelEvery: 6, floorMax: 0.5, title: 'Hourly snow' }));
   Charts.add(() => lineChart($('c_h_temp'), [{ name: 'Temperature', color: 'var(--s2)', values: hrs.map(h => h.temp_f) }],
     { height: 120, labels: hl, labelEvery: 6, unit: '°', title: 'Hourly temperature', tip: i => htip(hrs[i]) }));
+  watchTrailMap(id);
   scrollTo(0, 0);
+}
+
+/* ---------- Open lifts and trails ---------- */
+const LVL = { green: 'Green', blue: 'Blue', black: 'Black', double: 'Double black', park: 'Terrain park' };
+const LVL_ORDER = ['green', 'blue', 'black', 'double', 'park'];
+const LVL_COLOR = { green: '#2f9e44', blue: '#1c7ed6', black: '#141410', double: '#141410', park: '#f08c00' };
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const lvlMark = l => l ? `<i class="lvl ${l}" title="${LVL[l]}" aria-label="${LVL[l]}"></i>` : '<i class="lvl none" aria-hidden="true"></i>';
+// The resort's live lift and trail status by name, folded under the ledger (grouped by mountain at Aspen)
+function openList(rep) {
+  if (!rep.lifts && !rep.trails) return '';
+  const lifts = rep.lifts || [], trails = rep.trails || [];
+  const openL = lifts.filter(x => x.status === 'open'), openT = trails.filter(x => x.status === 'open');
+  const waiting = lifts.filter(x => x.status === 'hold' || x.status === 'scheduled');
+  if (!openL.length && !openT.length && !waiting.length)
+    return '<p class="fine">No lifts or trails are open right now, going by the resort’s live lift and trail status.</p>';
+  const block = m => {
+    const here = x => !m || x.area === m.name;
+    const l = openL.filter(here), t = openT.filter(here), w = waiting.filter(here);
+    let h = m ? `<h4>${esc(m.name)} <span class="mute">${m.status ? esc(m.status) + SEP : ''}lifts ${m.lifts_open} of ${m.lifts_total}${SEP}trails ${m.trails_open} of ${m.trails_total}</span></h4>` : '';
+    if (!l.length && !t.length && !w.length) return h + '<p class="mute">Nothing open.</p>';
+    if (l.length) h += `<p><b>Lifts</b>: ${l.map(x => esc(x.name)).join(', ')}</p>`;
+    if (w.length) h += `<p><b>On hold or opening later</b>: ${w.map(x => `${esc(x.name)} <span class="mute">(${x.status === 'hold' ? 'on hold' : 'scheduled'})</span>`).join(', ')}</p>`;
+    if (t.length) {
+      const sorted = [...t].sort((a, b) => ((LVL_ORDER.indexOf(a.level) + 6) % 6) - ((LVL_ORDER.indexOf(b.level) + 6) % 6) || a.name.localeCompare(b.name));
+      h += `<p><b>Trails</b></p><ul class="trails">${sorted.map(x => `<li>${lvlMark(x.level)}${esc(x.name)}${x.groomed ? ' <span class="mute">groomed</span>' : ''}</li>`).join('')}</ul>`;
+    }
+    return h;
+  };
+  const body = rep.mountains ? rep.mountains.map(block).join('') : block(null);
+  return `<details class="openlist"><summary>Open right now: ${plural(openL.length, 'lift')}${SEP}${plural(openT.length, 'trail')}</summary>
+    ${body}<p class="fine">From the resort’s live lift and trail status, which can differ from the morning report above.</p></details>`;
+}
+
+/* ---------- Trail map: OpenStreetMap runs and lifts, coloured by the resort's live status ---------- */
+let TMAP = null;
+function watchTrailMap(id) {
+  if (TMAP) { TMAP.remove(); TMAP = null; }
+  const card = $('tmapcard');
+  if (!card) return;
+  // Build it only when it scrolls into view: the first map for a resort asks OpenStreetMap, which can take a while
+  if (!('IntersectionObserver' in window)) { loadTrailMap(id); return; }
+  const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); loadTrailMap(id); } }, { rootMargin: '200px' });
+  io.observe(card);
+}
+function baseLayer(cfg, maxZoom) {
+  // With a CARTO key (add-on option) use CARTO's basemap, light or dark to match the page. Without one fall back
+  // to OpenStreetMap, which returns an "Access blocked" picture when a request has no Referer (Home Assistant
+  // ingress sends none), so referrerPolicy 'origin' makes the tile requests carry the page's origin.
+  if (cfg.carto_key) {
+    const style = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark_all' : 'voyager';
+    return L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/${style}/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cfg.carto_key)}`,
+      { maxZoom, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' });
+  }
+  return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom, referrerPolicy: 'origin', attribution: '&copy; OpenStreetMap contributors' });
+}
+async function loadTrailMap(id) {
+  const box = $('tmap');
+  if (!box) return;
+  box.innerHTML = '<p class="mute">Loading the trail map… the first one for a resort can take up to a minute.</p>';
+  let d, cfg;
+  try {
+    if (!window.L) await loadLeaflet();
+    [d, cfg] = await Promise.all([api(`resort/${id}/trailmap`), api('map').catch(() => ({ carto_key: '' }))]);
+  } catch (e) { if ($('tmap') === box) box.innerHTML = `<p class="mute">${esc(e.message)}</p>`; return; }
+  if ($('tmap') !== box) return;  // moved on to another resort meanwhile
+  box.innerHTML = '';
+  box.classList.add('live');
+  TMAP = L.map(box, { preferCanvas: true, scrollWheelZoom: false, zoomSnap: 0.5 });
+  baseLayer(cfg, 17).addTo(TMAP);
+  const R = L.canvas({ tolerance: 8 }), hover = matchMedia('(hover: hover)').matches;
+  const WORD = { open: 'Open', hold: 'On hold', scheduled: 'Opening later', closed: 'Closed' };
+  const st = f => d.has_status ? (f.s || 'none') : 'all';
+  const add = (f, lift, styles) => {
+    const what = `<b>${esc(f.n || (lift ? 'Unnamed lift' : 'Unnamed run'))}</b>`
+      + (!lift && f.l ? SEP + LVL[f.l] : '') + (d.has_status ? SEP + (WORD[f.s] || 'Not in the resort’s report') : '');
+    for (const line of f.c) for (const s of styles) {
+      const pl = L.polyline(line, { renderer: R, lineCap: 'round', lineJoin: 'round', ...s }).addTo(TMAP);
+      if (s.hit) { pl.bindPopup(what); if (hover) pl.bindTooltip(what, { sticky: true }); }
+    }
+  };
+  const CASE = { color: '#ffffff', opacity: .92 }, GREY = '#868e96', LIFT = '#e03131', DARK = '#495057';
+  const runStyle = f => {
+    const c = LVL_COLOR[f.l] || '#5c6670';
+    switch (st(f)) {
+      case 'open': return [{ ...CASE, weight: 7 }, { color: c, weight: 4, hit: true }];
+      case 'all': return [{ ...CASE, weight: 5, opacity: .55 }, { color: c, weight: 2.5, opacity: .85, hit: true }];
+      case 'none': return [{ color: GREY, weight: 1.5, opacity: .7, dashArray: '2 5', hit: true }];
+      default: return [{ color: GREY, weight: 2, opacity: .8, hit: true }];
+    }
+  };
+  const liftStyle = f => {
+    switch (st(f)) {
+      case 'open': return [{ ...CASE, weight: 6 }, { color: LIFT, weight: 3, hit: true }];
+      case 'all': return [{ ...CASE, weight: 5, opacity: .6 }, { color: LIFT, weight: 2.5, hit: true }];
+      case 'hold': return [{ ...CASE, weight: 6 }, { color: '#e8590c', weight: 3, dashArray: '7 5', hit: true }];
+      case 'scheduled': return [{ ...CASE, weight: 5 }, { color: LIFT, weight: 2.5, dashArray: '7 5', hit: true }];
+      case 'none': return [{ color: DARK, weight: 1.5, opacity: .8, dashArray: '2 5', hit: true }];
+      default: return [{ color: DARK, weight: 2, opacity: .85, dashArray: '7 5', hit: true }];
+    }
+  };
+  // Closed and unknown first, so open runs and every lift draw on top
+  const order = { none: 0, closed: 1, all: 2, scheduled: 2, hold: 3, open: 4 };
+  [...d.runs].sort((a, b) => order[st(a)] - order[st(b)]).forEach(f => add(f, false, runStyle(f)));
+  [...d.lifts].sort((a, b) => order[st(a)] - order[st(b)]).forEach(f => add(f, true, liftStyle(f)));
+  TMAP.fitBounds(d.bounds, { padding: [12, 12] });
+
+  // Swatches are drawn as on the map: open runs and running lifts carry a white edge
+  const sw = (c, dash, edge) => `<i class="sw" style="background:${dash ? `repeating-linear-gradient(90deg, ${c} 0 5px, transparent 5px 8px)` : c}${edge ? '; box-shadow: 0 0 0 1.5px #fff' : ''}"></i>`;
+  $('tmaplegend').innerHTML = d.has_status
+    ? `<span>${sw(LVL_COLOR.green, 0, 1)}Open green</span><span>${sw(LVL_COLOR.blue, 0, 1)}Open blue</span><span>${sw(LVL_COLOR.black, 0, 1)}Open black</span>
+       <span>${sw(LVL_COLOR.park, 0, 1)}Open park</span><span>${sw(LIFT, 0, 1)}Lift running</span><span>${sw(LIFT, 1)}Lift opening later or on hold</span>
+       <span>${sw(GREY)}Closed run</span><span>${sw('#adb5bd', 1)}Lift closed, or not in the report</span>`
+    : `<span>${sw(LVL_COLOR.green, 0, 1)}Green</span><span>${sw(LVL_COLOR.blue, 0, 1)}Blue</span><span>${sw(LVL_COLOR.black, 0, 1)}Black</span><span>${sw(LIFT, 0, 1)}Lift</span>`;
+  const [mr, nr] = d.matched.runs, [ml, nl] = d.matched.lifts;
+  $('tmapnote').innerHTML = (d.has_status
+    ? `Open or closed comes from the resort’s live report, matched by name: ${mr} of ${nr} named runs and ${ml} of ${nl} lifts on the map. Tap a line for its name.`
+    : 'This resort’s report doesn’t name its lifts and runs, so every run is drawn in its colour without open or closed. Tap a line for its name.')
+    + (d.unmapped_open.length ? ` Open but not found on the map: ${d.unmapped_open.map(esc).join(', ')}.` : '')
+    + ' Runs and lifts from OpenStreetMap, the data OpenSkiMap draws.';
 }
 
 /* ---------- Radar ---------- */
@@ -360,18 +489,8 @@ async function loadRadar() {
   if (MAP) { setTimeout(() => MAP.invalidateSize(), 50); return; }
   try { if (!window.L) await loadLeaflet(); } catch (e) { $('map').textContent = e.message; return; }
   MAP = L.map('map').setView([39.65, -106.2], 8);
-  // With a CARTO key (add-on option) use CARTO's basemap, light or dark to match the page. Without one fall back
-  // to OpenStreetMap, which returns an "Access blocked" picture when a request has no Referer (Home Assistant
-  // ingress sends none), so referrerPolicy 'origin' makes the tile requests carry the page's origin.
   const cfg = await api('map').catch(() => ({ carto_key: '' }));
-  if (cfg.carto_key) {
-    const style = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark_all' : 'voyager';
-    L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/${style}/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(cfg.carto_key)}`,
-      { maxZoom: 13, attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }).addTo(MAP);
-  } else {
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      { maxZoom: 13, referrerPolicy: 'origin', attribution: '&copy; OpenStreetMap contributors' }).addTo(MAP);
-  }
+  baseLayer(cfg, 13).addTo(MAP);
   RLAYERS = RFRAMES.map(f => L.tileLayer(`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913${f ? '-' + f : ''}/{z}/{x}/{y}.png`,
     { opacity: 0, zIndex: 10, attribution: 'Radar: IEM NEXRAD' }).addTo(MAP));
   if (!FC) FC = await api('forecast').catch(() => []);
@@ -407,10 +526,11 @@ async function rank() {
   const q = `best-days?date=${$('d').value}&skis=${$('skis').checked}&departure=${encodeURIComponent($('dep').value)}`;
   let rows;
   try { rows = await api(q); } catch (e) { t.innerHTML = `<tr><td>${esc(e.message)}</td></tr>`; return; }
-  t.innerHTML = '<tr><th>Resort</th><th class="num">Score</th><th class="num">Fresh</th><th class="num">Gust</th><th class="num">High</th><th class="num">Base</th><th class="num">Lifts</th><th>Leave</th></tr>' +
-    rows.map(r => r.error ? `<tr><td>${esc(r.resort)}</td><td colspan=7>${esc(r.error)}</td></tr>` :
+  const frac = (o, n) => o != null && n != null ? `${o}/${n}` : '-';
+  t.innerHTML = '<tr><th>Resort</th><th class="num">Score</th><th class="num">Fresh</th><th class="num">Gust</th><th class="num">High</th><th class="num">Base</th><th class="num">Lifts</th><th class="num">Trails</th><th>Leave</th></tr>' +
+    rows.map(r => r.error ? `<tr><td>${esc(r.resort)}</td><td colspan=8>${esc(r.error)}</td></tr>` :
       `<tr${r.not_open ? ' class="notopen"' : ''}><td>${esc(r.resort)}${r.not_open ? ' <span class="mute">not open yet</span>' : ''}</td><td class="num">${r.not_open ? '-' : r.score}</td><td class="num">${inch(r.fresh_in)}</td><td class="num">${Math.round(r.gust_mph)}</td><td class="num">${Math.round(r.tmax_f)}°</td>
-       <td class="num">${r.snowpack ? inch(r.snowpack.depth_in) : '-'}</td><td class="num">${r.live && r.live.lifts_total != null ? r.live.lifts_open + '/' + r.live.lifts_total : '-'}</td>
+       <td class="num">${r.snowpack ? inch(r.snowpack.depth_in) : '-'}</td><td class="num">${frac(r.live && r.live.lifts_open, r.live && r.live.lifts_total)}</td><td class="num">${frac(r.live && r.live.trails_open, r.live && r.live.trails_total)}</td>
        <td>${t12(r.leave.leave_at)} <span class="mute">(${hm(r.leave.drive_min)})</span></td></tr>`).join('');
   const top = rows.find(r => !r.error && !r.not_open) || rows.find(r => !r.error);
   $('pick').innerHTML = top ? `<div class="pickgrid">

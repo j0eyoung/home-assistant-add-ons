@@ -33,4 +33,10 @@ Leave times and drive times start from the first line of **Departure points** un
 
 ## Resorts that aren't open
 
-A resort whose report says it isn't open for the season yet (or has closed for it), or that has no lifts running in the middle of the day, drops to the bottom of the Plan list and is never the best bet. Resorts without a live report (Keystone, Steamboat, Aspen Snowmass) are always treated as open.
+A resort whose report says it isn't open for the season yet (or has closed for it), or that has no lifts running in the middle of the day, drops to the bottom of the Plan list and is never the best bet. A resort you add without a live report is always treated as open.
+
+## Open lifts and trails, and the trail map
+
+Each resort page shows how many lifts and trails are open, and **Open right now** lists them by name, from the feeds the resorts' own websites use: MtnPowder (Winter Park, Arapahoe Basin, Steamboat), POWDR (Copper, Eldora) and Aspen Snowmass's own report (all four mountains). Keystone's site blocks the add-on, so it only has lift and run counts from OnTheSnow, without names. These are unofficial feeds, so a resort can drop out for a while if its site changes.
+
+The trail map draws each resort's runs and lifts from OpenStreetMap (the data OpenSkiMap shows) and colours them by matching names with the resort's report, which finds about 9 in 10 runs. A run the report names but the map can't find is listed under the map. The runs and lifts for the built-in resorts ship with the add-on; for a resort you add in `ski_resorts.json`, the first map is fetched from OpenStreetMap and can take a minute.

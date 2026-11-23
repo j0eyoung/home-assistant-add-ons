@@ -27,6 +27,7 @@ import season
 import settings
 import snotel
 import traffic
+import trailmap
 import transit
 import util
 
@@ -138,13 +139,16 @@ def briefing():
 
 
 # OpenSnow-style forecast
-def _report(r):
-    return {"snotel": snotel.resort_snowpack(r), "reported": livestatus.live_status(r)}
+def _report(r, names=True):
+    """Observed snow and the resort's own report; names=False leaves out the per-lift and per-trail lists."""
+    live = livestatus.live_status(r)
+    return {"snotel": snotel.resort_snowpack(r), "reported": live if names else livestatus.summary(live)}
 
 
 def _row(r):
     try:
-        return {"id": r["id"], "name": r["name"], "pass": r.get("pass"), "summary": forecast.summary(r), **_report(r)}
+        return {"id": r["id"], "name": r["name"], "pass": r.get("pass"), "summary": forecast.summary(r),
+                **_report(r, names=False)}
     except Exception as e:
         return {"id": r["id"], "name": r["name"], "pass": r.get("pass"), "error": str(e)}
 
@@ -181,6 +185,18 @@ def resort_detail(resort_id: str, band: str = "mid", departure: Optional[str] = 
             "info": resortinfo.info(r) | {"openskimap_url": resortinfo.openskimap_url(r)},
             "transit": transit.for_resort(r), "traffic": traffic.for_resort(r), "accuracy": accuracy.scores(r["id"]),
             "leave_today": drive.plan(r, settings.departure(departure), today, st["arrive_by"], st["buffer_min"])}
+
+
+@app.get("/api/resort/{resort_id}/trailmap")
+def resort_trailmap(resort_id: str):
+    """Runs and lifts from OpenStreetMap, each marked open or closed from the resort's live report."""
+    r = next((x for x in resorts.load() if x["id"] == resort_id), None)
+    if not r:
+        raise HTTPException(404, "unknown resort")
+    try:
+        return trailmap.for_resort(r)
+    except Exception as e:
+        raise HTTPException(502, f"trail map failed: {e}")
 
 
 @app.get("/api/traffic")

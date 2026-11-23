@@ -254,6 +254,25 @@ td button { min-height: 34px; padding: 4px 10px; font-size: 14px; }
            font: 800 12px var(--font); letter-spacing: .03em; white-space: nowrap; }
 .leaflet-container { font-family: var(--font); }
 
+/* Open lifts and trails under the ledger, and the trail map */
+details.openlist { margin-top: 12px; border-top: 1px solid var(--hair); padding-top: 10px; }
+details.openlist > summary { cursor: pointer; font-weight: 800; min-height: 36px; display: flex; align-items: center; gap: 4px; }
+details.openlist h4 { margin: 14px 0 4px; font-size: 16px; }
+details.openlist h4 .mute { font-weight: 400; font-size: 14px; }
+details.openlist p { margin: 8px 0 4px; }
+ul.trails { list-style: none; padding: 0 !important; margin: 4px 0 0; columns: 2 13em; column-gap: 20px; }
+ul.trails li { break-inside: avoid; padding: 2px 0; }
+.lvl { display: inline-block; width: 10px; height: 10px; margin-right: 8px; vertical-align: baseline; flex: none; }
+.lvl.green { background: #2f9e44; border-radius: 50%; }
+.lvl.blue { background: #1c7ed6; }
+.lvl.black, .lvl.double { background: #141410; transform: rotate(45deg) scale(.85); box-shadow: 0 0 0 1.5px var(--sheet); }
+.lvl.double { box-shadow: 0 0 0 1.5px var(--sheet), 6px -6px 0 0 #141410, 6px -6px 0 1.5px var(--sheet); margin-right: 14px; }
+.lvl.park { background: #f08c00; border-radius: 2px; }
+.lvl.none { background: transparent; }
+.tmap { height: 62vh; min-height: 360px; border-radius: var(--r-in); background: var(--inset); margin-bottom: 10px; }
+.tmap:not(.live) { height: auto; min-height: 0; padding: 14px; }
+.legend i.sw { width: 18px; height: 4px; border-radius: 2px; }
+
 /* Season recap dialog */
 #recapdlg { border: 0; border-radius: var(--r); background: var(--panel); color: var(--sheet); padding: 12px; max-width: calc(100vw - 24px);
             max-height: calc(100vh - 24px); overscroll-behavior: contain; }
@@ -287,7 +306,8 @@ td button { min-height: 34px; padding: 4px 10px; font-size: 14px; }
 /* Phone tables: keep the columns that answer the question, the rest live on wider screens */
 @media (max-width: 720px) {
   #t th:nth-child(2), #t td:nth-child(2), #t th:nth-child(4), #t td:nth-child(4),
-  #t th:nth-child(6), #t td:nth-child(6), #t th:nth-child(7), #t td:nth-child(7) { display: none; }
+  #t th:nth-child(6), #t td:nth-child(6), #t th:nth-child(7), #t td:nth-child(7),
+  #t th:nth-child(8), #t td:nth-child(8) { display: none; }
   #statsbox th:nth-child(4), #statsbox td:nth-child(4) { display: none; }
   #statsbox th, #fdetail th { white-space: normal; }
   /* Day by day on a phone: day, snow, quality, high/low, wind (day/night split and freezing level on wider screens) */
