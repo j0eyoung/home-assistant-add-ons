@@ -245,6 +245,29 @@ def recipe_favorite(rid: int, on: bool = True):
     return {"ok": True}
 
 
+@app.get("/api/recipes/{rid}")
+def recipe_one(rid: int):
+    r = db.rows("SELECT * FROM recipes WHERE id=?", (rid,))
+    if not r:
+        raise HTTPException(404, "That recipe is gone.")
+    return inflate(r[0])
+
+
+class RecipeMeta(BaseModel):
+    notes: Optional[str] = Field(None, max_length=4000)
+    rating: Optional[int] = Field(None, ge=0, le=5)
+
+
+@app.post("/api/recipes/{rid}/meta")
+def recipe_meta(rid: int, m: RecipeMeta):
+    """The cook's own notes and 1-5 rating (0 clears it). Rating a recipe also keeps it in My recipes."""
+    if m.notes is not None:
+        db.run("UPDATE recipes SET notes=? WHERE id=?", (m.notes.strip() or None, rid))
+    if m.rating is not None:
+        db.run("UPDATE recipes SET rating=?, saved=1 WHERE id=?", (m.rating or None, rid))
+    return {"ok": True}
+
+
 @app.get("/api/library")
 def library_status():
     return {"recipeapi": sources.recipeapi_status(),
@@ -314,7 +337,7 @@ def _scaled(ingredients, factor):
     out = []
     for i in grocery.clean_ingredients(ingredients):
         q = i["qty"] * factor
-        out.append({**i, "qty": round(q, 2) if q else 0})
+        out.append({**i, "qty": round(q, 3) if q else 0})
     return out
 
 
@@ -324,16 +347,26 @@ def plan(start: Optional[str] = None):
     hc = headcounts(dates)
     keys = kitchen.pantry_keys()
     meals = {}
-    for m in db.rows("SELECT pm.date, pm.slot, pm.headcount, pm.recipe_id, pm.cooked, r.name, r.servings, r.calories, "
-                     "r.protein, r.carbs, r.fat, r.ingredients, r.steps, r.saved, r.favorite, r.cost, r.image, r.image_src "
-                     "FROM plan_meals pm "
-                     "JOIN recipes r ON r.id=pm.recipe_id WHERE pm.date BETWEEN ? AND ?", (dates[0], dates[-1])):
+    rows = db.rows("SELECT pm.date, pm.slot, pm.headcount, pm.recipe_id, pm.cooked, pm.leftover_of, r.name, r.servings, "
+                   "r.calories, r.protein, r.carbs, r.fat, r.ingredients, r.steps, r.saved, r.favorite, r.cost, r.image, "
+                   "r.image_src, r.rating FROM plan_meals pm "
+                   "JOIN recipes r ON r.id=pm.recipe_id WHERE pm.date BETWEEN ? AND ?",
+                   (dates[0], (datetime.date.fromisoformat(dates[-1]) + datetime.timedelta(days=1)).isoformat()))
+    eaters = {}                        # 'date|slot' -> leftover meals cooked into it
+    for m in rows:
+        if m["leftover_of"]:
+            eaters.setdefault(m["leftover_of"], []).append({"date": m["date"], "slot": m["slot"], "people": m["headcount"] or 1})
+    for m in rows:
+        if m["date"] > dates[-1]:
+            continue                   # read only so a Sunday dinner knows about Monday's leftovers
         ings = grocery.clean_ingredients(m.pop("ingredients"))
         servings = int(grocery.to_qty(m["servings"]) or 1)
+        m["leftovers"] = eaters.get(f"{m['date']}|{m['slot']}", [])
+        m["cook_for"] = (m["headcount"] or 1) + sum(x["people"] for x in m["leftovers"])
         m["match"] = kitchen.match(ings, keys)
-        m["ingredients"] = _scaled(ings, (m["headcount"] or 1) / servings)   # amounts for the people eating
+        m["ingredients"] = _scaled(ings, m["cook_for"] / servings)   # amounts for everyone this cook feeds
         m["steps"] = grocery.clean_steps(m["steps"])
-        m["meal_cost"] = round(m["cost"] * (m["headcount"] or 1), 2) if m["cost"] else None
+        m["meal_cost"] = None if m["leftover_of"] else (round(m["cost"] * m["cook_for"], 2) if m["cost"] else None)
         m["image_url"] = images.url_for({**m, "id": m["recipe_id"]})
         meals[(m["date"], m["slot"])] = m
     out = []
@@ -358,6 +391,89 @@ def cooked(req: CookReq):
     if not res.get("already"):
         rebuild_list()
     return res
+
+
+def _key(date, slot):
+    return (date, SLOTS.index(slot) if slot in SLOTS else 9)
+
+
+def fix_leftovers():
+    """After any plan change: a leftover meal always carries its source's recipe, comes after it, and goes away
+    with it."""
+    rows = {f"{r['date']}|{r['slot']}": r for r in db.rows("SELECT date, slot, recipe_id, leftover_of FROM plan_meals")}
+    for k, r in rows.items():
+        src = r["leftover_of"]
+        if not src:
+            continue
+        s = rows.get(src)
+        if not s or s["leftover_of"]:
+            db.run("DELETE FROM plan_meals WHERE date=? AND slot=?", (r["date"], r["slot"]))
+        elif _key(s["date"], s["slot"]) >= _key(r["date"], r["slot"]):
+            db.run("UPDATE plan_meals SET leftover_of=NULL WHERE date=? AND slot=?", (r["date"], r["slot"]))
+        elif s["recipe_id"] != r["recipe_id"]:
+            db.run("UPDATE plan_meals SET recipe_id=? WHERE date=? AND slot=?", (s["recipe_id"], r["date"], r["slot"]))
+
+
+class LeftoverReq(BaseModel):
+    date: str
+    slot: str
+    to_date: Optional[str] = None       # default: the next day's lunch
+    to_slot: Optional[str] = None
+
+
+@app.post("/api/plan/leftovers")
+def plan_leftovers(req: LeftoverReq):
+    """Cook this meal bigger and eat the rest at another meal (replaces what was planned there)."""
+    d, slot = parse_date(req.date), check_slot(req.slot)
+    to_d = parse_date(req.to_date) if req.to_date else (datetime.date.fromisoformat(d) + datetime.timedelta(days=1)).isoformat()
+    to_slot = check_slot(req.to_slot or "lunch")
+    src = db.rows("SELECT recipe_id, leftover_of FROM plan_meals WHERE date=? AND slot=?", (d, slot))
+    if not src:
+        raise HTTPException(404, "No meal is planned there.")
+    if src[0]["leftover_of"]:
+        raise HTTPException(409, "That meal is already leftovers.")
+    if _key(to_d, to_slot) <= _key(d, slot):
+        raise HTTPException(422, "Leftovers have to come after the meal they're from.")
+    people = headcounts([to_d])[to_d][to_slot]
+    db.run("INSERT OR REPLACE INTO plan_meals(date,slot,recipe_id,headcount,cooked,leftover_of) VALUES(?,?,?,?,0,?)",
+           (to_d, to_slot, src[0]["recipe_id"], people, f"{d}|{slot}"))
+    db.run("UPDATE plan_meals SET leftover_of=NULL WHERE leftover_of=?", (f"{to_d}|{to_slot}",))
+    fix_leftovers()
+    rebuild_list()
+    return {"ok": True, "date": to_d, "slot": to_slot}
+
+
+class MoveReq(BaseModel):
+    date: str
+    slot: str
+    to_date: str
+    to_slot: str
+
+
+@app.post("/api/plan/move")
+def plan_move(req: MoveReq):
+    """Move a meal to another day or meal; whatever was there swaps into its place. People stay with the slot."""
+    a, b = (parse_date(req.date), check_slot(req.slot)), (parse_date(req.to_date), check_slot(req.to_slot))
+    if a == b:
+        return {"ok": True}
+    ra = db.rows("SELECT recipe_id, cooked, leftover_of FROM plan_meals WHERE date=? AND slot=?", a)
+    rb = db.rows("SELECT recipe_id, cooked, leftover_of FROM plan_meals WHERE date=? AND slot=?", b)
+    if not ra:
+        raise HTTPException(404, "No meal is planned there.")
+    ka, kb = f"{a[0]}|{a[1]}", f"{b[0]}|{b[1]}"
+    hc = headcounts([a[0], b[0]])
+    db.run("DELETE FROM plan_meals WHERE (date=? AND slot=?) OR (date=? AND slot=?)", a + b)
+    swap = {ka: kb, kb: ka}
+    for (d, s), r in ((b, ra[0]), (a, rb[0] if rb else None)):
+        if r:
+            db.run("INSERT INTO plan_meals(date,slot,recipe_id,headcount,cooked,leftover_of) VALUES(?,?,?,?,?,?)",
+                   (d, s, r["recipe_id"], hc[d][s], r["cooked"], swap.get(r["leftover_of"], r["leftover_of"])))
+    db.run("UPDATE plan_meals SET leftover_of=CASE leftover_of WHEN ? THEN ? WHEN ? THEN ? END "
+           "WHERE leftover_of IN (?,?) AND NOT ((date=? AND slot=?) OR (date=? AND slot=?))",
+           (ka, kb, kb, ka, ka, kb) + a + b)
+    fix_leftovers()
+    rebuild_list()
+    return {"ok": True}
 
 
 def use_soon():
@@ -439,6 +555,7 @@ def _run_generation(start, notes):
                 rid = save_or_reuse({**it["recipe"], "origin": "claude"})
             db.run("INSERT OR REPLACE INTO plan_meals(date,slot,recipe_id,headcount,cooked) VALUES(?,?,?,?,0)",
                    (it["date"], it["slot"], rid, people))
+        fix_leftovers()
         grocery.rebuild(dates[0], dates[-1])
         _gen.update(status="done", message="Week ready, grocery list updated.")
     except Exception as e:
@@ -490,6 +607,7 @@ def regen_meal(req: MealReq):
         rid = save_or_reuse({**r, "origin": "claude"})
     db.run("INSERT OR REPLACE INTO plan_meals(date,slot,recipe_id,headcount,cooked) VALUES(?,?,?,?,0)",
            (d, slot, rid, people))
+    fix_leftovers()
     rebuild_list()
     return {"ok": True}
 
@@ -497,6 +615,7 @@ def regen_meal(req: MealReq):
 @app.delete("/api/plan/meal")
 def clear_meal(date: str, slot: str):
     db.run("DELETE FROM plan_meals WHERE date=? AND slot=?", (parse_date(date), check_slot(slot)))
+    fix_leftovers()
     rebuild_list()
     return {"ok": True}
 
@@ -534,15 +653,98 @@ class GItem(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     qty: float = 1
     unit: str = Field("", max_length=20)
-    store: str = Field("king_soopers", max_length=40)
-    aisle: str = Field("Other", max_length=40)
+    store: Optional[str] = Field(None, max_length=40)     # unset: where the cook filed it before, else a guess
+    aisle: Optional[str] = Field(None, max_length=40)
+
+
+def _add_item(name, qty, unit, store=None, aisle=None):
+    place = grocery.placement(name)
+    if store:
+        grocery.remember(name, store=store)
+    gid = db.run("INSERT INTO grocery(name,qty,unit,store,aisle,note) VALUES(?,?,?,?,?,'manual')",
+                 (name.strip(), qty, grocery.canon_unit(unit), grocery.clean_store(store or place["store"]),
+                  (aisle or place["aisle"])[:40]))
+    return db.rows("SELECT * FROM grocery WHERE id=?", (gid,))[0]
 
 
 @app.post("/api/grocery")
 def grocery_add(g: GItem):
-    db.run("INSERT INTO grocery(name,qty,unit,store,aisle,note) VALUES(?,?,?,?,?,'manual')",
-           (g.name.strip(), g.qty, grocery.canon_unit(g.unit), grocery.clean_store(g.store), g.aisle))
+    _add_item(g.name, g.qty, g.unit, g.store, g.aisle)
     return grocery.listing()
+
+
+class QuickReq(BaseModel):
+    text: str = Field(min_length=1, max_length=200)
+    store: Optional[str] = Field(None, max_length=40)
+
+
+@app.post("/api/grocery/quick")
+def grocery_quick(q: QuickReq):
+    """'2 lb chicken thighs' -> 2 lb of Chicken thighs, filed where the cook filed it last time."""
+    p = grocery.parse_quick(q.text)
+    if not p["name"]:
+        raise HTTPException(422, "Type what to add.")
+    return {"item": _add_item(p["name"], p["qty"], p["unit"], q.store), "list": grocery.listing()}
+
+
+@app.get("/api/grocery/known")
+def grocery_known():
+    """Names for the add box's suggestions: things bought, filed, stocked or listed before."""
+    rows = db.rows("SELECT name FROM item_prefs UNION SELECT name FROM purchases UNION SELECT name FROM pantry "
+                   "UNION SELECT name FROM grocery")
+    seen, out = set(), []
+    for r in rows:
+        n = (r["name"] or "").strip()
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            out.append(n)
+    return sorted(out, key=str.lower)[:400]
+
+
+class GEdit(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    qty: float = Field(0, ge=0, le=100000)
+    unit: str = Field("", max_length=20)
+    store: str = Field(max_length=40)
+    aisle: str = Field("Other", min_length=1, max_length=40)
+
+
+@app.put("/api/grocery/{gid}")
+def grocery_edit(gid: int, e: GEdit):
+    """Edit an item. Store and aisle are remembered for that item; changing the name or amount of a planned
+    item makes it the cook's own row, which then wins over the plan's on every rebuild."""
+    g = db.rows("SELECT * FROM grocery WHERE id=?", (gid,))
+    if not g:
+        raise HTTPException(404, "That item is no longer on the list.")
+    g = g[0]
+    unit = grocery.canon_unit(e.unit)
+    mine = (g["note"] == "manual" or e.name.strip() != g["name"] or abs(e.qty - (g["qty"] or 0)) > 1e-6
+            or unit != (g["unit"] or ""))
+    db.run("UPDATE grocery SET name=?, qty=?, unit=?, store=?, aisle=?, note=? WHERE id=?",
+           (e.name.strip(), e.qty, unit, grocery.clean_store(e.store), e.aisle.strip(),
+            "manual" if mine else g["note"], gid))
+    grocery.remember(e.name, store=e.store, aisle=e.aisle.strip())
+    return {"item": db.rows("SELECT * FROM grocery WHERE id=?", (gid,))[0]}
+
+
+class FinishReq(BaseModel):
+    to_pantry: list[int] = Field(default_factory=list, max_length=500)
+
+
+@app.post("/api/grocery/finish")
+def grocery_finish(f: FinishReq):
+    """End of a shopping trip: put the chosen ticked items in the pantry, then clear every ticked item."""
+    done = db.rows("SELECT * FROM grocery WHERE checked=1")
+    want = set(f.to_pantry)
+    stocked = 0
+    for g in done:
+        if g["id"] in want and not g["stocked"]:
+            # the tick in the store already logged the purchase
+            pantry.add_items([{"name": g["name"], "qty": g["qty"] or 1, "unit": g["unit"]}], g["store"], log=False)
+            stocked += 1
+    db.run("DELETE FROM grocery WHERE checked=1")
+    rebuild_list()
+    return {"stocked": stocked, "cleared": len(done), "list": grocery.listing()}
 
 
 @app.post("/api/grocery/{gid}/check")
@@ -661,6 +863,7 @@ class PantryItem(BaseModel):
     qty: float = Field(1, ge=0, le=100000)
     unit: str = Field("", max_length=20)
     expires: Optional[str] = None
+    category: Optional[str] = Field(None, max_length=60)     # unset: keep what it was
 
     @field_validator("expires", mode="before")
     @classmethod
@@ -678,14 +881,15 @@ class PantryItem(BaseModel):
 
 @app.post("/api/pantry")
 def pantry_add(p: PantryItem):
-    return {"id": db.run("INSERT INTO pantry(name,qty,unit,expires) VALUES(?,?,?,?)",
-                         (p.name.strip(), p.qty, grocery.canon_unit(p.unit), p.expires))}
+    return {"id": db.run("INSERT INTO pantry(name,qty,unit,expires,category) VALUES(?,?,?,?,?)",
+                         (p.name.strip(), p.qty, grocery.canon_unit(p.unit), p.expires, (p.category or "").strip()))}
 
 
 @app.put("/api/pantry/{pid}")
 def pantry_edit(pid: int, p: PantryItem):
-    db.run("UPDATE pantry SET name=?,qty=?,unit=?,expires=?,updated=CURRENT_TIMESTAMP WHERE id=?",
-           (p.name.strip(), p.qty, grocery.canon_unit(p.unit), p.expires, pid))
+    db.run("UPDATE pantry SET name=?,qty=?,unit=?,expires=?,category=COALESCE(?,category),updated=CURRENT_TIMESTAMP "
+           "WHERE id=?", (p.name.strip(), p.qty, grocery.canon_unit(p.unit), p.expires,
+                          p.category.strip() if p.category is not None else None, pid))
     return {"ok": True}
 
 
@@ -701,12 +905,13 @@ def pantry_del(pid: int):
 @app.get("/meals/today")
 def meals_today(date: Optional[str] = None):
     d = parse_date(date) if date else datetime.date.today().isoformat()
-    meals = db.rows(f"SELECT pm.slot, pm.headcount, pm.cooked, r.* FROM plan_meals pm "
+    meals = db.rows(f"SELECT pm.slot, pm.headcount, pm.cooked, pm.leftover_of, r.* FROM plan_meals pm "
                     f"JOIN recipes r ON r.id=pm.recipe_id WHERE pm.date=? ORDER BY {SLOT_ORDER}", (d,))
     out = []
     for m in meals:
         servings = int(grocery.to_qty(m["servings"]) or 1)
         out.append({"slot": m["slot"], "people": m["headcount"], "name": m["name"], "cooked": bool(m["cooked"]),
+                    "leftovers_from": m["leftover_of"] or None,
                     "calories_per_serving": m["calories"], "protein_per_serving": m["protein"],
                     "ingredients_for_people": _scaled(m["ingredients"], (m["headcount"] or 1) / servings),
                     "steps": grocery.clean_steps(m["steps"])})

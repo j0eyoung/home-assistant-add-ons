@@ -146,13 +146,24 @@ def pack_count(pack_size):
     return int(m.group(1)) if m else (12 if re.search(r"\bdozen\b", ps, re.I) else 1)
 
 
+def leftover_heads(start=None, end=None):
+    """{'date|slot': people} eating leftovers of that meal, which is cooked bigger to feed them."""
+    where, args = ("AND date BETWEEN ? AND ?", (start, end)) if start else ("", ())
+    return {r["leftover_of"]: r["n"] for r in db.rows(
+        "SELECT leftover_of, sum(headcount) n FROM plan_meals WHERE COALESCE(leftover_of,'')<>'' "
+        f"{where} GROUP BY leftover_of", args)}
+
+
 def week_ingredients(start, end):
+    """Leftover meals add nothing of their own: their people are added to the meal that is cooked double."""
     meals = db.rows("SELECT pm.date, pm.slot, pm.headcount, r.servings, r.ingredients FROM plan_meals pm "
                     "JOIN recipes r ON r.id=pm.recipe_id WHERE pm.date BETWEEN ? AND ? "
-                    "AND COALESCE(pm.cooked,0)=0", (start, end))
+                    "AND COALESCE(pm.cooked,0)=0 AND COALESCE(pm.leftover_of,'')=''", (start, end))
+    extra = leftover_heads(start, end)
     totals = {}
     for m in meals:
-        scale = (m["headcount"] or 1) / max(int(to_qty(m["servings"]) or 1), 1)
+        people = (m["headcount"] or 1) + extra.get(f"{m['date']}|{m['slot']}", 0)
+        scale = people / max(int(to_qty(m["servings"]) or 1), 1)
         for ing in clean_ingredients(m["ingredients"]):
             n = norm(ing["name"])
             if not n or n == "water" or (is_staple(ing["name"]) and not ing["qty"]):
@@ -197,22 +208,88 @@ def _display(t):
 
 def rebuild(start, end):
     """Fresh list from the plan. Keeps manual rows, and keeps the ticked/sent-to-HA state of items that are
-    still needed so a rebuild never re-sends the whole list to the Home Assistant to-do list."""
+    still needed so a rebuild never re-sends the whole list to the Home Assistant to-do list. A manual row with
+    the same name wins over the plan's (the cook edited or added it), and remembered store/aisle choices apply."""
     totals = subtract_pantry(week_ingredients(start, end))
+    prefs = {r["key"]: r for r in db.rows("SELECT key, store, aisle FROM item_prefs")}
     conn = db.connect()
     old = {norm(r["name"]): (r["checked"], r["synced"]) for r in
            conn.execute("SELECT name, checked, synced FROM grocery WHERE note IS NOT 'manual'")}
+    manual = {norm(r[0]) for r in conn.execute("SELECT name FROM grocery WHERE note IS 'manual'")}
     conn.execute("DELETE FROM grocery WHERE note IS NOT 'manual'")
     for (n, _), t in totals.items():
         qty, unit = _display(t)
-        if not qty and not t["unspec"]:
+        if (not qty and not t["unspec"]) or n in manual:
             continue
         checked, synced = old.get(n, (0, 0))
+        p = prefs.get(n) or {}
         conn.execute("INSERT INTO grocery(name,qty,unit,store,aisle,note,checked,synced) VALUES(?,?,?,?,?,?,?,?)",
-                     (t["name"], qty, unit, clean_store(t["store"]), t["aisle"], t["note"] or "", checked, synced))
+                     (t["name"], qty, unit, clean_store(p.get("store") or t["store"]), p.get("aisle") or t["aisle"],
+                      t["note"] or "", checked, synced))
     conn.commit()
     conn.close()
     return listing()
+
+
+# --- Quick add: "2 lb chicken thighs" -> qty, unit, name; then where the cook usually files it ------------
+
+_PACK = {"can": "can", "cans": "can", "jar": "jar", "jars": "jar", "bag": "bag", "bags": "bag", "box": "box",
+         "boxes": "box", "pack": "pack", "packs": "pack", "pkg": "pack", "bunch": "bunch", "bunches": "bunch",
+         "bottle": "bottle", "bottles": "bottle", "carton": "carton", "cartons": "carton", "loaf": "loaf",
+         "loaves": "loaf", "head": "head", "heads": "head", "dozen": "dozen", "doz": "dozen"}
+_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "half": 0.5}
+_QTY = r"(\d+\s+\d+/\d+|\d+/\d+|\d+(?:\.\d+)?|(?:" + "|".join(_WORDS) + r")\b)"
+
+
+def _unit_word(w):
+    w = w.lower().rstrip(".")
+    if w in _PACK:
+        return _PACK[w]
+    u = canon_unit(w)
+    return u if u in UNITS and u else None
+
+
+def parse_quick(text):
+    """'2 lb chicken thighs', '1 1/2 cups rice', 'milk x2', 'a dozen eggs', 'eggs' -> {name, qty, unit}.
+    qty 0 means no amount was given."""
+    t = " ".join(str(text or "").split())[:200]
+    qty, unit = 0.0, ""
+    m = re.match(r"^(.*?)\s*[x×]\s*(\d+(?:\.\d+)?)$", t, re.I)          # 'milk x2'
+    if m and m.group(1):
+        t, qty = m.group(1), float(m.group(2))
+    m = re.match(rf"^{_QTY}\s*(.*)$", t, re.I)
+    if m and m.group(2):
+        q = m.group(1).lower()
+        qty, t = (float(_WORDS[q]) if q in _WORDS else to_qty(q)), m.group(2)
+        m2 = re.match(r"^(fl\.? oz|[a-zA-Z.]+)\s+(?:of\s+)?(.+)$", t)
+        if m2 and _unit_word(m2.group(1)):
+            unit, t = _unit_word(m2.group(1)), m2.group(2)
+    if unit == "dozen":
+        qty, unit = qty * 12, ""
+    name = t.strip(" ,.-")
+    return {"name": name[:1].upper() + name[1:], "qty": round(qty, 2), "unit": unit}
+
+
+def placement(name):
+    """Store and aisle for an item: what the cook chose before, else what the plan used, else a guess."""
+    from recipes import aisle_for
+    n = norm(name)
+    prefs = db.rows("SELECT key, store, aisle FROM item_prefs")
+    hit = next((p for p in prefs if p["key"] == n), None) or next((p for p in prefs if n and same(p["key"], n)), None)
+    if hit:
+        return {"store": clean_store(hit["store"]), "aisle": hit["aisle"] or aisle_for(name), "known": True}
+    bought = db.rows("SELECT store FROM purchases WHERE key=? AND store<>'' ORDER BY id DESC LIMIT 1", (n,))
+    return {"store": clean_store(bought[0]["store"]) if bought else "king_soopers", "aisle": aisle_for(name),
+            "known": False}
+
+
+def remember(name, store=None, aisle=None):
+    n = norm(name)
+    if not n:
+        return
+    db.run("INSERT INTO item_prefs(key,name,store,aisle) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET "
+           "name=excluded.name, store=COALESCE(excluded.store,store), aisle=COALESCE(excluded.aisle,aisle)",
+           (n, str(name).strip()[:200], clean_store(store) if store else None, str(aisle)[:40] if aisle else None))
 
 
 def listing():

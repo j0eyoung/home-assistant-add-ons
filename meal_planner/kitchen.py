@@ -54,14 +54,18 @@ def consume(date, slot):
     Counts subtract directly (a '24 ct' carton counts as 24 items); weights/volumes subtract when the pantry row
     uses the same kind of unit. Package-tracked rows used by weight are left alone: we cannot know how much of
     the pack is left. Returns what changed, or None when nothing is planned there."""
-    row = db.rows("SELECT pm.headcount, pm.cooked, r.servings, r.ingredients FROM plan_meals pm "
+    row = db.rows("SELECT pm.headcount, pm.cooked, pm.leftover_of, r.servings, r.ingredients FROM plan_meals pm "
                   "JOIN recipes r ON r.id=pm.recipe_id WHERE pm.date=? AND pm.slot=?", (date, slot))
     if not row:
         return None
     m = row[0]
     if m["cooked"]:
         return {"changed": [], "already": True}
-    scale = (m["headcount"] or 1) / max(int(to_qty(m["servings"]) or 1), 1)
+    if m["leftover_of"]:                # eating leftovers takes nothing more out of the pantry
+        db.run("UPDATE plan_meals SET cooked=1 WHERE date=? AND slot=?", (date, slot))
+        return {"changed": [], "leftover": True}
+    extra = db.rows("SELECT COALESCE(sum(headcount),0) n FROM plan_meals WHERE leftover_of=?", (f"{date}|{slot}",))[0]["n"]
+    scale = ((m["headcount"] or 1) + extra) / max(int(to_qty(m["servings"]) or 1), 1)
     pantry = db.rows("SELECT id, name, qty, unit, pack_size FROM pantry WHERE qty>0 ORDER BY expires IS NULL, expires, id")
     for p in pantry:
         p["key"] = norm(p["name"])

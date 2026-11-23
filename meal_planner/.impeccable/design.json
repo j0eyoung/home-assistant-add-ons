@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-23T00:00:00Z",
+  "title": "Design System: Meal & Grocery Planner",
+  "extensions": {
+    "colorMeta": {
+      "tomato": { "role": "primary", "displayName": "Tomato", "canonical": "#bf3f2a", "darkValue": "#e0654d", "tonalRamp": ["#4a1a10", "#6f2819", "#8a3020", "#a2321f", "#bf3f2a", "#d9694f", "#ec9a85", "#f7e0d6"] },
+      "herb": { "role": "secondary", "displayName": "Herb", "canonical": "#3d7536", "darkValue": "#8bbe7d", "tonalRamp": ["#14260f", "#1f3d1a", "#2f6129", "#3d7536", "#5b9650", "#86b87b", "#b6d6ac", "#e0ecd6"] },
+      "amber": { "role": "tertiary", "displayName": "Amber", "canonical": "#9a5b0c", "darkValue": "#e8aa5c", "tonalRamp": ["#3a2205", "#5c3607", "#7c4a09", "#9a5b0c", "#c0801f", "#dba455", "#ecc98f", "#f6e5c6"] },
+      "paper": { "role": "neutral", "displayName": "Warm Paper", "canonical": "#f3eadb", "darkValue": "#1b1815", "tonalRamp": ["#2a2019", "#66564a", "#6c5d4d", "#a8957c", "#cbb89d", "#e3d5c0", "#ebdfcc", "#f3eadb"] },
+      "card": { "role": "neutral", "displayName": "Cream Card Stock", "canonical": "#fffbf4", "darkValue": "#27231f", "tonalRamp": ["#51473d", "#6c5d4d", "#a8957c", "#cbb89d", "#e3d5c0", "#f4ebdd", "#fbf4e8", "#fffbf4"] },
+      "rule": { "role": "neutral", "displayName": "Faint Blue Rule", "canonical": "#bccfe2", "darkValue": "#33465b", "tonalRamp": ["#1f2c3b", "#33465b", "#4d6682", "#7790ad", "#9bb1ca", "#bccfe2", "#d6e2ee", "#eaf1f7"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Tab titles in the sticky header (Young Serif 30px)." },
+      "headline": { "displayName": "Headline", "purpose": "Recipe sheet title, focused meal name, cook-mode headings." },
+      "title": { "displayName": "Title", "purpose": "Meal card names, sheet titles, store and section headings." },
+      "body": { "displayName": "Body", "purpose": "All reading text in system UI at 16px." },
+      "label": { "displayName": "Label", "purpose": "Buttons, tags, field labels at 14-15px, weight 600." },
+      "amount": { "displayName": "Amount", "purpose": "Courier Prime for quantities, steppers and timers only." }
+    },
+    "shadows": [
+      { "name": "card", "value": "0 1px 2px rgb(74 48 22 / .07), 0 4px 12px rgb(74 48 22 / .07)", "purpose": "Resting cards, lists, tool tiles." },
+      { "name": "overlay", "value": "0 2px 8px rgb(74 48 22 / .12), 0 18px 40px rgb(74 48 22 / .18)", "purpose": "Sheets, toast, timer pills." },
+      { "name": "day-lift", "value": "0 4px 12px -4px color-mix(in srgb, var(--tomato) 70%, transparent)", "purpose": "Selected day chip and primary tool tile." }
+    ],
+    "motion": [
+      { "name": "ease", "value": "cubic-bezier(.16, 1, .3, 1)", "purpose": "Sheet slides, day change, progress bars, swipe settle (0.15-0.35s)." },
+      { "name": "press", "value": "transform: scale(.97) 100ms", "purpose": "Button and tile press feedback." }
+    ],
+    "breakpoints": [
+      { "name": "grid-3", "value": "560px" },
+      { "name": "dialog", "value": "700px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Tomato action; Cook, Save, Generate.",
+      "html": "<button class=\"ds-btn\">Cook</button>",
+      "css": ".ds-btn{min-height:44px;padding:0 16px;border:0;border-radius:9px;background:#bf3f2a;color:#fff8ef;font:600 15px system-ui,sans-serif;cursor:pointer;transition:transform .1s}.ds-btn:active{transform:scale(.97)}.ds-btn:focus-visible{outline:2.5px solid #bf3f2a;outline-offset:2px}"
+    },
+    {
+      "name": "Done Button",
+      "kind": "button",
+      "refersTo": "button-done",
+      "description": "Herb action for a finished or repeat state; Cook again.",
+      "html": "<button class=\"ds-btn-herb\">Cook again</button>",
+      "css": ".ds-btn-herb{min-height:44px;padding:0 16px;border:0;border-radius:9px;background:#3d7536;color:#f6fbf1;font:600 15px system-ui,sans-serif;cursor:pointer}.ds-btn-herb:focus-visible{outline:2.5px solid #bf3f2a;outline-offset:2px}"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Pill filter; selected inverts to ink.",
+      "html": "<span class=\"ds-chip\">Favourites</span> <span class=\"ds-chip ds-on\">Dinner</span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;min-height:36px;padding:0 14px;border-radius:999px;background:#fffbf4;box-shadow:inset 0 0 0 1.5px #e3d5c0;color:#2a2019;font:500 14px system-ui,sans-serif}.ds-on{background:#2a2019;color:#f3eadb;box-shadow:none}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Card fill, inset stroke, tomato focus.",
+      "html": "<input class=\"ds-input\" placeholder=\"Add an item\">",
+      "css": ".ds-input{width:100%;min-height:44px;padding:10px 12px;border:0;border-radius:9px;background:#fffbf4;color:#2a2019;font:16px system-ui,sans-serif;box-shadow:inset 0 0 0 1.5px #cbb89d}.ds-input:focus{outline:none;box-shadow:inset 0 0 0 2px #bf3f2a}.ds-input::placeholder{color:#6c5d4d}"
+    },
+    {
+      "name": "Meal Card",
+      "kind": "card",
+      "refersTo": "meal-card",
+      "description": "Photo, serif name, meta line and actions.",
+      "html": "<div class=\"ds-meal\"><div class=\"ds-ph\">P</div><div><h3>Prawn pad thai</h3><p>Pantry 6/8 · 640 kcal</p></div></div>",
+      "css": ".ds-meal{display:grid;grid-template-columns:92px 1fr;gap:12px;padding:12px;border-radius:12px;background:#fffbf4;color:#2a2019;box-shadow:0 1px 2px rgb(74 48 22/.07),0 4px 12px rgb(74 48 22/.07)}.ds-ph{width:92px;height:92px;border-radius:10px;background:#f7e0d6;color:#a2321f;display:grid;place-items:center;font:34px 'Young Serif',Georgia,serif}.ds-meal h3{margin:0;font:19px/1.22 'Young Serif',Georgia,serif;font-weight:400}.ds-meal p{margin:5px 0 0;font:14px system-ui,sans-serif;color:#66564a}"
+    },
+    {
+      "name": "Index Card",
+      "kind": "custom",
+      "refersTo": "index-card",
+      "description": "Recipe sheet signature: tomato rule under the title, ingredients typed on faint blue rules.",
+      "html": "<div class=\"ds-index\"><h2>Lemon chicken</h2><ul><li><b>2 tbsp</b><span>olive oil</span></li><li><b>500 g</b><span>chicken thigh</span></li></ul></div>",
+      "css": ".ds-index{padding:18px 20px 8px;background:#fffbf4;color:#2a2019;font:16px system-ui,sans-serif}.ds-index h2{margin:0;padding-bottom:10px;border-bottom:2px solid #bf3f2a;font:27px/1.18 'Young Serif',Georgia,serif;font-weight:400}.ds-index ul{list-style:none;margin:12px 0 0;padding:0}.ds-index li{display:grid;grid-template-columns:8.5ch 1fr;column-gap:10px;padding:9px 2px 8px;border-bottom:1px solid #bccfe2}.ds-index b{font:700 16px 'Courier Prime','Courier New',monospace}"
+    },
+    {
+      "name": "List Row",
+      "kind": "custom",
+      "refersTo": "meal-card",
+      "description": "Shop row: round tick box, name, Courier quantity.",
+      "html": "<div class=\"ds-row\"><span class=\"ds-box\"></span><span>Greek yoghurt</span><span class=\"ds-q\">2 tubs</span></div>",
+      "css": ".ds-row{display:flex;align-items:center;gap:14px;min-height:58px;padding:10px 14px;background:#fffbf4;color:#2a2019;font:17px system-ui,sans-serif}.ds-box{width:28px;height:28px;border-radius:50%;box-shadow:inset 0 0 0 2px #cbb89d}.ds-q{margin-left:auto;font:15px 'Courier Prime','Courier New',monospace;color:#66564a}"
+    },
+    {
+      "name": "Tab Bar",
+      "kind": "nav",
+      "refersTo": "tab-bar",
+      "description": "Fixed four-tab bar; active tab tomato with a top edge.",
+      "html": "<nav class=\"ds-tabs\"><span>Plan</span><span class=\"ds-on\">Recipes</span><span>Shop</span><span>Pantry</span></nav>",
+      "css": ".ds-tabs{display:flex;background:#fffbf4;box-shadow:0 -1px 0 #e3d5c0}.ds-tabs span{position:relative;flex:1;height:62px;display:grid;place-items:center;font:600 12.5px system-ui,sans-serif;color:#66564a}.ds-tabs .ds-on{color:#a2321f}.ds-tabs .ds-on::before{content:'';position:absolute;top:0;left:50%;width:32px;height:3px;margin-left:-16px;border-radius:0 0 3px 3px;background:#bf3f2a}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Recipe Card",
+    "overview": "Everything is a card you could hold. Cream index-card stock sits on a warm paper ground; at night the ground goes charcoal and the cards warm grey. Tomato red is the brand and every primary action; herb green only ever means done, in the pantry, in the cart. The food photo leads each card, a serif name sits under it, and measured amounts are typed in Courier Prime like a card from a recipe box.",
+    "keyCharacteristics": [
+      "Warm paper and cream card, never white or grey",
+      "One action colour (tomato), one status colour (herb); amber is a quiet warning only",
+      "Young Serif for names and headings, system UI for reading, Courier Prime for quantities",
+      "Photos carry the cards; a tomato-tint serif initial stands in when there is none",
+      "Drawn 1.75px-stroke 24px icons, no emoji or glyph icons",
+      "Surfaces separate by soft warm shadow and tonal steps, not by borders"
+    ],
+    "rules": [
+      { "name": "The Red Means Do Rule", "body": "Tomato marks what to tap or what you chose; green marks what is finished. A screen never uses green for a button the user hasn't done yet, or tomato for a finished state.", "section": "colors" },
+      { "name": "The Cream Not White Rule", "body": "No pure white or black on the page. Text on photos sits on a cream pill, never bare.", "section": "colors" },
+      { "name": "The Typed Amounts Rule", "body": "Courier Prime is for measured amounts and timers only. Never for names, prose or labels.", "section": "typography" },
+      { "name": "The Serif For Names Rule", "body": "Anything the user would call a dish, a day, a store or a section is Young Serif; actions and metadata are system UI.", "section": "typography" },
+      { "name": "The Flat Until Held Rule", "body": "Cards rest on the soft Card shadow; only things that float over content (sheet, toast, timer pill) use the Overlay shadow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do put the food photo first on any card that has one; fall back to a tomato-soft tile with the serif initial.",
+      "Do use tomato for actions and selection, herb for done, in the pantry and in the cart, and amber only for warnings.",
+      "Do set quantities in Courier Prime and names in Young Serif.",
+      "Do keep every tap target at 44px or more and give destructive swipes an undo toast.",
+      "Do use the drawn icon set (ICONS in core.js, 24px viewBox, 1.75px round stroke, currentColor).",
+      "Do define every new colour as a light and a dark token pair on :root."
+    ],
+    "donts": [
+      "Don't use pure white, pure black or cool greys on the page; the ground is paper.",
+      "Don't use green for a button the user hasn't acted on, or red for a finished state.",
+      "Don't use Courier Prime for prose or labels.",
+      "Don't add gingham, stickers, handwriting fonts or decorative borders around cards.",
+      "Don't put bare text on photos; use the cream slot pill.",
+      "Don't use emoji or glyph characters as icons.",
+      "Don't build a seven-day grid of rows with inline inputs; one day at a time, one card per meal."
+    ]
+  }
+}

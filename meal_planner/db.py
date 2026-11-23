@@ -61,6 +61,9 @@ CREATE TABLE IF NOT EXISTS purchases (       -- what was bought when, for grocer
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT, key TEXT, date TEXT, store TEXT
 );
+CREATE TABLE IF NOT EXISTS item_prefs (      -- where the cook files an item: store and aisle, by normalised name
+    key TEXT PRIMARY KEY, name TEXT, store TEXT, aisle TEXT
+);
 """
 
 # Columns that may be missing from an older database: (table, column, definition).
@@ -75,6 +78,8 @@ MIGRATIONS = [
     ("grocery", "synced", "INTEGER DEFAULT 0"), ("grocery", "stocked", "INTEGER DEFAULT 0"),
     ("recipes", "cost", "REAL"), ("recipes", "image", "TEXT"), ("recipes", "image_src", "TEXT"),
     ("recipes", "image_tries", "INTEGER DEFAULT 0"),
+    ("recipes", "notes", "TEXT"), ("recipes", "rating", "INTEGER"),
+    ("plan_meals", "leftover_of", "TEXT"),     # 'YYYY-MM-DD|slot' of the meal cooked double for this one
 ]
 
 # Indexes come after the migrations: an index on a column an old table lacks would stop start-up.
